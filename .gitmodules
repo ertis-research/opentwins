@@ -10,3 +10,6 @@
 [submodule "components/unity-plugin-for-Grafana"]
 	path = components/unity-plugin-for-Grafana
 	url = https://github.com/ertis-research/unity-plugin-for-Grafana
+[submodule "components/digital-twins-plugin-for-Grafana"]
+	path = components/digital-twins-plugin-for-Grafana
+	url = https://github.com/ertis-research/digital-twins-plugin-for-Grafana

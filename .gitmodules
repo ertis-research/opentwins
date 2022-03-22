@@ -1,0 +1,3 @@
+[submodule "components/extended-api-for-Eclipse-Ditto"]
+	path = components/extended-api-for-Eclipse-Ditto
+	url = https://github.com/ertis-research/extended-api-for-Eclipse-Ditto

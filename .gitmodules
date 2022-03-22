@@ -7,3 +7,6 @@
 [submodule "components/error-detection-for-Eclipse-Hono-with-Kafka-ML"]
 	path = components/error-detection-for-Eclipse-Hono-with-Kafka-ML
 	url = https://github.com/ertis-research/error-detection-for-Eclipse-Hono-with-Kafka-ML
+[submodule "components/unity-plugin-for-Grafana"]
+	path = components/unity-plugin-for-Grafana
+	url = https://github.com/ertis-research/unity-plugin-for-Grafana

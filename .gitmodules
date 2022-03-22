@@ -4,3 +4,6 @@
 [submodule "components/kafka-ml-to-Eclipse-Ditto"]
 	path = components/kafka-ml-to-Eclipse-Ditto
 	url = https://github.com/ertis-research/kafkaml-to-Eclipse-Ditto
+[submodule "components/error-detection-for-Eclipse-Hono-with-Kafka-ML"]
+	path = components/error-detection-for-Eclipse-Hono-with-Kafka-ML
+	url = https://github.com/ertis-research/error-detection-for-Eclipse-Hono-with-Kafka-ML

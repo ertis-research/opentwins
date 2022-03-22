@@ -1,3 +1,6 @@
 [submodule "components/extended-api-for-Eclipse-Ditto"]
 	path = components/extended-api-for-Eclipse-Ditto
 	url = https://github.com/ertis-research/extended-api-for-Eclipse-Ditto
+[submodule "components/kafka-ml-to-Eclipse-Ditto"]
+	path = components/kafka-ml-to-Eclipse-Ditto
+	url = https://github.com/ertis-research/kafkaml-to-Eclipse-Ditto

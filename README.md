@@ -1,4 +1,4 @@
-# Digital Twins Framework
+# Digital Twins Platform
 
 ## Architecture
 

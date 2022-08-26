@@ -16,6 +16,13 @@ This platform is currently **under development**, so its use in production envir
       - [Deploying Eclipse Ditto and Eclipse Hono](#deploying-eclipse-ditto-and-eclipse-hono)
       - [Deploying Apache Kafka](#deploying-apache-kafka)
       - [Deploying InfluxDB](#deploying-influxdb)
+      - [Deploying Grafana](#deploying-grafana)
+      - [Connecting Eclipse Hono and Eclipse Ditto](#connecting-eclipse-hono-and-eclipse-ditto)
+      - [Connecting Eclipse Ditto and Kafka](#connecting-eclipse-ditto-and-kafka)
+      - [Connecting Kafka and InfluxDB: Deploying Telegraf](#connecting-kafka-and-influxdb-deploying-telegraf)
+      - [Connecting InfluxDB and Grafana](connecting-influxdb-and-grafana)
+      - [Deploying Extended API for Eclipse Ditto](#deploying-extended-api-for-eclipse-ditto)
+      - [Installing Digital Twins plugin for Grafana](#installing-digital-twins-plugin-for-grafana)
 - [Usage](#usage)
 - [Publications](#publications)
 - [License](#license)
@@ -108,10 +115,22 @@ kubectl apply -f pv-influxdb2.yaml -n $NS
 helm install -n $NS influxdb influxdata/influxdb2 -f values-influxdb2.yaml --version=2.0.10 
 ```
 
+#### Deploying Grafana
+Deploying Grafana is very similar to InfluxDB. We will have to apply the file [pv-grafana.yaml](files_for_manual_deploy/pv-grafana.yaml) and install the [Helm Chart](https://github.com/grafana/helm-charts/tree/main/charts/grafana) with the values of the [values-grafana.yaml](files_for_manual_deploy/values-grafana.yaml) file (it is also recommended to modify the *password* variable).
+```sh
+helm repo add grafana https://grafana.github.io/helm-charts
+
+kubectl apply -f pv-grafana.yaml -n $NS
+
+helm install -n $NS grafana grafana/grafana -f values-grafana.yaml --version=6.26.3
+```
+
 #### Connecting Eclipse Hono and Eclipse Ditto
 In the following diagram you can see how Eclipse Hono and Eclipse Ditto are related in our platform. 
 
-![Ditto and Hono relationship](images/ditto-hono-relationship.jpg)
+<p align="center">
+<img src="images/ditto-hono-relationship.jpg" height="300">
+</p>
 
 Basically, you will need to **create a connection between both for each Eclipse Hono tenant you want to use**. [Tenants](https://www.eclipse.org/hono/docs/concepts/tenancy/) basically act as device containers, so you could simply create a single tenant connected to Eclipse Ditto and store all the devices you need there. In this case we will do it this way, but you could create as many tenants and connections as your needs require.
 
@@ -250,11 +269,100 @@ This connection is configured so that if an [Eclipse Hono device](https://www.ec
 
 
 #### Connecting Eclipse Ditto and Kafka
+To connect Eclipse Ditto to Kafka we will need to create a topic in Kafka and a Ditto connection to it. All [events](https://www.eclipse.org/ditto/basic-connections.html#target-topics-and-filtering) that occur in any of the Eclipse Ditto twins will be sent to this topic. You could also filter these events by twin or namespace and create several connections to multiple topics, but this is not really necessary and adds some complexity.
+
+To create the topic in Kafka the above deployed manager will be used. Check the IP and port of Kafka's manager with `kubectl get services -n $NS` and access it in a browser. Already on the page, if you don't have a cluster created, create a new one and create a topic inside it. In our case this topic will be called *digitaltwins*.
+
+To create a cluster go to `Cluster > Add Cluster` and fill in at least the name and host of Zookeeper (if our files are used you will have to put *zookeeper-1:2181*). The other settings can be left as default. It should look like the image. 
+
+<p align="center">
+<img src="images/create-cluster-kafka.JPG" height="300">
+</p>
+
+After creating it, access it and go to `Topic > Create` to create a new topic. Here it is only necessary to assign a name. 
+
+<p align="center">
+<img src="images/create-topic-kafka.JPG" height="300">
+</p>
+
+Once the topic is created we have to create a [Kafka target connection](https://www.eclipse.org/ditto/connectivity-protocol-bindings-kafka2.html#target-format) in Eclipse Ditto, where it will be indicated that we want it to publish all events. You will need the Ditto devops password obtained in [the previous section](#connecting-eclipse-hono-and-eclipse-ditto).
+
+<details>
+  <summary>Show command</summary>
+  
+```sh
+curl -i -X POST -u devops:${DITTO_DEVOPS_PWD} -H 'Content-Type: application/json' --data '{
+  "targetActorSelection": "/system/sharding/connection",
+  "headers": {
+    "aggregate": false
+  },
+  "piggybackCommand": {
+    "type": "connectivity.commands:createConnection",
+    "connection": {
+        "id": "kafka-connection",
+        "connectionType": "kafka",
+        "connectionStatus": "open",
+        "failoverEnabled": true,
+        "uri": "tcp://kafka-cluster:9094",
+        "specificConfig": {
+            "bootstrapServers": "kafka-cluster:9094",
+            "saslMechanism": "plain"
+        },
+        "sources": [],
+        "targets": [
+            {
+            "address": "digitaltwins",
+            "topics": [
+                "_/_/things/twin/events",
+                "_/_/things/live/messages"
+            ],
+            "authorizationContext": [
+                "nginx:ditto"
+            ]
+            }
+        ]
+    }
+  }
+}' http:///$DITTO_IP:$DITTO_PORT/devops/piggyback/connectivity
+```
+  
+</details>
+
+If the connection is successfully established, Eclipse Ditto and Kafka are already connected.
 
 #### Connecting Kafka and InfluxDB: Deploying Telegraf
 
+Telegraf will be in charge of collecting the messages posted in the created Kafka topic and write the relevant information in InfluxDB, i.e. it will connect both tools. Telegraf consists of input and output plugins. In our case we will use the [kafka consumer input plugin](https://github.com/influxdata/telegraf/tree/master/plugins/inputs/kafka_consumer) and the [InfluxDB v2.x output plugin](https://github.com/influxdata/telegraf/tree/release-1.23/plugins/outputs/influxdb_v2). The Telegraf configuration will be defined in its telegraf-values.yaml file, before deployment. This will be written in YAML as another installation variable and will be automatically transformed to [TOML](https://github.com/toml-lang/toml#toml) during deployment.
+
+First of all we need to get a token from InfluxDB that gives Telegraf at least write permissions.
+
+
 #### Connecting InfluxDB and Grafana
 
+#### Deploying Extended API for Eclipse Ditto
+Gets the IP and port from Eclipse Ditto and check [documentation](https://github.com/ertis-research/extended-api-for-eclipse-ditto).
+
+#### Installing Digital Twins plugin for Grafana
+Check [documentation](https://github.com/ertis-research/digital-twins-plugin-for-grafana).
+
+#### Deploying Kafka-ML
+This tool acts like a black box. To deploy it check its [documentation](https://github.com/ertis-research/kafka-ml).
+
+#### Deploying RabbitMQ
+
+
+#### Deploying and connecting Eclipse Hono to Kafka-ML
+Check [documentation](https://github.com/ertis-research/digital-twins-plugin-for-grafana).
+
+#### Deploying and connecting Error Detection for Eclipse Hono with Kafka-ML
+Check [documentation](https://github.com/ertis-research/digital-twins-plugin-for-grafana).
+
+#### Connecting Kafka-ML and Eclipse Ditto: Two options
+Deploying Kafka-ML to Eclipse Ditto
+Check [documentation](https://github.com/ertis-research/kafka-ml-to-eclipse-ditto).
+
+#### Installing Unity plugin for Grafana
+Check [documentation](https://github.com/ertis-research/unity-plugin-for-grafana).
 
 ## Usage
 

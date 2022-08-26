@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    io.kompose.service: zookeeper
+  name: zookeeper
+spec:
+  containers:
+  - env:
+    - name: ZOO_MY_ID
+      value: "1"
+    - name: ZOO_SERVERS
+      value: server.1=0.0.0.0:2888:3888;2181
+    - name: ZOOKEEPER_CLIENT_PORT
+      value: "2181"
+    image: confluentinc/cp-zookeeper:7.0.1
+    name: zookeeper
+    ports:
+    - containerPort: 2181
+    resources: {}
+  restartPolicy: OnFailure
+status: {}

@@ -334,10 +334,34 @@ If the connection is successfully established, Eclipse Ditto and Kafka are alrea
 
 Telegraf will be in charge of collecting the messages posted in the created Kafka topic and write the relevant information in InfluxDB, i.e. it will connect both tools. Telegraf consists of input and output plugins. In our case we will use the [kafka consumer input plugin](https://github.com/influxdata/telegraf/tree/master/plugins/inputs/kafka_consumer) and the [InfluxDB v2.x output plugin](https://github.com/influxdata/telegraf/tree/release-1.23/plugins/outputs/influxdb_v2). The Telegraf configuration will be defined in its telegraf-values.yaml file, before deployment. This will be written in YAML as another installation variable and will be automatically transformed to [TOML](https://github.com/toml-lang/toml#toml) during deployment.
 
-First of all we need to get a token from InfluxDB that gives Telegraf at least write permissions.
+First of all we need to get a token from InfluxDB that gives Telegraf at least write permissions. To do this we access the InfluxDB interface (ip and port of its service) and go to `Data > API Tokens`. Click on *Generate API Token* and select *All Access API Token*. Assign any name, save and select the token we have just created to copy it to the clipboard. This is stored in a variable called **INFLUX_TOKEN**.
 
+```sh
+export INFLUX_TOKEN=<INFLUX_TOKEN>
+```
+
+<p align="center">
+<img src="images/create-token-influxdb.JPG" height="300">
+</p>
+
+You also need to store in variables the IPs and ports of both Kafka and InfluxDB, as well as the name of the Kafka topic. These variables will be INFLUX_IP, INFLUX_PORT, KAFKA_IP, KAFKA_PORT and KAFKA_TOPIC. Once all variables are ready, Telegraf can be displayed with the values defined in the [values-telegraf.yaml](files_for_manual_deploy/values-telegraf.yaml) file.
+
+```sh
+helm install -n $NS telegraf influxdata/telegraf -f values-telegraf.yaml --version=1.8.18
+```
+
+If the pod is ready and running it should be working, but it is advisable to check its logs to make sure.
+
+```sh
+kubectl logs -f --namespace $NS $(kubectl get pods --namespace $NS -l app.kubernetes.io/name=telegraf -o jsonpath='{ .items[0].metadata.name }')
+```
 
 #### Connecting InfluxDB and Grafana
+Connecting these two tools is very simple. The first thing to do is to get a full access token for Grafana in InfluxDB, as explained in the [previous section](#connecting-kafka-and-influxdb-deploying-telegraf). Then, access `Configuration > Data sources` on the Grafana interface and click on *Add data source*. Select *InfluxDB* from the list. In the settings it is very important to select *Flux* as query language. It will be necessary to fill in the URL section with the one that corresponds to InfluxDB. You will also have to activate Auth Basic and fill in the fields (in our case we have set the default admin of InfluxDB, but you can create a new user and fill in these fields). In the InfluxDB details you should indicate the organisation (default is *influxdata*), the bucket (default is *default*) and the token you have generated. When saving and testing, it should come out that at least one bucket has been found, indicating that they are already connected.
+
+<p align="center">
+<img src="images/create-datasource-grafana.JPG" height="300">
+</p>
 
 #### Deploying Extended API for Eclipse Ditto
 Gets the IP and port from Eclipse Ditto and check [documentation](https://github.com/ertis-research/extended-api-for-eclipse-ditto).

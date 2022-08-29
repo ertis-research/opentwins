@@ -91,16 +91,16 @@ If all pods are running and ready we already have the first two components insta
 #### Deploying Apache Kafka
 To deploy Kafka, the yaml files from another project have been reused, but it could also be installed [using Helm](https://github.com/bitnami/charts/tree/master/bitnami/kafka) if you prefer. 
 
-For Kafka to work, it is necessary to install [ZooKeeper](https://zookeeper.apache.org/) beforehand. In addition, [CMAK](https://github.com/deltaprojects/kafka-manager-docker), a tool to manage Apache Kafka, will be used to make it easier to use. Then, for the deployment, the [zookeeper-pod.yaml](files_for_manual_deploy/zookeeper-pod.yaml), [zookeeper-service.yaml](files_for_manual_deploy/zookeeper-service.yaml), [kafka-pod.yaml](files_for_manual_deploy/kafka-pod.yaml), [kafka-service.yaml](files_for_manual_deploy/kafka-service.yaml), [kafka-manager-deployment.yaml](files_for_manual_deploy/kafka-manager-deployment.yaml) and [kafka-manager-service.yaml](files_for_manual_deploy/kafka-manager-service.yaml) files will be needed. Once you have them, you only need to apply them to the chosen namespace.
+For Kafka to work, it is necessary to install [ZooKeeper](https://zookeeper.apache.org/) beforehand. In addition, [CMAK](https://github.com/deltaprojects/kafka-manager-docker), a tool to manage Apache Kafka, will be used to make it easier to use. Then, for the deployment, the [pod-zookeeper.yaml](files_for_manual_deploy/pod-zookeeper.yaml), [svc-zookeeper.yaml](files_for_manual_deploy/svc-zookeeper.yaml), [pod-kafka.yaml](files_for_manual_deploy/pod-kafka.yaml), [svc-kafka.yaml](files_for_manual_deploy/svc-kafka.yaml), [deploy-kafka-manager.yaml](files_for_manual_deploy/deploy-kafka-manager.yaml) and [svc-kafka-manager.yaml](files_for_manual_deploy/svc-kafka-manager.yaml) files will be needed. Once you have them, you only need to apply them to the chosen namespace.
 ```sh
-kubectl apply -f zookeeper-pod.yaml -n $NS
-kubectl apply -f zookeeper-service.yaml -n $NS
+kubectl apply -f pod-zookeeper.yaml -n $NS
+kubectl apply -f svc-zookeeper.yaml -n $NS
 
-kubectl apply -f kafka-pod.yaml -n $NS
-kubectl apply -f kafka-service.yaml -n $NS
+kubectl apply -f pod-kafka.yaml -n $NS
+kubectl apply -f svc-kafka.yaml -n $NS
 
-kubectl apply -f kafka-manager-deployment.yaml -n $NS
-kubectl apply -f kafka-manager-service.yaml -n $NS
+kubectl apply -f deploy-kafka-manager.yaml -n $NS
+kubectl apply -f svc-kafka-manager.yaml -n $NS
 ```
 
 #### Deploying InfluxDB
@@ -372,18 +372,72 @@ Check [documentation](https://github.com/ertis-research/digital-twins-plugin-for
 #### Deploying Kafka-ML
 This tool acts like a black box. To deploy it check its [documentation](https://github.com/ertis-research/kafka-ml).
 
-#### Deploying RabbitMQ
-
-
 #### Deploying and connecting Eclipse Hono to Kafka-ML
-Check [documentation](https://github.com/ertis-research/digital-twins-plugin-for-grafana).
+Check [documentation](https://github.com/ertis-research/Eclipse-Hono-to-Kafka-ML).
 
 #### Deploying and connecting Error Detection for Eclipse Hono with Kafka-ML
-Check [documentation](https://github.com/ertis-research/digital-twins-plugin-for-grafana).
+Check [documentation](https://github.com/ertis-research/error-detection-for-Eclipse-Hono-with-Kafka-ML).
 
 #### Connecting Kafka-ML and Eclipse Ditto: Two options
-Deploying Kafka-ML to Eclipse Ditto
+To connect Kafka-ML and Eclipse Ditto we have two options. When the development of this platform started, the source connection through Kafka was not implemented in Eclipse Ditto, so an intermediate service had to be created to send the information from Kafka-ML to one of the available protocols, more specifically AMQP, modifying the message to Ditto Protocol format on the way. It is currently possible to create such a connection, so there are two options for connecting these tools. The first is more direct and saves the deployment of two services, while the second can facilitate the connection and management of several models in the long-term.
+
+##### Option 1: Create Eclipse Ditto connection
+
+##### Option 2: Using AMQP
+
+###### Deploying Kafka-ML to Eclipse Ditto
 Check [documentation](https://github.com/ertis-research/kafka-ml-to-eclipse-ditto).
+
+###### Deploying RabbitMQ
+For its deployment we will use [Helm](https://github.com/bitnami/charts/tree/master/bitnami/rabbitmq) as in most technologies and, therefore, the [sc-rabbitmq.yaml](files_for_manual_deploy/sc-rabbitmq.yaml), [pv-rabbitmq.yaml](files_for_manual_deploy/pv-rabbitmq.yaml), [pvc-rabbitmq.yaml](files_for_manual_deploy/pvc-rabbitmq.yaml) and [values-rabbitmq.yaml](files_for_manual_deploy/values-rabbitmq.yaml) files will be needed.
+
+```sh
+helm repo add bitnami https://charts.bitnami.com/bitnami
+
+kubectl apply -f sc-rabbitmq.yaml -n $NS
+kubectl apply -f pv-rabbitmq.yaml -n $NS
+kubectl apply -f pvc-rabbitmq.yaml -n $NS
+
+helm install rabbitmq bitnami/rabbitmq -n $NS -f values-rabbitmq.yaml --version=9.0.2
+```
+
+###### Conecting RabbitMQ and Eclipse Ditto
+
+We are working on it...
+
+<details>
+  <summary>Show command</summary>
+  
+```sh
+curl -i -X POST -u devops:${DITTO_DEVOPS_PWD} -H 'Content-Type: application/json' --data '{
+  "targetActorSelection": "/system/sharding/connection",
+  "headers": {
+    "aggregate": false
+  },
+  "piggybackCommand": {
+    "type": "connectivity.commands:createConnection",
+    "connection": {
+      "id": "kafkaml-connection-for-'"${HONO_TENANT}"'",
+      "connectionType": "amqp-091",
+      "connectionStatus": "open",
+      "uri": "amqp://kafkaml:kafkaml@rabbitmq:32473",
+      "failoverEnabled": true,
+      "sources": [
+        {
+          "addresses": [
+            "telemetry_raspberry"
+          ],
+          "authorizationContext": [
+            "pre-authenticated:kafkaml-connection"
+          ]
+        }
+      ]
+    }
+  }
+}' http:///$DITTO_IP:$DITTO_PORT/devops/piggyback/connectivity
+```
+  
+</details>
 
 #### Installing Unity plugin for Grafana
 Check [documentation](https://github.com/ertis-research/unity-plugin-for-grafana).

@@ -442,6 +442,8 @@ curl -i -X POST -u devops:${DITTO_DEVOPS_PWD} -H 'Content-Type: application/json
 #### Installing Unity plugin for Grafana
 Check [documentation](https://github.com/ertis-research/unity-plugin-for-grafana).
 
+## Deploy lightweight version of the platform for IoT devices
+
 ## Usage
 
 ## Publications

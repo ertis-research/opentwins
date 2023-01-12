@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkdocs=self.webpackChunkdocs||[]).push([[3604],{9712:a=>{a.exports=JSON.parse('{"label":"hola","permalink":"/digital-twins-platform/blog/tags/hola","allTagsPath":"/digital-twins-platform/blog/tags","count":1}')}}]);

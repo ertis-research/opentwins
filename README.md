@@ -2,6 +2,10 @@
 
 This platform has been designed to facilitate the development of digital twins and is characterised by the exclusive use of open source components. The aim is to achieve a platform that covers all the functionalities that a digital twin may require, from the most basic ones, such as simply checking its real-time state, to more advanced ones, such as the inclusion of predicted or simulated data.
 
+You can find more information about OpenTwins and its architecture in the [publication](https://arxiv.org/abs/2301.05560) below:
+
+>Robles, J., Martín, C., & Díaz, M. (2023). OpenTwins: An open-source framework for the design, development and integration of effective 3D-IoT-AI-powered digital twins. arXiv preprint arXiv:2301.05560.
+
 This platform is currently **under development**, so its use in production environments is not recommended at this stage.
 
 ## Table of Contents

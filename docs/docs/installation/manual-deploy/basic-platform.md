@@ -22,7 +22,7 @@ Also note that the values files have the variables that we recommend for the ins
 
 ### Eclipse Ditto and Eclipse Hono
 To deploy both Eclipse Ditto and Eclipse Hono we will directly install the [cloud2edge package](https://www.eclipse.org/packages/packages/cloud2edge/), which is specially created to allow these two tools to connect correctly.
-Before executing the commands we will need to have the files [pv-hono.yaml](assets/pv-hono.yaml), [pv-mongodb.yaml](files_for_manual_deploy/pv-mongodb.yaml), [pvc-mongodb.yaml](files_for_manual_deploy/pvc-mongodb.yaml) and [values-cloud2edge.yaml](files_for_manual_deploy/values-cloud2edge.yaml) in the folder where we are in the terminal.
+Before executing the commands we will need to have the files [pv-hono.yaml](assets/pv-hono.yaml), [pv-mongodb.yaml](assets/pv-mongodb.yaml), [pvc-mongodb.yaml](assets/pvc-mongodb.yaml) and [values-cloud2edge.yaml](assets/values-cloud2edge.yaml) in the folder where we are in the terminal.
 Once ready, and complying with all the [prerequisites](https://www.eclipse.org/packages/prereqs/) of the package, we execute the following commands.
 
 ```bash
@@ -41,7 +41,7 @@ If all pods are running and ready we already have the first two components insta
 ### Apache Kafka
 To deploy Kafka, the yaml files from another project have been reused, but it could also be installed [using Helm](https://github.com/bitnami/charts/tree/master/bitnami/kafka) if you prefer. 
 
-For Kafka to work, it is necessary to install [ZooKeeper](https://zookeeper.apache.org/) beforehand. In addition, [CMAK](https://github.com/deltaprojects/kafka-manager-docker), a tool to manage Apache Kafka, will be used to make it easier to use. Then, for the deployment, the [pod-zookeeper.yaml](files_for_manual_deploy/pod-zookeeper.yaml), [svc-zookeeper.yaml](files_for_manual_deploy/svc-zookeeper.yaml), [pod-kafka.yaml](files_for_manual_deploy/pod-kafka.yaml), [svc-kafka.yaml](files_for_manual_deploy/svc-kafka.yaml), [deploy-kafka-manager.yaml](files_for_manual_deploy/deploy-kafka-manager.yaml) and [svc-kafka-manager.yaml](files_for_manual_deploy/svc-kafka-manager.yaml) files will be needed. Once you have them, you only need to apply them to the chosen namespace.
+For Kafka to work, it is necessary to install [ZooKeeper](https://zookeeper.apache.org/) beforehand. In addition, [CMAK](https://github.com/deltaprojects/kafka-manager-docker), a tool to manage Apache Kafka, will be used to make it easier to use. Then, for the deployment, the [pod-zookeeper.yaml](assets/pod-zookeeper.yaml), [svc-zookeeper.yaml](assets/svc-zookeeper.yaml), [pod-kafka.yaml](assets/pod-kafka.yaml), [svc-kafka.yaml](assets/svc-kafka.yaml), [deploy-kafka-manager.yaml](assets/deploy-kafka-manager.yaml) and [svc-kafka-manager.yaml](assets/svc-kafka-manager.yaml) files will be needed. Once you have them, you only need to apply them to the chosen namespace.
 
 ```bash
 kubectl apply -f pod-zookeeper.yaml -n $NS
@@ -55,7 +55,7 @@ kubectl apply -f svc-kafka-manager.yaml -n $NS
 ```
 
 ### InfluxDB
-For InfluxDB, [Helm](https://github.com/influxdata/helm-charts/tree/master/charts/influxdb2) will again be used for deployment. The following [sc-influxdb2.yaml](files_for_manual_deploy/sc-influxdb2.yaml) and [pv-influxdb2.yaml](files_for_manual_deploy/pv-influxdb2.yaml) files will be required to be applied before installation. In addition, the recommended values are in the [values-influxdb2.yaml](files_for_manual_deploy/values-influxdb2.yaml) file (it is recommended that you check it before installing and change the *password* variable to your preference).
+For InfluxDB, [Helm](https://github.com/influxdata/helm-charts/tree/master/charts/influxdb2) will again be used for deployment. The following sc-influxdb2.yaml and pv-influxdb2.yaml files will be required to be applied before installation. In addition, the recommended values are in the values-influxdb2.yaml file (it is recommended that you check it before installing and change the *password* variable to your preference).
 
 ```bash
 helm repo add influxdata https://helm.influxdata.com/
@@ -67,7 +67,7 @@ helm install -n $NS influxdb influxdata/influxdb2 -f values-influxdb2.yaml --ver
 ```
 
 ### Grafana
-Deploying Grafana is very similar to InfluxDB. We will have to apply the file [pv-grafana.yaml](files_for_manual_deploy/pv-grafana.yaml) and install the [Helm Chart](https://github.com/grafana/helm-charts/tree/main/charts/grafana) with the values of the [values-grafana.yaml](files_for_manual_deploy/values-grafana.yaml) file (it is also recommended to modify the *password* variable).
+Deploying Grafana is very similar to InfluxDB. We will have to apply the file pv-grafana.yaml and install the [Helm Chart](https://github.com/grafana/helm-charts/tree/main/charts/grafana) with the values of the values-grafana.yaml file (it is also recommended to modify the *password* variable).
 ```bash
 helm repo add grafana https://grafana.github.io/helm-charts
 
@@ -281,7 +281,7 @@ export INFLUX_TOKEN=<INFLUX_TOKEN>
 
 ![Create token in InfluxDB](./img/create-token-influxdb.JPG)
 
-You also need to store in variables the IPs and ports of both Kafka and InfluxDB, as well as the name of the Kafka topic. These variables will be INFLUX_IP, INFLUX_PORT, KAFKA_IP, KAFKA_PORT and KAFKA_TOPIC. Once all variables are ready, Telegraf can be displayed with the values defined in the [values-telegraf.yaml](files_for_manual_deploy/values-telegraf.yaml) file.
+You also need to store in variables the IPs and ports of both Kafka and InfluxDB, as well as the name of the Kafka topic. These variables will be INFLUX_IP, INFLUX_PORT, KAFKA_IP, KAFKA_PORT and KAFKA_TOPIC. Once all variables are ready, Telegraf can be displayed with the values defined in the values-telegraf.yaml file.
 
 ```bash
 helm install -n $NS telegraf influxdata/telegraf -f values-telegraf.yaml --version=1.8.18

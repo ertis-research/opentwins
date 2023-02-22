@@ -1,5 +1,5 @@
 # This script deploys your website automatically
-name: CI
+name: Auto deploy wiki
 
 # Only trigger this script when you push to the master branch
 on:
@@ -16,7 +16,5 @@ jobs:
     - uses: actions/checkout@v2
 
     # Run our deployment command
-    - name: Enter docs folder
-      run: cd docs
     - name: Deploying the static website to gh-pages
-      run: yarn deploy
+      run: yarn deploy docs/

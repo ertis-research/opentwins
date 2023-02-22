@@ -1,21 +1,14 @@
-# This script deploys your website automatically
-name: Auto deploy wiki
+name: CI
+on: [push]
 
-# Only trigger this script when you push to the master branch
-on:
-  push:
-    branches: [ main ]
-
-# Specify the tasks to run when this script gets triggered
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
-
-    # Download our master branch
     steps:
-    - uses: actions/checkout@v2
-  
-    # Run our deployment command
-    - name: Deploying the static website to gh-pages
-      working-directory: ./docs
-      run: yarn deploy
+      - uses: actions/checkout@master
+      - uses: redkubes/docusaurus-deploy-action@v1
+        with:
+          source-folder: docs
+          git-user: $SOME_USERNAME
+          #git-password: ${{ secrets.GITHUB_TOKEN }}
+          deployment-branch: gh-pages

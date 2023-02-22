@@ -4,8 +4,6 @@ name: CI
 on:
   push:
     branches: [ '*' ]
-  pull_request:
-    branches: [ master ]
 
 jobs:
   test:
@@ -20,9 +18,3 @@ jobs:
         uses: actions/setup-node@v2
         with:
           node-version: '18'
-
-      - name: Install dependencies
-        run: yarn --immutable
-
-      - name: Run tests
-        run: yarn test

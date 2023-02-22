@@ -16,5 +16,7 @@ jobs:
     - uses: actions/checkout@v2
 
     # Run our deployment command
+    - name: Enter docs folder
+      run: cd docs
     - name: Deploying the static website to gh-pages
       run: yarn deploy

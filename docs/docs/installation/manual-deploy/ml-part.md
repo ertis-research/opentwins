@@ -2,5 +2,5 @@
 sidebar_position: 2
 ---
 
-# Machine Learning
+# Kafka-ML conection
 

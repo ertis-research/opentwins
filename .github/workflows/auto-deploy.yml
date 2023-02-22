@@ -21,6 +21,11 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node-version }}
-      - name: Deploy
-        working-directory: ./docs
-        run: yarn deploy
+      - uses: redkubes/docusaurus-deploy-action@v1
+        with:
+          source-folder: docs
+          git-user: $SOME_USERNAME
+          #git-password: ${{ secrets.GITHUB_TOKEN }}
+          deployment-branch: gh-pages
+      
+        

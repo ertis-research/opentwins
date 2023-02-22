@@ -14,7 +14,8 @@ jobs:
     # Download our master branch
     steps:
     - uses: actions/checkout@v2
-
+  
     # Run our deployment command
     - name: Deploying the static website to gh-pages
-      run: yarn deploy docs/
+      working-directory: ./docs
+      run: yarn deploy

@@ -4,7 +4,7 @@ name: CI
 # Only trigger this script when you push to the master branch
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
 
 # Specify the tasks to run when this script gets triggered
 jobs:

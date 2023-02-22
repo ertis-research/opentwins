@@ -21,5 +21,6 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node-version }}
-          source-folder: docs
-      - run: yarn deploy
+      - name: Deploy
+        working-directory: ./docs
+        run: yarn deploy

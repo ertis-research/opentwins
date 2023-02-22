@@ -1,14 +1,25 @@
-name: CI
-on: [push]
+name: Node.js CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  deploy:
+  build:
+
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x]
+
     steps:
-      - uses: actions/checkout@master
-      - uses: redkubes/docusaurus-deploy-action@v1
+      - uses: actions/checkout@v3
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
         with:
+          node-version: ${{ matrix.node-version }}
           source-folder: docs
-          git-user: $SOME_USERNAME
-          #git-password: ${{ secrets.GITHUB_TOKEN }}
-          deployment-branch: gh-pages
+      - run: yarn deploy

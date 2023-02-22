@@ -34,4 +34,4 @@ To install this versión, you have to follow the first step in order to add Erti
 ```bash
 helm install ot Ertis/OpenTwins-Lightweight -n digitaltwins
 ``` 
-As in the previous case, some connections still need to be made for the platform to work properly.
+As the previous case, some connections still need to be made for the platform to work properly.

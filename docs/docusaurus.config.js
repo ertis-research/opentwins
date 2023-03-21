@@ -9,7 +9,7 @@ const config = {
   title: 'OpenTwins',
   tagline: 'Open Source Digital Twins Platform',
   url: 'https://ertis-research.github.io',
-  baseUrl: '/digital-twins-platform',
+  baseUrl: '/OpenTwins',
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
   favicon: 'img/favicon.ico',
@@ -17,7 +17,7 @@ const config = {
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
   organizationName: 'ertis-research', // Usually your GitHub org/user name.
-  projectName: 'digital-twins-platform', // Usually your repo name.
+  projectName: 'OpenTwins', // Usually your repo name.
   trailingSlash: false,
 
   // Even if you don't use internalization, you can use this field to set useful

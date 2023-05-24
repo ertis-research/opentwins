@@ -1,0 +1,193 @@
+---
+sidebar_position: 1
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Raspberry example
+
+## Requirements
+The only requisites are:
+- Collect `IP` address of Ditto.
+- Collect `USER` and `PASSWORD`
+
+## First step. Creating the twin
+First of all, you need to understand how twins work:
+A twin has two main components:
+- **attributes**. It contains the basic information of the twin, such as the name, location, etc.
+- **features**. It contains the variables of the twin. Imagine a twin of a sensor that measures humidity and temperature. You will have two features: humidity and temperature. 
+Each feature must contain a field called `properties` that contains, as its name says, every property of the feature, for example, the value of the temperature and the time the value has been measured.
+
+
+Once we know wich data will store our twin, it is time to create it.
+To create a twin, we need to make HTTP requests, we recommend you to use Postman. We need to create a `PUT` request to the Ditto url with the next pattern and a specific payload.
+
+```bash
+PUT http://{DITTO_IP}:{PORT}/api/2/things/{nameOfThing}
+```
+
+The payload has the attributes and features of the twin mentioned above. As attributes we have the location, in this case "Spain".
+
+As features we have temperature and humidity. In this case both features has the same properties, value and timestamp, but they dont have to fit.
+```json
+{
+    "attributes": {
+        "location": "Spain"
+    },
+    "features": {
+        "temperature": {
+            "properties": {
+                "value": null,
+                "timestamp": null
+            }
+        },
+        "humidity": {
+            "properties": {
+                "value": null,
+                "timestamp": null
+            }
+        }
+    }
+}
+```
+
+Once we have checked that all the data is correct, just click send. You should recieve a 200 code of a correct execution.
+
+To check if the twin has been created properly, just send a `GET` request to the same url.
+
+```bash
+GET http://{DITTO_IP}:{PORT}/api/2/things/{nameOfThing}
+```
+
+You should be granted with the schema of the new twin.
+
+
+## Second step. Recieving the data
+A digital twin is a copy of a real object or process, but we just have a schema, so we need to feed it with data. To achieve this we can use both the Kafka or MQTT broker that are installed with the platform.
+
+Ditto needs to recieve the data in a specific format called [`Ditto Protocol`](https://www.eclipse.org/ditto/protocol-overview.html), so we need the data to be sent in that format. But don't worry if you recieve the data on other format, Ditto gives us the chance to create a mapping with Javascript to change the format when the data arrives to Ditto(We will always recommend you to send the data on Ditto protocol).
+
+Asuming that we recieve that data in Ditto protocol we can configure the connection with one of the two brokers, Kafka or MQTT. To create a connection you can proceed with the same steps as creating the twins, make a `POST` request to the url and a payload that contains the connection information.
+
+```bash
+POST http://{DITTO_IP}:{PORT}/api/2/connections
+```
+
+<Tabs>
+<TabItem value="kafka" label="Kafka">
+
+```json
+  {
+    "name": "{NAME OF THE CONNECTION}",
+    "connectionType": "kafka",
+    "connectionStatus": "open",
+    "uri": "tcp://KAFKA_BROKER_IP",
+    "sources": [
+      {
+        "addresses": [
+            {"list Of topics to read"}
+        ],
+        "consumerCount": 1,
+        "qos": 1,
+        "authorizationContext": [
+            "nginx:ditto"
+        ],
+        "headerMapping": {
+            "correlation-id": "{{header:correlation-id}}",
+            "namespace": "{{ entity:namespace }}",
+            "content-type": "{{header:content-type}}",
+            "connection": "{{ connection:id }}",
+            "id": "{{ entity:id }}",
+            "reply-to": "{{header:reply-to}}"
+        },
+        "replyTarget": {
+            "address": "{{header:reply-to}}",
+            "headerMapping": {
+                "content-type": "{{header:content-type}}",
+                "correlation-id": "{{header:correlation-id}}"
+            },
+            "expectedResponseTypes": [
+                "response",
+                "error"
+            ],
+            "enabled": true
+        }
+      }
+    ],
+    "targets": [],
+    "clientCount": 5,
+    "failoverEnabled": true,
+    "validateCertificates": true,
+    "processorPoolSize": 1,
+    "specificConfig": {
+        "saslMechanism": "plain",
+        "bootstrapServers": "KAFKA_BROKER_IP"
+    },
+    "tags": []
+  }
+```
+
+</TabItem>
+<TabItem value="mqtt" label="MQTT">
+
+```json
+  {
+    "name": "{NAME OF THE CONNECTION}",
+    "connectionType": "mqtt-5",
+    "connectionStatus": "open",
+    "uri": "tcp://MQTT_BROKER_IP",
+    "sources": [
+      {
+        "addresses": [
+            {"list Of topics to read"}
+        ],
+        "consumerCount": 1,
+        "qos": 1,
+        "authorizationContext": [
+            "nginx:ditto"
+        ],
+        "headerMapping": {
+            "correlation-id": "{{header:correlation-id}}",
+            "namespace": "{{ entity:namespace }}",
+            "content-type": "{{header:content-type}}",
+            "connection": "{{ connection:id }}",
+            "id": "{{ entity:id }}",
+            "reply-to": "{{header:reply-to}}"
+        },
+        "replyTarget": {
+            "address": "{{header:reply-to}}",
+            "headerMapping": {
+                "content-type": "{{header:content-type}}",
+                "correlation-id": "{{header:correlation-id}}"
+            },
+            "expectedResponseTypes": [
+                "response",
+                "error"
+            ],
+            "enabled": true
+        }
+      }
+    ],
+    "targets": [],
+    "clientCount": 1,
+    "failoverEnabled": true,
+    "validateCertificates": true,
+    "processorPoolSize": 1,
+    "tags": []
+  }
+```
+
+</TabItem>
+</Tabs>
+
+Once we have checked that all the data is correct, just click send. You should recieve a 200 code of a correct execution.
+
+To check if the twin has been created properly, just send a `GET` request to the same url adding the if of the new connection
+
+```bash
+GET http://{DITTO_IP}:{PORT}/api/2/connections/{connectionID}
+```
+You should be granted with the information of the connection.
+
+With all this setup, the configuration should be already done, and Ditto should be recieving the data from the broker. If you want to create an example script to send the data, just click on the next link.

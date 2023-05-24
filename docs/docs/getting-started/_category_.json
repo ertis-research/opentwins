@@ -3,6 +3,6 @@
   "position": 4,
   "link": {
     "type": "generated-index",
-    "description": "A few examples to test the platform."
+    "description": "There are two ways of creating digital twins, the first is using the Eclipse Ditto API and the second is using our Grafana plugin(WIP). \n It is recommended using Postman to make all requests but youy can use your own method."
   }
 }

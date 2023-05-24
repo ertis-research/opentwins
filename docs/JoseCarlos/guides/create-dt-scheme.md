@@ -1,1 +1,0 @@
-# Create Digital Twin scheme

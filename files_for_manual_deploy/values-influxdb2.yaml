@@ -1,0 +1,7 @@
+persistence:
+  storageClass: dt-manual
+service:
+  type: NodePort
+  nodePort: 30237
+image:
+  pullPolicy: Always

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: dt-pv-influxdb
+spec:
+  storageClassName: dt-manual
+  capacity:
+    storage: 50Gi
+  accessModes:
+  - ReadWriteOnce
+  hostPath:
+    path: /mnt/dt-platform/influxdb
+    type: DirectoryOrCreate

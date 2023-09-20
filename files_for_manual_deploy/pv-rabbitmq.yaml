@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: dt-pv-rabbitmq
+spec:
+  storageClassName: dt-sc-rabbitmq
+  capacity:
+    storage: 20Gi
+  accessModes:
+  - ReadWriteOnce
+  claimRef:
+    namespace: digitaltwins
+    name: dt-pvc-rabbitmq
+  hostPath:
+    path: /mnt/dt-platform/rabbitmq
+    type: DirectoryOrCreate

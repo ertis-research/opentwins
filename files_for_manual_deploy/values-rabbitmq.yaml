@@ -1,0 +1,12 @@
+persistence:
+  enabled: true
+  existingClaim: dt-pvc-rabbitmq
+volumePermissions:
+  enabled: true
+service:
+  type: NodePort
+  nodePorts:
+    amqp: 32473
+    manager: 31776
+auth:
+  password: example-password

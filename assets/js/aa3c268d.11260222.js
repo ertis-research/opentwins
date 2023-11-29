@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkdocs=self.webpackChunkdocs||[]).push([[5041],{7068:s=>{s.exports=JSON.parse('{"label":"hola","permalink":"/opentwins/blog/tags/hola","allTagsPath":"/opentwins/blog/tags","count":1}')}}]);

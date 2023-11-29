@@ -1,0 +1,40 @@
+# # helm upgrade --install -n digitaltwins test-telegraf influxdata/telegraf -f testeo-variables.yaml --version=1.8.27 --set config.outputs[0].influxdb_v2.token=$INFLUX_TOKEN --set config.outputs[0].influxdb_v2.urls[0]=$INFLUX_URL --set config.inputs[0].kafka_consumer.brokers[0]=$KAFKA_BROKER --set config.inputs[0].kafka_consumer.topics[0]=$KAFKA_TOPIC
+service:
+  enabled: false
+config:
+  agent:
+    debug: true
+  processors:
+    - rename:
+        replace:
+         - tag: "extra_thingId"
+           dest: "thingId"
+         - tag: "extra_attributes__parents"
+           dest: "parent"           
+         - tag: "headers_ditto-originator"
+           dest: "originator"
+         - tag: "extra_features_idSimulationRun_properties_value"
+           dest: "idSimulationRun"
+  outputs:
+    - influxdb_v2:
+        urls:
+          - ""
+        token: ""
+        organization: "influxdata"
+        bucket: "default"
+  inputs:
+    - kafka_consumer:
+        brokers:
+          - ""
+        topics:
+          - "digitaltwins"
+        tag_keys:
+          - "extra_attributes__parents"
+          - "extra_thingId"
+          - "headers_ditto-originator"
+          - "extra_features_idSimulationRun_properties_value"  
+        max_message_len: 1000000
+        data_format: "json"
+metrics:
+  internal:
+    enabled: false

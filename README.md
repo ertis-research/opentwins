@@ -307,6 +307,7 @@ curl -i -X POST -u devops:${DITTO_DEVOPS_PWD} -H 'Content-Type: application/json
     "type": "connectivity.commands:createConnection",
     "connection": {
         "id": "kafka-connection",
+        "name": "kafka-connection",
         "connectionType": "kafka",
         "connectionStatus": "open",
         "failoverEnabled": true,
@@ -320,7 +321,7 @@ curl -i -X POST -u devops:${DITTO_DEVOPS_PWD} -H 'Content-Type: application/json
             {
             "address": "digitaltwins",
             "topics": [
-                "_/_/things/twin/events",
+                "_/_/things/twin/events?extraFields=thingId,attributes/_parents,features/idSimulationRun/properties/value",
                 "_/_/things/live/messages"
             ],
             "authorizationContext": [
@@ -351,10 +352,16 @@ export INFLUX_TOKEN=<INFLUX_TOKEN>
 <img src="images/create-token-influxdb.JPG" height="300">
 </p>
 
-You also need to store in variables the IPs and ports of both Kafka and InfluxDB, as well as the name of the Kafka topic. These variables will be INFLUX_IP, INFLUX_PORT, KAFKA_IP, KAFKA_PORT and KAFKA_TOPIC. Once all variables are ready, Telegraf can be displayed with the values defined in the [values-telegraf.yaml](files_for_manual_deploy/values-telegraf.yaml) file.
+You also need to store in variables the URLs of both Kafka and InfluxDB (follow the format IP:PORT), as well as the name of the Kafka topic. These variables will be **INFLUX_URL**, **KAFKA_BROKER** and **KAFKA_TOPIC**. Once all variables are ready, Telegraf can be displayed with the values defined in the [values-telegraf.yaml](files_for_manual_deploy/values-telegraf.yaml) file.
 
 ```sh
-helm install -n $NS telegraf influxdata/telegraf -f values-telegraf.yaml --version=1.8.18
+helm upgrade --install -n $NS test-telegraf influxdata/telegraf \
+    -f values-telegraf.yaml \
+    --version=1.8.27 \
+    --set config.outputs[0].influxdb_v2.token=$INFLUX_TOKEN \
+    --set config.outputs[0].influxdb_v2.urls[0]=$INFLUX_URL \
+    --set config.inputs[0].kafka_consumer.brokers[0]=$KAFKA_BROKER \
+    --set config.inputs[0].kafka_consumer.topics[0]=$KAFKA_TOPIC
 ```
 
 If the pod is ready and running it should be working, but it is advisable to check its logs to make sure.

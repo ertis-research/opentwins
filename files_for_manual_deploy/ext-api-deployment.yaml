@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: extended-api-for-ditto-deploy
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: extended-api-for-ditto
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: extended-api-for-ditto
+    spec:
+      containers:
+      - name: extended-api-for-ditto
+        image: extended-api-for-eclipse-ditto:latest
+        env: 
+        - name: HOST 
+          value: "localhost" 
+        - name: PORT 
+          value: "8080"
+        - name: MONGO_URI_POLICIES 
+          value: "" 
+        - name: DITTO_URI_THINGS 
+          value: "" 
+        - name: DITTO_USERNAME_API 
+          value: "ditto" 
+        - name: DITTO_PASSWORD_API 
+          value: "ditto" 
+        - name: DITTO_USERNAME_DEVOPS 
+          value: "devops" 
+        - name: DITTO_PASSWORD_DEVOPS 
+          value: "foobar"
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          protocol: TCP

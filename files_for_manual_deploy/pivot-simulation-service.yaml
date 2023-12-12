@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: pivot-rest-deploy
+spec:
+  selector:
+    name: pod-pivot-rest-deploy
+  type: NodePort
+  ports:
+  - protocol: "TCP"
+    port: 7999
+    nodePort:  
+    targetPort: 8001

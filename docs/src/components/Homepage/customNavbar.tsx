@@ -29,7 +29,7 @@ export default function CustomNavbar(): JSX.Element {
                 <Link
                     style={{ height: '24px' }}
                     className='margin-right--md'
-                    to="https://github.com/ertis-research/OpenTwins">
+                    to="https://github.com/ertis-research/opentwins">
                     <ThemedImage
                         alt="github logo"
                         height='24px'

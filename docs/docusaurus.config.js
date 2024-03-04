@@ -8,7 +8,7 @@ const config = {
   title: 'OpenTwins',
   tagline: 'Open Source Digital Twins Platform',
   url: 'https://ertis-research.github.io',
-  baseUrl: '/OpenTwins',
+  baseUrl: '/opentwins',
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
   favicon: 'img/favicon.ico',

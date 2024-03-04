@@ -37,7 +37,7 @@ export default function CustomNavbar(): JSX.Element {
                             </Link>
                             <Link
                                 className="button button--secondary button--lg margin-left--md"
-                                to="https://github.com/ertis-research/OpenTwins">
+                                to="https://github.com/ertis-research/opentwins">
                                 GitHub
                             </Link>
                         </div>

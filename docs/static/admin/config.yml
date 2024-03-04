@@ -1,7 +1,7 @@
 backend:
   name: github
   branch: main 
-  repo: ertis-research/OpenTwins
+  repo: ertis-research/opentwins
   site_domain: localhost
   auth_endpoint: auth
   base_url: https://api.netlify.com

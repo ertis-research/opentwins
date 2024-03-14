@@ -16,9 +16,7 @@ This platform has been designed to facilitate the development of digital twins a
 > [!WARNING]  
 > This platform is currently **under development**, so its use in production environments is not recommended at this stage.
 
-```markdown
-[![Button Example]][Link]
-```
+<a href='https://ertis-research.github.io/opentwins' align="center" target="_blank"><img alt='Alchemy' src='https://img.shields.io/badge/Wiki-100000?style=for-the-badge&logo=Alchemy&logoColor=000000&labelColor=33d9b2&color=40407a'/></a>
 
 You can visit the wiki here [https://ertis-research.github.io/opentwins](https://ertis-research.github.io/opentwins)
 

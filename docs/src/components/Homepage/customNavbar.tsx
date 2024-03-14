@@ -13,7 +13,7 @@ export default function CustomNavbar(): JSX.Element {
                 <Link
                     style={{ fontWeight: 'bold', fontFamily: 'RobotoMono' }}
                     className='margin-right--lg'
-                    to="/docs/intro">
+                    to="/docs/quickstart">
                     documentation
                 </Link>
                 <Link

@@ -32,7 +32,7 @@ export default function CustomNavbar(): JSX.Element {
                         <div className='center-content margin-top--lg margin-bottom--md'>
                             <Link
                                 className="button button--primary button--lg"
-                                to="/docs/intro">
+                                to="/docs/quickstart">
                                 Get started
                             </Link>
                             <Link

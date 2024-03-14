@@ -8,7 +8,7 @@
 ![GitHub Repo stars](https://img.shields.io/github/stars/ertis-research/opentwins)
 
 </br>
-<a href='https://ertis-research.github.io/opentwins' target="_blank"><img alt='Alchemy' src='https://img.shields.io/badge/Wiki-100000?style=for-the-badge&logo=Alchemy&logoColor=000000&labelColor=33d9b2&color=40407a'/></a>
+<a href='https://ertis-research.github.io/opentwins' target="_blank"><img alt='Alchemy' src='https://img.shields.io/badge/Docs-100000?style=for-the-badge&logo=Alchemy&logoColor=000000&labelColor=33d9b2&color=40407a'/></a>
 </div>
 
 </br>
@@ -17,11 +17,6 @@ This platform has been designed to facilitate the development of digital twins a
 
 > [!WARNING]  
 > This platform is currently **under development**, so its use in production environments is not recommended at this stage.
-
-
-<div align="center">
-
-</div>
 
 
 <!--- You can visit the wiki here [https://ertis-research.github.io/opentwins](https://ertis-research.github.io/opentwins) --->

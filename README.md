@@ -16,7 +16,9 @@ This platform has been designed to facilitate the development of digital twins a
 > [!WARNING]  
 > This platform is currently **under development**, so its use in production environments is not recommended at this stage.
 
-[![Button Click]][https://ertis-research.github.io/opentwins] 
+```markdown
+[![Button Example]][Link]
+```
 
 You can visit the wiki here [https://ertis-research.github.io/opentwins](https://ertis-research.github.io/opentwins)
 

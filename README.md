@@ -9,4 +9,4 @@ You can find more information about OpenTwins and its architecture in the [publi
 This platform is currently **under development**, so its use in production environments is not recommended at this stage.
 
 But you can visit the wiki here
-[https://github.com/ertis-research/OpenTwins](https://ertis-research.github.io/OpenTwins/)
+[https://ertis-research.github.io/opentwins](https://ertis-research.github.io/opentwins)

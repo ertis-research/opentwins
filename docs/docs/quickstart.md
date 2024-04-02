@@ -42,7 +42,13 @@ To modify the components to be deployed and connected during the installation, y
 
 ## Define your first digital twin
 
-A digital twin is composed of static and dynamic information.
+A digital twin is composed of static and dynamic data. 
+
+**Static data.** Information relevant to the digital twin that is expected to remain constant, such as the model, the date of acquisition or the location of the machine we are replicating. 
+
+**Dynamic data.** Data that changes over time and that we will record in time series, such as the position of a mobile robot or the values measured by a sensor.
+
+For example, consider a DHT22 temperature and humidity sensor. Its digital twin, represented in JSON format following the schema provided by Eclipse Ditto, would look like this:
 
 ## Link the digital twin to a data input
 

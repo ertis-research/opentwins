@@ -1,4 +1,8 @@
-# Manual way
+---
+sidebar_position: 1
+---
+
+# Core functionality
 
 This section will explain how to deploy the platform manually. Basically, you will have to deploy or install the different components and then connect them. The procedure explained below is the one followed to deploy them in **Kubernetes** using in most cases the **Helm** option, but any other installation in which all the components are correctly installed and there is some kind of network between them to be able to communicate can be used. 
 

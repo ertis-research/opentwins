@@ -1,0 +1,8 @@
+{
+  "label": "Manual",
+  "position": 2,
+  "link": {
+    "type": "generated-index",
+    "description": "This section will explain how to deploy the platform manually."
+  }
+}

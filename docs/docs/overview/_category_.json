@@ -3,6 +3,6 @@
   "position": 2,
   "link": {
     "type": "generated-index",
-    "description": "There are two ways of installation, you can use helm, the easiest way of deployment or you can install every single component manually."
+    "description": "Here you will find detailed information about the purpose of the platform, the key concepts that are important to understand and how it works internally."
   }
 }

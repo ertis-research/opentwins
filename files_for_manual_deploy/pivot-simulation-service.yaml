@@ -8,6 +8,6 @@ spec:
   type: NodePort
   ports:
   - protocol: "TCP"
-    port: 7999
-    nodePort:  
+    port: 7998
+    nodePort: 30667
     targetPort: 8001

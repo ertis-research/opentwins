@@ -18,7 +18,7 @@ A digital twin is composed of static and dynamic data.
 
 + **Dynamic data.** Data that changes over time and that we will record in time series, such as the position of a mobile robot or the values measured by a sensor.
 
-TENGO QUE EXPLICAR AQUI QUE ES UN THING, QUE STATIC ES ATTRIBUTE Y TO LO DE DITTO VAYA. ABAJO TAMBIEN TEMA POLITICAS Y DEMAS.
+[comment]:<TENGO QUE EXPLICAR AQUI QUE ES UN THING, QUE STATIC ES ATTRIBUTE Y TO LO DE DITTO VAYA. ABAJO TAMBIEN TEMA POLITICAS Y DEMAS.>
 
 For example, consider a DHT22 temperature and humidity sensor. Its digital twin, represented in JSON format following the [schema provided by Eclipse Ditto](https://eclipse.dev/ditto/basic-thing.html), would look like this:
 

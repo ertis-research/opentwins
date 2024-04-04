@@ -8,12 +8,6 @@ This section will explain how to deploy the platform manually. Basically, you wi
 
 It is not necessary to deploy all components if not all functionalities are to be used. Check the [architecture](#architecture) section to find out which ones are essential and what functionality is covered by each of them.
 
-## Requirements to deploy manually
-- [Docker](https://www.docker.com/)
-- [Kubernetes](https://kubernetes.io/)
-- [Helm](https://helm.sh/)
-
-
 ## Steps to deploy
 We recommend installing all components in the same Kubernetes namespace to make it easier to identify and control them all. In our case the namespace name will be stored in a bash variable called **NS**.
 

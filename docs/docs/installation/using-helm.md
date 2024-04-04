@@ -1,17 +1,8 @@
 ---
-sidebar_position: 1
+sidebar_position: 2
 ---
 
 # Helm
-
-## Requirements
-
-- Container manager:
-  - Tested on [Docker](https://www.docker.com/) and [ContainerD](https://containerd.io/).
-- [Kubernetes](https://kubernetes.io/releases/download/):
-  - Tested on [Kubernetes](https://kubernetes.io/releases/download/) and [K3s](https://k3s.io/).
-- [Helm](https://helm.sh/docs/intro/install/) version 16.14 or above.
-
 
 ## Installation
 First of all, you have to add ERTIS Research group helm repository to your helm repository list:

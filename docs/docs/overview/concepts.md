@@ -42,3 +42,8 @@ For example, consider a DHT22 temperature and humidity sensor. Its digital twin,
   }
 }
 ```
+
+### Digital twin type
+
+### Digital twins composition
+

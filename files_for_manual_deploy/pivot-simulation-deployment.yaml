@@ -24,11 +24,11 @@ spec:
         - name: KUBE_HOST
           value: 
         - name: IMAGE_NAME
-          value: 
+          value: ertis/ertis-pivot-runner
         - name: DEPLOYMENT_NAME
-          value:
+          value: pivot-rest-deploy
         - name: NAMESPACE
-          value: digitaltwins
+          value: 
         ports:
         - containerPort: 8001
         imagePullPolicy: Always

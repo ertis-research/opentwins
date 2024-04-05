@@ -16,7 +16,7 @@ spec:
       name: pivot-rest-deploy
     spec:
       containers:
-      - image: ertis-rest-api-pivot
+      - image: ertis/ertis-rest-api-pivot
         name: pivot-rest-deploy
         env:
         - name: KUBE_TOKEN

@@ -56,4 +56,23 @@ The architecture highlights in **yellow** the components that facilitate the int
   - [Error detection for Eclipse Hono with Kafka-ML](https://github.com/ertis-research/error-detection-for-eclipse-hono-with-kafka-ml). An ML model useful in the construction of a digital twin is one capable of generating data that a sensor should produce in case it loses connection or experiences a failure. To automate this, we have developed an optional service with similar functionalities to the one mentioned above, but with an important particularity: it will only invoke the model when an interruption in data reception by the device is detected. This service takes into account the frequency with which the data is emitted by the device. As soon as an anomaly is identified, the service will format and send the last data received following the expected frequency until the connection is restored and real data is received again. In this way, the **normal operation of the device is simulated**, ensuring continuity of information for the digital twin.
 
 ### 3D representation
-The **red part**...
+
+:::note
+
+Although Unity is not open source, at the moment it is the only graphics engine we have tested the plugin with. 
+However, it could be replaced by any other graphics engine that compiles in WebGL, such as [Godot](https://godotengine.org/), since the plugin is expected to be able to render any WebGL compilation. However, since we have not yet tested with other graphics engines, we cannot guarantee this.
+
+:::
+
+Although it may seem a secondary aspect, the representation of the digital twin makes a major difference in its utility and adoption. An intuitive and attractive visual interface for users will facilitate the understanding and accessibility of the data received, which simplifies the optimization of the actual system. 3D representations stand out as one of the most effective options in this sense, which motivates most private digital twin platforms to offer support for them. For this reason, OpenTwins allows adding an interactive 3D representation of the digital twin that reacts dynamically to data received from any source (real, predicted or simulated). The components highlighted in **red** are the ones that enable this functionality.
+
+  - [Unity](https://unity.com/) This powerful graphics engine, versatile in both 3D and 2D development, is widely used in the creation of video games, simulations and engineering. It is recognized as one of the most popular, supported by a large and active community. Although it is not open source software, it can be used [free of charge for personal or low-profit projects](https://unity.com/es/products/unity-personal?currency=EUR). The technology of this engine allows to assign behaviors to 3D objects by means of scripts, which facilitates interaction both with the user and with other elements of the environment.
+
+  :::info
+  Unity offers a wide range of [formats for importing 3D models](https://docs.unity3d.com/2023.2/Documentation/Manual/3D-formats.html), but we emphasize its integration with [Blender](https://www.blender.org/), an open source 3D creation suite that is equally popular and supported by an active community. 
+  :::
+
+  On the other hand, Unity provides the possibility to compile projects in the Unity [WebGL](https://get.webgl.org/) format, perfect for web rendering. This option is the choice of OpenTwins, as it allows easy integration with existing web technologies, ensuring accessibility and distribution without the need for additional installations.
+
+  - [Unity panel plugin for Grafana](https://github.com/ertis-research/unity-plugin-for-grafana). Since Grafana serves as the front-end of OpenTwins, it is convenient that the 3D representations are embedded directly into this tool, providing a unified management and visualization of the digital twin. To achieve this, a plugin capable of rendering WebGL compilations within a Grafana panel has been developed. This plugin is able to send the digital twin data from Grafana to the compilation, allowing it to influence the rendering in real time. In addition, this plugin enables direct user interaction with the 3D model, allowing actions on 3D elements to affect other panels of the dashboard. For example, by clicking on a 3D element, another Grafana panel can automatically display data related to it.
+

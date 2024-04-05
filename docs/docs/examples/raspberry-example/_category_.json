@@ -1,0 +1,8 @@
+{
+  "label": "Raspberry Pi example",
+  "position": 2,
+  "link": {
+    "type": "generated-index",
+    "description": "This section will explain how to reproduce Raspberry pi example."
+  }
+}

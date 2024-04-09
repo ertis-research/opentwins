@@ -1,0 +1,44 @@
+replicaCount: 1
+service:
+  enabled: false
+config:
+  agent:
+    debug: true
+  processors:
+    - rename:
+        replace:        
+         - tag: "value_idSimulationRun_properties_value"
+           dest: "idSimulationRun"
+    - starlark:
+        source: |
+          def apply(metric):
+            topic = metric.tags["topic"]
+            if topic != None and topic != "":
+              thId = topic.split('/')
+              if len(thId) > 1: metric.tags["thingId"] = thId[0]+":"+thId[1]
+              return metric
+            else:
+              return None
+  outputs:
+    - influxdb_v2:
+        urls:
+          - "http://{IP_INFLUX}:30716"
+        token: "Hjh3ysMQ6evK=qqpFSYqn-s3JGovJLfHxyCDM=eNNZkdM-uuro93dNtJcodejLYYob2geKQ/29z3Kxui=y6FlL?dZeU9EFRxrYn284V/kZG5==jxLVAMJrYOv?LF79ahwIbhvstMN6gmfQ3DH7/IzUB7VlBZK-cd8aN7YqiFrYRLkBUv7H0QkbqPxgf2dMgCMCwZaLMk9RUeMaBfx2lQ=Mq1EEJJw-Jp!BmpCDnhlc!6D22PaE=Y3sgWWNhRv8oP"
+        organization: "opentwins"
+        bucket: "default"
+        timeout: "120s"
+  inputs:
+    - kafka_consumer:
+        brokers:
+          - "{KAFKA_IP}:{KAFKA_PORT}"
+        topics:
+          - "riego"
+        tags:
+          parent: "pivot:irrigation_simulation"
+        tag_keys:
+          - "value_idSimulationRun_properties_value"
+          - "topic"
+        data_format: "json"
+metrics:
+  internal:
+    enabled: false

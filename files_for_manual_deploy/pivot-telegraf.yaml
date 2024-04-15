@@ -22,7 +22,7 @@ config:
   outputs:
     - influxdb_v2:
         urls:
-          - "http://{IP_INFLUX}:30716"
+          - http://INFLUX_URN #http://opentwins-influxdb2:80
         token: "Hjh3ysMQ6evK=qqpFSYqn-s3JGovJLfHxyCDM=eNNZkdM-uuro93dNtJcodejLYYob2geKQ/29z3Kxui=y6FlL?dZeU9EFRxrYn284V/kZG5==jxLVAMJrYOv?LF79ahwIbhvstMN6gmfQ3DH7/IzUB7VlBZK-cd8aN7YqiFrYRLkBUv7H0QkbqPxgf2dMgCMCwZaLMk9RUeMaBfx2lQ=Mq1EEJJw-Jp!BmpCDnhlc!6D22PaE=Y3sgWWNhRv8oP"
         organization: "opentwins"
         bucket: "default"
@@ -30,9 +30,11 @@ config:
   inputs:
     - kafka_consumer:
         brokers:
-          - "{KAFKA_IP}:{KAFKA_PORT}"
+          - "KAFKABROKER" #"opentwins-kafka:9092"
         topics:
           - "riego"
+        sasl_version: 0
+        version: "3.6.1"
         tags:
           parent: "pivot:irrigation_simulation"
         tag_keys:

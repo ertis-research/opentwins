@@ -1,0 +1,35 @@
+---
+sidebar_position: 2
+---
+
+# Creation of the schema of the digital twin
+
+The way to interact with [Eclipse Ditto](https://eclipse.dev/ditto/index.html) and therefore create not only digital twins, but connections, etc. is through http requests and methods. 
+Although the graphical interface of OpenTwins makes it unnecessary to go so low level, the option to communicate directly with Eclipse Ditto is still available.
+
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+```mdx-code-block
+<Tabs className="unique-tabs"
+    defaultValue="ui"
+    values={[
+        {label: 'Using Grafana interface', value: 'ui'},
+        {label: 'Using http methods', value: 'http'},
+    ]}>
+<TabItem value="ui">
+```
+
+To create a new digital twin schema using OpenTwins plugin in Grafana just select "Create new twin" button in Twins tab.
+![CreateTwin](./img/createTwinButton.png)
+
+
+
+
+```mdx-code-block
+</TabItem>
+
+<TabItem value="http">This is an orange</TabItem>
+</Tabs>
+```

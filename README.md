@@ -9,6 +9,7 @@
 
 </br>
 <a href='https://ertis-research.github.io/opentwins' target="_blank"><img alt='Read the Docs' src='https://img.shields.io/badge/Docs-100000?style=for-the-badge&logo=Read the Docs&logoColor=000000&labelColor=33d9b2&color=40407a'/></a>
+<a href='https://github.com/ertis-research/Helm-charts/tree/main/OpenTwins' target="_blank"><img alt='Helm' src='https://img.shields.io/badge/Helm-100000?style=for-the-badge&logo=Helm&logoColor=000000&labelColor=33d9b2&color=40407a'/></a>
 </div>
 
 </br>

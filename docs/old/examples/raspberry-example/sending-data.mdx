@@ -1,0 +1,232 @@
+---
+sidebar_position: 1
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Sending data to Ditto
+In this case we will use a Raspberry Pi 3B with Raspbian buster OS connected to a DHT22 temperature and humidity sensor.
+
+## Setting up the Raspberry Pi
+In the following image the pins of the Raspberry used are shown.
+
+We will use pins 2, 6, 23 and 24.
+
+## Obtaining sensor data
+To get the data from the sensor it is necessary to install its library.
+
+```bash
+sudo pip3 install Adafruit_DHT
+```
+We can test the operation of the sensor by creating a .py file with the following code (in our case it is called dht_code.py and I have placed it on the desktop).
+
+
+```python
+import Adafruit_DHT
+import time
+
+SENSOR_DHT = Adafruit_DHT.DHT22
+PIN_DHT = 24
+
+while True:
+    humedad, temperatura = Adafruit_DHT.read(SENSOR_DHT, PIN_DHT)
+    if humedad is not None and temperatura is not None:
+        print("Temp={0:0.1f}C Hum={1:0.1f}%".format(temperatura, humedad))
+    else:
+        print("Lecture fails, chech connection");
+    time.sleep(3);
+```
+And we run it as follows:
+
+```bash
+cd Desktop/
+python3 dht_code.py 
+```
+
+## Installing Mosquitto on Raspberry
+
+To send the data to DITTO we will use MQTT with the *Mosquitto* broker.
+
+```bash
+sudo wget http://repo.mosquitto.org/debian/mosquitto-repo.gpg.key
+sudo apt-key add mosquitto-repo.gpg.key
+cd /etc/apt/sources.list.d/
+sudo wget http://repo.mosquitto.org/debian/mosquitto-buster.list
+sudo -i
+apt-get update
+apt-get install mosquitto
+apt-get install mosquitto-clients
+```
+With this we would already have Mosquitto installed on our Raspberry. To test it we can open two terminals, subscribe to a *topic* with one and publish to that *topic* with another.
+
+```bash
+mosquitto_sub -h localhost -t casa/comedor/temperatura
+```
+
+```bash
+mosquitto_pub -h localhost -t casa/comedor/temperatura -m "Temperatura: 25ºC"
+```
+## Configuring Mosquitto on raspberry
+
+If we wanted to try to send and receive messages by MQTT between the raspberry and another device, we would have to configure the following.
+
+1. From the main route of the Raspberry edit the Mosquitto configuration file.
+
+```bash
+sudo nano /etc/mosquitto/mosquitto.conf
+```
+1. Write these three lines at the end of the file to enable connections with any IP through port 1883 and configure authentication.
+
+```
+listener 1883 0.0.0.0
+
+password_file /etc/mosquitto/passwd
+allow_anonymous true
+```
+So that mosquito.conf would look like this:
+
+```
+# Place your local configuration in /etc/mosquitto/conf.d/
+#
+# A full description of the configuration file is at
+# /usr/share/doc/mosquitto/examples/mosquitto.conf.gz
+
+pid_file /run/mosquitto/mosquitto.pid
+
+persistence true
+persistence_location /var/lib/mosquitto/
+
+log_dest file /var/log/mosquitto/mosquitto.log
+log_type all
+log_timestamp true
+
+include_dir /etc/mosquitto/conf.d
+
+listener 1883 0.0.0.0
+
+password_file /etc/mosquitto/passwd
+allow_anonymous true
+```
+1. Save the file with Ctrl-O, Enter and Ctrl-X.
+2. Create a user with password using the following command. Replace USERNAME with the username you want. When you run it, it will ask you to enter a password, which will not be visible while you type it.
+
+```bash
+sudo mosquitto_passwd -c /etc/mosquitto/passwd USERNAME
+```
+1. Restart Mosquitto with the following command:
+
+```bash
+sudo systemctl restart mosquitto
+```
+Finally, we would have Mosquitto configured to receive and send from other IPs. To do this you have to add -u "USERNAME" and -P "PASSWORD" (including quotes) to the respective command.
+
+For example (in this case being *user* both the user and the password):
+
+```bash
+mosquitto_sub -h 192.168.0.27 -u "usuario" -P "usuario" -t "/Raspberry/Sensores/DHT22"
+```
+
+## Sending data to MQTT from Raspberry
+
+To work with MQTT in python we will need to make use of Eclipse Paho.
+
+```bash
+sudo pip3 install paho-mqtt
+```
+Now, we will create a .py file that publishes the sensor data in the corresponding topic of MQTT. For this we have adapted the code example exposed in the following link to the DHT22 sensor with the Adafruit_DHT library and the requirements of MQTT.
+
+[How to use MQTT in Python (Paho)](https://www.emqx.com/en/blog/how-to-use-mqtt-in-python)
+
+In addition, the message sent by MQTT regarding the Ditto Protocol has been made following both the documentation and an example of use.
+
+[Things - Create-Or-Modify protocol specification](https://www.eclipse.org/ditto/protocol-specification-things-create-or-modify.html)
+
+- Code to send sensor data to MQTT and Eclipse Ditto
+    
+    ```python
+    from paho.mqtt import client as mqtt_client
+    import time
+    import random
+    import Adafruit_DHT
+    import json
+    
+    #Constants to connect to MQTT
+    broker = "IP OF MQTT"
+    port = POR OF MQTT
+    topic = "telemetry"
+    client_id = f'python-mqtt-{random.randint(0, 1000)}'
+    username = "raspberry_DHT22_1@ditto"
+    password = "password"
+    
+    #Constantes para obtener información del sensor
+    SENSOR_DHT = Adafruit_DHT.DHT22
+    PIN_DHT = 24
+    
+    #Constantes para crear el mensaje de Eclipse Ditto
+    DITTO_NAMESPACE = "raspberry";
+    DITTO_THING_ID = "DHT22_1";
+    
+    def connect_mqtt():
+        def on_connect(client, userdata, flags, rc):
+            if rc == 0:
+                print("Connected to MQTT Broker!")
+            else:
+                print("Failed to connect, return code %d\n", rc)
+        # Set Connecting Client ID
+        client = mqtt_client.Client(client_id)
+        client.username_pw_set(username, password)
+        client.on_connect = on_connect
+        client.connect(broker, port)
+        return client
+    
+    def publish(client):
+         while True:
+             time.sleep(1)
+             msg = getValues();
+             if msg is not None:
+                result = client.publish(topic, msg)
+                status = result[0]
+                if status == 0:
+                    print(f"Send '{msg}' to topic '{topic}'")
+                else:
+                    print(f"Failed to send message to topic {topic}")
+    
+    def getValues():
+        humedad, temperatura = Adafruit_DHT.read(SENSOR_DHT, PIN_DHT)
+        if humedad is not None and temperatura is not None:
+            temp = "{0:0.1f}".format(temperatura)
+            hum = "{0:0.1f}".format(humedad)
+            output =  "{\"topic\": \""
+            output += DITTO_NAMESPACE
+            output += "/"
+            output += DITTO_THING_ID
+            output += "/things/twin/commands/modify\",\"headers\":{\"response-required\":false, \"content-type\":\"application/vnd.eclipse.ditto+json\"},"
+            output += "\"path\": \"/features\", \"value\":{"
+            output += sensorString("temperature", temp) 
+            output += ","
+            output += sensorString("humidity", hum)
+            output += "}}"
+            return output
+        else:
+            print("Failed on lecture, check circuit")
+            return None
+    
+    def sensorString(name, value):
+        return "\"" + name + "\": { \"properties\": { \"value\": " + value + "}}"; 
+    
+    def run():
+        client = connect_mqtt()
+        client.loop_start()
+        publish(client)
+    
+    if __name__ == '__main__':
+        run()
+    ```
+    
+This code has been saved in a .py file with the name of *dht22publisher.py* and have saved it on the desktop. To execute it we use:
+
+```bash
+cd Desktop/
+python3 dht22publisher.py
+```

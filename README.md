@@ -26,6 +26,6 @@ You can find more information about OpenTwins and its architecture in the public
 
 >Robles, J., Martín, C., & Díaz, M. (2023). OpenTwins: An open-source framework for the development of next-gen compositional digital twins. [Computers in Industry, 152, 104007.](https://www.sciencedirect.com/science/article/pii/S0166361523001574)
 
->Infante S, Martín C, Robles J, et al. Integrating FMI and ML/AI models on the open-source digital twin framework OpenTwins. [Softw: Pract Exper. 2024; 1-21. doi: 10.1002/spe.3322](https://onlinelibrary.wiley.com/doi/epdf/10.1002/spe.3322?domain=p2p_domain&token=K37SGCMQKSIRHFYFIGXG)
+>Infante S, Martín C, Robles J, et al. Integrating FMI and ML/AI models on the open-source digital twin framework OpenTwins. [Softw: Pract Exper. 2024; 1-21. doi: 10.1002/spe.3322](https://onlinelibrary.wiley.com/doi/epdf/10.1002/spe.3322)
 
 

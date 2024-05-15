@@ -26,7 +26,6 @@ const config = {
     defaultLocale: 'en',
     locales: ['en'],
   },
-  
   presets: [
     [
       'classic',
@@ -79,7 +78,7 @@ const config = {
       },
       footer: {
         style: 'dark',
-        copyright: `Copyright © ${new Date().getFullYear()} My Project, Inc. Built with Docusaurus.`,
+        copyright: `Copyright © ${new Date().getFullYear()} OpenTwins. Built with Docusaurus. Icons from Flaticon.`,
       },
       prism: {
         theme: lightCodeTheme,

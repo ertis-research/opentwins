@@ -1,2 +1,2 @@
 
-# Bouncing ball example
+# Bouncing ball

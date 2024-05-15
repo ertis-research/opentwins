@@ -1,0 +1,227 @@
+---
+sidebar_position: 1
+---
+
+import useBaseUrl from '@docusaurus/useBaseUrl';
+import ThemedImage from '@theme/ThemedImage';
+
+# Quickstart
+
+Welcome to OpenTwins, a flexible platform adapted to your needs! Although OpenTwins offers extensive customization options, we understand the importance of simplicity for beginners. Therefore, let's embark on a short journey together, showing you the quickest route to deploy the platform and develop a functional digital twin.
+
+## Installation
+
+### Prerequisites
+Please be sure you have the following utilities installed on your host machine:
+
+- [Docker](https://www.docker.com/)
+- [Kubernetes](https://kubernetes.io/releases/download/)
+- [Helm](https://helm.sh/docs/intro/install/) v3
+
+If you don't have a Kubernetes cluster, you can set one up on local using [minikube](https://minikube.sigs.k8s.io/docs/). For a smooth deployment experience, we suggest you use the following minimum configuration values.
+
+```bash
+minikube start --cpus 4 --disk-size 40gb --memory 8192
+```
+```bash
+kubectl config use-context minikube
+```
+
+### Deploy
+The quickest way to deploy OpenTwins is [using Helm](https://helm.sh/docs/intro/using_helm/).
+
+The following command adds the ERTIS repository where the OpenTwins helm chart is located.
+
+```bash
+helm repo add ertis https://ertis-research.github.io/Helm-charts/
+```
+
+To deploy the platform with recommended functionality, use the command below:
+
+```bash
+helm upgrade --install opentwins ertis/OpenTwins -n opentwins --wait --dependency-update
+```
+
+To modify the components to be deployed and connected during the installation, you can check the [installation via Helm](./installation/using-helm.md).
+
+
+## Create your first digital twin
+
+<center>
+<img
+  src={require('./img/create-digital-twins.png').default}
+  alt="Create digital twins"
+  style={{ width: 700, margin: 40 }}
+/>
+</center>
+
+**A digital twin must be at least a synchronized replica of a real system or object**. To create it, the first step involves understanding the purpose of the digital twin, designing its structure and defining its most relevant characteristics. Next, it is necessary to define this information in OpenTwins and then connect the data sources that will feed the model. Finally, it is necessary to represent the data in a way that is understandable to any user.
+
+Optionally, other useful functionalities can be added to the digital twin. In OpenTwins, we offer the integration of AI/ML models, the addition of 3D models and the execution of FMI or containerized simulations. However, this tutorial will not cover these extra functionalities, so we recommend consulting their respective guides for more information.
+
+Following these steps, we will use OpenTwins to develop the **digital twin of a car**. In this case, for simplicity, we will focus only on the speed and direction of the car's four wheels. In addition, we will record the GPS location of the vehicle for tracking.
+
+
+### Design
+
+Taking advantage of the platform's functionalities, we will create a [composite digital twin](./overview/concepts.md#digital-twins-composition). 
+For this purpose, we will define [types](./overview/concepts.md#digital-twin-type) "t_car" and "t_wheel", which will abstract information about the car and the wheel, respectively. 
+These types will be linked by a composition relation, which means that a car comprises four wheels. Once all this is set up, instantiating the car as a digital twin will automatically generate twins for all four wheels.
+In this way, we can independently access the data for each wheel and easily add digital twins for other cars or other contexts.
+
+<center>
+<img
+  src={require('./img/model-car-example.jpg').default}
+  alt="Create digital twins"
+  style={{ width: 700 }}
+/>
+</center>
+
+:::info
+The creation of **types is not essential** to create a digital twin, but **it is recommended** to facilitate future work. You can create digital twins directly without defining a type, just select the *from scratch* option in the twin creation form.
+:::
+
+### Definition
+
+#### Create Car type
+
+First, we will create the car type. To do so, we navigate to the _Types_ section in the interface and click on the blue _Create new type_ button. In this form, we must fill in the [digital twin information](./overview/concepts.md#digital-twin-content) that will be common for all instances. This includes the name, description and image of the twin, along with the values it will store, in this case **gps**. 
+We will define this type within a namespace and assign it a name.
+The combination of the namespace and the name will be referred to as the [thingId](https://eclipse.dev/ditto/3.3/basic-thing.html#thing-id).
+
+<details>
+  <summary>Screenshots of the filled form</summary>
+  <div>
+    <center>
+        <img
+        src={require('./img/create-type-car-1.png').default}
+        alt="Create type - Identification and type information"
+        />
+        <img
+        src={require('./img/create-type-car-2.png').default}
+        alt="Create type - attributes and features"
+        />
+    </center>
+  </div>
+</details>
+
+The JSON generated in [Ditto Thing](https://eclipse.dev/ditto/3.3/basic-thing.html#model-specification) model is shown to the right of the form, which in this case corresponds to the following JSON:
+
+```json
+{
+    "thingId": "example:t_car",
+    "policyId": "default:basic_policy",
+    "attributes": {
+        "name": "Car",
+        "description": "Digital twin example for quickstart",
+        "image": "https://images.pexels.com/photos/119435/pexels-photo-119435.jpeg"
+    },
+    "features": {
+        "gps": {
+            "properties": {
+                "value": null
+            }
+        }
+    }
+}
+```
+
+Click on the blue _Create type_ button to create the type. A message should appear indicating that the type has been successfully created. You can close this message and return to the main screen.
+
+:::info
+
+If you have installed OpenTwins with Helm, you should have a basic policy. Currently, we do not take into account the restriction of access to digital twins by [policy](https://eclipse.dev/ditto/3.3/basic-policy.html), so we always use the same one. Still, using this functionality is possible with OpenTwins, although you must interact directly with Eclipse Ditto. 
+
+For more details see the [Eclipse Ditto documentation](https://eclipse.dev/ditto/3.3/http-api-doc.html#/Policies).
+
+:::
+
+#### Create Wheel type
+
+Next we will create the type for the wheels. 
+In the list of types, we will access the type of the car we have just created to see its information. 
+Here we select the **children tab** and click on the **create new type** button.
+This form is almost identical to the previous one, with the difference that we can directly specify the number of instances of this new type to be created when a *t_car* type is instantiated.
+In our example we will have to indicate a 4 in this section and fill in the rest of the form as before. 
+This type, in addition to its identification and basic information, will have as features the **velocity** and **direction** of the wheel.
+
+<details>
+  <summary>Screenshots of the filled form</summary>
+  <div>
+    <center>
+        <img
+        src={require('./img/create-type-wheel-1.png').default}
+        alt="Create type - Identification and type information"
+        />
+        <img
+        src={require('./img/create-type-wheel-2.png').default}
+        alt="Create type - attributes and features"
+        />
+    </center>
+  </div>
+</details>
+
+In this case the JSON of the generated Ditto Thing is the following:
+
+```json
+{
+    "thingId": "example:t_wheel",
+    "policyId": "default:basic_policy",
+    "attributes": {
+        "name": "Wheel",
+        "description": "Digital twin example for quickstart",
+        "image": "https://images.pexels.com/photos/111766/pexels-photo-111766.jpeg"
+    },
+    "features": {
+        "velocity": {
+            "properties": {
+                "value": null
+            }
+        },
+        "direction": {
+            "properties": {
+                "value": null
+            }
+        }
+    }
+}
+```
+
+
+After clicking the **Create type** button, a confirmation message will appear.
+If we now navigate to the children tab of the *t_car* type, it will show that the *t_wheel* type is one of its children and will be instantiated four times.
+
+<center>
+<img
+    src={require('./img/children-car.png').default}
+    alt="Children of car type"
+/>
+</center>
+
+#### Create the digital twins
+
+
+All that remains is to instantiate the car type so that all the twins are created. 
+To do this, navigate to the *Twins* section and click on **Create a new twin**. 
+In the form, specify the identification of the twin and select the *t_car* type. 
+All data will be filled in automatically, though you can modify it if desired by activating the customization switch.
+
+<details>
+  <summary>Screenshots of the filled form</summary>
+  <div>
+    <center>
+    <img
+        src={require('./img/create-twin-car.png').default}
+        alt="Create twin form"
+    />
+    </center>
+  </div>
+</details>
+
+After clicking on create twin, the 5 digital twins will be generated automatically. A successfull message will appear when the process is finished.
+If we check the list of twins, we will see our twin example: car. 
+By clicking on it and accessing the children tab, we will find four twins corresponding to its wheels, each with the features specified in their respective type.
+
+### Connection
+
+### Visualization

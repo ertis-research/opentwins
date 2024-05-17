@@ -65,7 +65,7 @@ Following these steps, we will use OpenTwins to develop the **digital twin of a 
 ### Design
 
 Taking advantage of the platform's functionalities, we will create a [composite digital twin](./overview/concepts.md#digital-twins-composition). 
-For this purpose, we will define [types](./overview/concepts.md#digital-twin-type) "t_car" and "t_wheel", which will abstract information about the car and the wheel, respectively. 
+For this purpose, we will define [types](./overview/concepts.md#digital-twin-type) "car" and "wheel", which will abstract information about the car and the wheel, respectively. 
 These types will be linked by a composition relation, which means that a car comprises four wheels. Once all this is set up, instantiating the car as a digital twin will automatically generate twins for all four wheels.
 In this way, we can independently access the data for each wheel and easily add digital twins for other cars or other contexts.
 
@@ -109,7 +109,7 @@ The JSON generated in [Ditto Thing](https://eclipse.dev/ditto/3.3/basic-thing.ht
 
 ```json
 {
-    "thingId": "example:t_car",
+    "thingId": "example:car",
     "policyId": "default:basic_policy",
     "attributes": {
         "name": "Car",
@@ -140,8 +140,8 @@ For more details see the [Eclipse Ditto documentation](https://eclipse.dev/ditto
 
 Next we will create the type for the wheels. 
 In the list of types, we will access the type of the car we have just created to see its information. 
-Here we select the **children tab** and click on the **create new type** button.
-This form is almost identical to the previous one, with the difference that we can directly specify the number of instances of this new type to be created when a *t_car* type is instantiated.
+Here we select the *children* tab and click on the *Create new type* button.
+This form is almost identical to the previous one, with the difference that we can directly specify the number of instances of this new type to be created when a car type is instantiated.
 In our example we will have to indicate a 4 in this section and fill in the rest of the form as before. 
 This type, in addition to its identification and basic information, will have as features the **velocity** and **direction** of the wheel.
 
@@ -165,7 +165,7 @@ In this case the JSON of the generated Ditto Thing is the following:
 
 ```json
 {
-    "thingId": "example:t_wheel",
+    "thingId": "example:wheel",
     "policyId": "default:basic_policy",
     "attributes": {
         "name": "Wheel",
@@ -188,13 +188,14 @@ In this case the JSON of the generated Ditto Thing is the following:
 ```
 
 
-After clicking the **Create type** button, a confirmation message will appear.
-If we now navigate to the children tab of the *t_car* type, it will show that the *t_wheel* type is one of its children and will be instantiated four times.
+After clicking the *Create type* button, a confirmation message will appear.
+If we now navigate to the children tab of the car type, it will show that the wheel type is one of its children and will be instantiated four times.
 
 <center>
 <img
     src={require('./img/children-car.png').default}
     alt="Children of car type"
+    style={{ width: 600 }}
 />
 </center>
 
@@ -202,8 +203,8 @@ If we now navigate to the children tab of the *t_car* type, it will show that th
 
 
 All that remains is to instantiate the car type so that all the twins are created. 
-To do this, navigate to the *Twins* section and click on **Create a new twin**. 
-In the form, specify the identification of the twin and select the *t_car* type. 
+To do this, navigate to the *Twins* section and click on *Create a new twin*. 
+In the form, specify the identification of the twin and select the car type. 
 All data will be filled in automatically, though you can modify it if desired by activating the customization switch.
 
 <details>
@@ -218,10 +219,190 @@ All data will be filled in automatically, though you can modify it if desired by
   </div>
 </details>
 
-After clicking on create twin, the 5 digital twins will be generated automatically. A successfull message will appear when the process is finished.
-If we check the list of twins, we will see our twin example: car. 
+After clicking on *Create twin*, the 5 digital twins will be generated automatically. A successfull message will appear when the process is finished.
+If we check the list of twins, we will see our twin example:car. 
 By clicking on it and accessing the children tab, we will find four twins corresponding to its wheels, each with the features specified in their respective type.
 
+<center>
+<img
+    src={require('./img/children-car-twin.png').default}
+    alt="Children of car type"
+/>
+</center>
+
+**The composite digital twin has already been defined.**
+
 ### Connection
+
+Once we have the digital twin defined, we need to feed it with data. 
+Eclipse Ditto requires data updates to be sent in [Ditto Protocol](https://eclipse.dev/ditto/3.3/protocol-specification.html#dittoProtocolEnvelope), which is a JSON format that indicates which parts of the digital twin we want to update and how to do it.
+
+:::info
+It is also possible to connect Eclipse Ditto with messaging brokers that use other message formats. 
+We can add a [JavaScript mapping](https://eclipse.dev/ditto/3.3/connectivity-mapping.html#javascript-examples) to the Eclipse Ditto connection, which will automatically transform the messages to the Ditto Protocol format.
+:::
+
+For Eclipse Ditto to collect the data, it is necessary to establish a [connection](https://eclipse.dev/ditto/connectivity-overview.html) through MQTT, AMQP or Kafka, providing all the required information (address, port, credentials, etc.). 
+In this example, we will take advantage of the source connection that is automatically created with the installation of Helm (`mosquitto-source-connection`). 
+This connection pulls messages via MQTT from the Mosquitto deployed with the platform, using any subtopic within the telemetry topic (i.e. `telemetry/#`). 
+By default, it does not include any JavaScript mapping, so we will send messages directly in Ditto Protocol. 
+If you need to use another connection, see the [Eclipse Ditto documentation](https://eclipse.dev/ditto/3.3/http-api-doc.html#/Connections).  
+
+We will need to get the address of Mosquitto, which will depend on your installation.
+
+- **If you are using a cluster in your network**, the address will be your cluster address and the port can be obtained by running `kubectl get services` and looking up the [*NodePort*](https://kubernetes.io/docs/concepts/services-networking/service/#type-nodeport) of the Mosquitto service (default should be 30511).
+- **If you are using Minikube**, you must expose the Mosquitto service in order to access it from your *localhost*. 
+  To do this, find the name of the service with `kubectl get services` and then run `minikube service <service-name> --url`. 
+  This will return a URL with the address and port to connect to.
+
+Since we don't have real data, we are going to create a Python script that generates random data from the car and its wheels every 5 seconds and sends it in Ditto Protocol to Mosquitto. 
+To run the script we will need to install the [Paho library for MQTT](https://pypi.org/project/paho-mqtt/) (typing_extensions is one of its dependencies).
+
+```shell
+pip install paho-mqtt
+pip install typing_extensions
+```
+
+In the following script you must **change the MQTT broker address and port** to your own.
+
+```python
+import paho.mqtt.client as mqtt
+import random
+import time
+import json
+
+# Digital twin info
+namespace = "example"
+car_name = "mycar"
+car_features = ["gps"]
+wheels_name = "mycar:wheel_"
+wheel_features = ["velocity", "direction"]
+
+# MQTT info
+broker = "localhost"  # MQTT broker address
+port = 1883  # MQTT port
+topic = "telemetry/"  # Topic where data will be published
+
+# MQTT connection
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        print("Successful connection")
+    else:
+        print(f"Connection failed with code {rc}")
+
+# Data generators
+def generate_wheel_data():
+    velocity = random.uniform(0, 100) # Generate random velocity (between 0 and 100 km/h)
+    direction = random.uniform(-45, 45) # Generate random direction (between -45 and 45 degrees)
+    return [velocity, direction]
+
+def generate_gps_data():
+    latitude = random.uniform(-90.0, 90.0)
+    longitude = random.uniform(-180.0, 180.0)
+    return latitude, longitude
+
+# Parse data to Ditto Protocol
+def get_ditto_protocol_msg(name, time, fields, values):
+    value = {}
+    for idx, field in enumerate(fields):
+        value[field] = {
+            "properties": {
+                "value": values[idx],
+                "time": time
+            }
+        }
+    return {
+        "topic": "{}/{}/things/twin/commands/merge".format(namespace, name),
+        "headers": {
+            "content-type": "application/merge-patch+json"
+        },
+        "path": "/features",
+        "value": value
+    }
+
+# MQTT connection
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+client.on_connect = on_connect
+client.connect(broker, port, 60)
+
+# Send data
+try:
+    while True:
+        t = round(time.time() * 1000) # Unix ms
+        
+        # Car twin
+        msg = get_ditto_protocol_msg(car_name, t, car_features, generate_gps_data())
+        client.publish(topic + namespace + "/" + car_name, json.dumps(msg))
+        print(car_name + " data published")
+        
+        # Wheels twins
+        for i in range(1, 5):
+            name = wheels_name+str(i)
+            msg = get_ditto_protocol_msg(name, t, wheel_features, generate_wheel_data())
+            client.publish(topic + namespace + "/" + name, json.dumps(msg))
+            print(name + " data published")
+        
+        time.sleep(5)
+        
+except KeyboardInterrupt:
+    client.disconnect()
+```
+
+When you **run the script**, the data should start to be stored in the digital twins. 
+You can see if messages are being received by checking the information of the twins, where the values of their features will now have data.
+
+<center> 
+<img
+    src={require('./img/wheel-data.png').default}
+    alt="Children of car type"
+    style={{ width: 700 }}
+/>
+</center>
+
+<details>
+  <summary>Are the twins not being updated?</summary>
+  <div>
+
+You can check if messages arrive to Mosquitto by using [MQTT explorer](https://mqtt-explorer.com/).
+If they are sending correctly, you should see something like the following image:
+    
+![MQTT explorer](./img/mqtt-explorer.png)
+
+And the messages being sent should be like these:
+
+```json
+{
+  "topic": "example/mycar:wheel_2/things/twin/commands/merge",
+  "headers": {
+    "content-type": "application/merge-patch+json"
+  },
+  "path": "/features",
+  "value": {
+    "velocity": {
+      "properties": {
+        "value": 44.07908610511725,
+        "time": 1715943644787
+      }
+    },
+    "direction": {
+      "properties": {
+        "value": 37.92163063527694,
+        "time": 1715943644787
+      }
+    }
+  }
+}
+```
+
+If the **messages are not being received**, debug the code to see what might be happening. Most likely you are not connecting correctly to Mosquitto (wrong address or port).
+
+If the **messages are being received**, then the problem is in the source connection to Eclipse Ditto. Check the connection logs with `http://<ditto-ip>:<ditto-port>/api/2/connections/mosquitto-source-connection/logs`. 
+The Eclipse Ditto ip and port are obtained the same as mosquitto's, but since Ditto has more than one service, you have to query/expose the **nginx** one.
+
+```mdx-code-block
+  </div>
+</details>
+```
+
 
 ### Visualization

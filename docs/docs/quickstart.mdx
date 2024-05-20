@@ -274,9 +274,7 @@ import json
 # Digital twin info
 namespace = "example"
 car_name = "mycar"
-car_features = ["gps"]
 wheels_name = "mycar:wheel_"
-wheel_features = ["velocity", "direction"]
 
 # MQTT info
 broker = "localhost"  # MQTT broker address
@@ -290,27 +288,51 @@ def on_connect(client, userdata, flags, rc):
     else:
         print(f"Connection failed with code {rc}")
 
-# Data generators
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+client.on_connect = on_connect
+client.username_pw_set(username, password)
+client.connect(broker, port, 60)
+
+# Data generator
 def generate_wheel_data():
     velocity = random.uniform(0, 100) # Generate random velocity (between 0 and 100 km/h)
     direction = random.uniform(-45, 45) # Generate random direction (between -45 and 45 degrees)
-    return [velocity, direction]
+    return velocity, direction
 
 def generate_gps_data():
     latitude = random.uniform(-90.0, 90.0)
     longitude = random.uniform(-180.0, 180.0)
     return latitude, longitude
 
-# Parse data to Ditto Protocol
-def get_ditto_protocol_msg(name, time, fields, values):
-    value = {}
-    for idx, field in enumerate(fields):
-        value[field] = {
+# Ditto Protocol
+def get_ditto_protocol_value_car(time, latitude, longitude):
+    return {
+        "gps" : {
             "properties": {
-                "value": values[idx],
+                "latitude": latitude,
+                "longitude": longitude,
                 "time": time
             }
         }
+    }
+
+def get_ditto_protocol_value_wheel(time, velocity, direction):
+    return {
+        "velocity" : {
+            "properties": {
+                "value": velocity,
+                "time": time
+            }
+        },
+        "direction": {
+            "properties" : {
+                "value": direction,
+                "time" : time
+            }
+        }
+    }
+
+def get_ditto_protocol_msg(name, value):
     return {
         "topic": "{}/{}/things/twin/commands/merge".format(namespace, name),
         "headers": {
@@ -320,25 +342,22 @@ def get_ditto_protocol_msg(name, time, fields, values):
         "value": value
     }
 
-# MQTT connection
-client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-client.on_connect = on_connect
-client.connect(broker, port, 60)
-
 # Send data
 try:
     while True:
         t = round(time.time() * 1000) # Unix ms
         
         # Car twin
-        msg = get_ditto_protocol_msg(car_name, t, car_features, generate_gps_data())
+        latitude, longitude = generate_gps_data()
+        msg = get_ditto_protocol_msg(car_name, get_ditto_protocol_value_car(t, latitude, longitude))
         client.publish(topic + namespace + "/" + car_name, json.dumps(msg))
         print(car_name + " data published")
         
         # Wheels twins
         for i in range(1, 5):
             name = wheels_name+str(i)
-            msg = get_ditto_protocol_msg(name, t, wheel_features, generate_wheel_data())
+            velocity, direction = generate_wheel_data()
+            msg = get_ditto_protocol_msg(name, get_ditto_protocol_value_wheel(t, velocity, direction))
             client.publish(topic + namespace + "/" + name, json.dumps(msg))
             print(name + " data published")
         
@@ -404,5 +423,94 @@ The Eclipse Ditto ip and port are obtained the same as mosquitto's, but since Di
 </details>
 ```
 
-
 ### Visualization
+
+Finally, we need to present the data in a user-friendly and meaningful way for the users of the digital twin. 
+To achieve this, we will create a new [dashboard](https://grafana.com/docs/grafana/latest/dashboards/) in Grafana and add [panels](https://grafana.com/docs/grafana/latest/panels-visualizations/) to display the relevant digital twin information.
+
+The digital twin data is stored in an [InfluxDB2](https://docs.influxdata.com/influxdb/v2/) database, so we will have to query the information using [Flux](https://docs.influxdata.com/flux/v0/) language. 
+If OpenTwins has been installed via Helm with default values, the [connection](https://grafana.com/docs/grafana/latest/datasources/) between InfluxDB and Grafana should already be established, so it will only be necessary to select it as data source when creating a panel.
+
+<center> 
+<img
+    src={require('./img/grafana-datasource.png').default}
+    alt="Children of car type"
+    style={{ width: 400 }}
+/>
+</center>
+
+In this example, we will demonstrate a basic visualization. However, **you can use any of Grafana's functionalities and plugins to customize it according to your specific objectives**.
+We will create four panels: one displaying the most recent GPS data of the car, another showing the evolution of the GPS data, a third panel indicating the current direction of all the wheels, and a fourth comparing the velocity of each wheel.
+The result would look something like this:
+
+<center> 
+<img
+    src={require('./img/grafana-dashboard.png').default}
+    alt="Grafana dashboard"
+/>
+</center>
+
+For each of the four panels, we have selected the most convenient chart type, kept the default settings and added the related query in the Query section.
+
+The panel displaying the **current GPS** data extracts the longitude and latitude information from the digital twin *example:mycar*. 
+It renames the fields for proper display, retains the relevant fields, sorts the results by time, and keeps only the most recent entry.
+
+```
+import "strings"
+from(bucket: "opentwins")
+  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
+  |> filter(fn: (r) => r["_measurement"] == "mqtt_consumer")
+  |> filter(fn: (r) => r["thingId"] == "example:mycar")
+  |> filter(fn: (r) => r["_field"] == "value_gps_properties_latitude" or r["_field"] == "value_gps_properties_longitude")
+  |> map(fn: (r) => ({ r with _field: strings.replace(v: r["_field"], t: "value_gps_properties_", u: "", i: 2) }))
+  |> keep (columns: ["_value", "_field", "_time"])
+  |> sort(columns: ["_time"], desc: false)  
+  |> last()  
+```
+
+The panel for show the **GPS evolution** also extracts the latitude and longitude data from the digital twin *example:mycar*, but keeps all the entries instead of just the last one.
+
+```
+import "strings"
+from(bucket: "opentwins")
+  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
+  |> filter(fn: (r) => r["_measurement"] == "mqtt_consumer")
+  |> filter(fn: (r) => r["thingId"] == "example:mycar")
+  |> filter(fn: (r) => r["_field"] == "value_gps_properties_latitude" or r["_field"] == "value_gps_properties_longitude")
+  |> map(fn: (r) => ({ r with _field: strings.replace(v: r["_field"], t: "value_gps_properties_", u: "", i: 2) }))
+  |> keep (columns: ["_value", "_field", "_time"])
+```
+
+The panel displaying the **current direction of wheels** extracts the direction data of the four twins corresponding to the wheels, identified by starting with *example:mycar:wheel_*. 
+It modifies the identifiers of the twins for a more readable display and retains the most recent value based on time.
+
+```
+import "strings"
+from(bucket: "opentwins")
+  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
+  |> filter(fn: (r) => r["_measurement"] == "mqtt_consumer")
+  |> filter(fn: (r) => strings.hasPrefix(v: r["thingId"], prefix: "example:mycar:wheel_"))
+  |> filter(fn: (r) => r["_field"] == "value_direction_properties_value")
+  |> map(fn: (r) => ({ r with thingId: strings.replace(v: r["thingId"], t: "example:mycar:", u: "", i: 2) }))
+  |> keep (columns: ["thingId", "_value", "_time"])
+  |> sort(columns: ["_time"], desc: false)  
+  |> last()
+```
+
+Finally, the panel that makes a **wheels velocity comparison** is similar to the previous one, although extracting the velocity data from the 4 twins instead of the direction and keeping all the entries.
+
+```
+import "strings"
+from(bucket: "opentwins")
+  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
+  |> filter(fn: (r) => r["_measurement"] == "mqtt_consumer")
+  |> filter(fn: (r) => strings.hasPrefix(v: r["thingId"], prefix: "example:mycar:wheel_"))
+  |> filter(fn: (r) => r["_field"] == "value_velocity_properties_value")
+  |> map(fn: (r) => ({ r with thingId: strings.replace(v: r["thingId"], t: "example:mycar:", u: "", i: 2) }))
+  |> keep (columns: ["thingId", "_value", "_time"])
+```
+
+This satisfies the basic requirements to consider a system as a digital twin. 
+However, to take full advantage of its capabilities, we recommend including other functionalities or additional data sources. 
+This will allow you to obtain a more complete and accurate view of the real system. 
+You can check our [guides](./category/guides) for more information

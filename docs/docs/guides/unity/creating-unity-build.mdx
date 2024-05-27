@@ -1,0 +1,56 @@
+---
+sidebar_position: 1
+---
+
+# Unity WebGL
+
+## Basic creation of Unity build
+This guide will not show how to develop using the Unity engine, but explains what is necessary to be able to use these projects in Grafana.
+For more information of how to develop with Unity you can visit the official [Unity website](https://docs.unity3d.com/Manual/index.html).
+
+1. The first requirement is downloading the package "WebGL Build Support". In Unity Hub go to **Installs > select configuration for your desired Unity version > Add Modules** and check the following option:
+
+![WebGL](./img/installation.png)
+
+2. Once having developed the visualization, an additional script must be added to your project:
+
+ ```csharp
+    using System.Collections;
+    using System.Collections.Generic;
+    using UnityEngine;
+
+    public class DisableKeyboardInput : MonoBehaviour
+    {
+        // Start is called before the first frame update
+        void Start()
+        {
+            #if !UNITY_EDITOR && UNITY_WEBGL
+                UnityEngine.WebGLInput.captureAllKeyboardInput = false;
+            #endif
+        }
+
+        // Update is called once per frame
+        void Update()
+        {
+            
+        }
+    }
+
+This script is used to prevent Unity from taking over the keyboard and mouse when interacting with it. If we don't set it, the Grafana dashboard will be unusable until we refresh the page.
+Adding the script to a component that exists from the beginning of the execution (Main camera for example) should work properly.
+
+3. Finally, to export the project, just go to **File > Build Settings ...** Select all scenes required and select WebGL platform.
+Click on **Player Settings > Publishing settings > Compression Format**. Select **Disabled**. Finally click **Build**.
+
+:::note
+
+Feel free to modify any information you want, **Step 3** shows only the required actions to be taken in order to run Unity inside Grafana.
+
+:::
+
+## Additional functionalities
+
+The Unity plugin for Grafana offers 3 main functionalities to interact with the build:
+1. Send data to Unity.
+2. Retrieve data from Unity.
+3. Select object to represent some information about it.

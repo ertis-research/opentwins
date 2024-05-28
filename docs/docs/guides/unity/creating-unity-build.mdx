@@ -2,7 +2,7 @@
 sidebar_position: 1
 ---
 
-# Unity WebGL
+# Creation of Unity WebGL build
 
 ## Basic creation of Unity build
 This guide will not show how to develop using the Unity engine, but explains what is necessary to be able to use these projects in Grafana.
@@ -53,4 +53,86 @@ Feel free to modify any information you want, **Step 3** shows only the required
 The Unity plugin for Grafana offers 3 main functionalities to interact with the build:
 1. Send data to Unity.
 2. Retrieve data from Unity.
-3. Select object to represent some information about it.
+//3. Select object to represent some information about it.
+
+### Send data to Unity
+To send data to Unity from Grafana is as simple as creating a function that collects the received data, either to work with a specific object or distribute the data to all components of the visual representation.
+
+### Retrieve data from Unity
+Data retrieving from Unity works using **events**. To send data we must create an event for each variable we want to update in Grafana.
+First step is to create a **.jslib** file inside **Assets/Plugins/WebGL**, where Assets is our project Assets folder. 
+It is very important that the folders have these names (if one does not exist, it is necessary to create it) because otherwise the plugin will not work.
+The following script must be added into the created file:
+
+```js
+
+mergeInto(LibraryManager.library, {
+  GetData: function (deviceId) {
+    dispatchReactUnityEvent(
+		"GetData", 
+		Pointer_stringify(deviceId));
+  }
+});
+
+```
+Once created the **.jslib** file, we need to add the following code to a script in Unity inside a class but outside Start() and Update() funcions:
+
+```csharp
+#if UNITY_WEBGL && !UNITY_EDITOR
+    [DllImport("__Internal")]
+    private static extern void GetData(string deviceId);
+#else
+    private static void GetData(string deviceId){
+        Debug.Log("ERROR");
+    }
+#endif
+```
+By adding it, we are enabling the execution of events just by calling GetData() function. For example the following script, sends the name of the clicked item in Unity as event to be catched by Grafana:
+
+```csharp
+
+using System.Collections;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class ObjectClicker : MonoBehaviour
+{
+    #if UNITY_WEBGL && !UNITY_EDITOR
+        [DllImport("__Internal")]
+        private static extern void GetData(string deviceId);
+    #else
+        private static void GetData(string deviceId){
+            Debug.Log("ERROR");
+		}
+    #endif
+
+    // Update is called once per frame
+    void Update(){
+        if (Input.GetMouseButtonDown(0)){
+            RaycastHit hit;
+            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+
+            if (Physics.Raycast(ray, out hit, 100.0f)){
+                if (hit.transform != null){
+                    GameObject go = hit.transform.gameObject;
+                    SendEventWithId(go);
+                }
+            }
+        }
+    }
+
+    void SendEventWithId(GameObject go){
+        if(go != null){
+            Debug.Log("Nombre del objeto: " + go.name);
+            GetData(go.name);
+            Debug.Log("Mensaje enviado");
+        }
+        else{
+            Debug.Log("nulo");
+		}
+    }
+}
+
+```

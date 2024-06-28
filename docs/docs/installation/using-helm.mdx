@@ -1,0 +1,113 @@
+---
+sidebar_position: 2
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Helm
+
+## Standard version
+
+### Installation
+First of all, you have to add ERTIS Research group helm repository to your helm repository list:
+
+```bash
+helm repo add ertis https://ertis-research.github.io/Helm-charts/
+```
+
+Once done, the next step is installing the chart by executing this line on your terminal (in our case, we will use `opentwins` as release name and `opentwins` as namespace, but you can choose the one that you prefeer). To customize the installation, please refer to [Helm's values](https://github.com/ertis-research/Helm-charts/blob/main/OpenTwins/values.yaml) file.
+
+:::warning
+We recommend to modify the **default passwords and tokens** for Grafana and InfluxDB before deploying the platform. Currently, to avoid potential problems, we do not recommend changing Eclipse Ditto's username and password.
+:::
+
+```bash
+helm upgrade --install opentwins ertis/OpenTwins --wait --dependency-update --debug
+```
+
+After waiting some time, the installation will be ready for use.
+
+### Configuration
+If you have kept the default values of the Helm chart, you will only need to **configure the OpenTwins interface plugin for Grafana**.
+
+#### Obtain external URLs for Eclipse Ditto, Ditto extended API and Grafana. 
+
+Get the name of the services with `kubectl get services`. The result will look something similar to the following image. If you have changed the name of the release, the names will not be preceded by _opentwins_, but by the name you have assigned. We are interested in the services _opentwins-grafana_, _opentwins-ditto-nginx_ and _opentwins-ditto-extended-api_.
+
+<center> 
+<img
+    src={require('./img/kubectlgetsvc.png').default}
+    alt="Kubectl get services"
+    style={{ width: 700 }}
+/>
+</center>
+
+The method to obtain the URL may vary depending on the configuration of your cluster. Generally, the URL for each service will match the cluster IP and the NodePort (the number after the colon). For example, if our cluster IP is `192.168.32.25`, the URL for Grafana would be `192.168.32.25:30718`.
+
+<details>
+  <summary>Are you using <b>Minikube</b> to deploy OpenTwins?</summary>
+  <div>
+
+As Minikube is a local cluster, you **cannot directly use the IP of the cluster**. Therefore, you will have to [expose the services](https://minikube.sigs.k8s.io/docs/handbook/accessing/) that you want to use externally with a command.
+
+Open three terminals, one for each service, and run the following command on each terminal with a different service name. These will return a URL of your localhost with a port that will forward all traffic to the specified service. **These are the URLs you should use.**
+
+```bash
+minikube service <service-name> --url
+```
+
+  </div>
+</details>
+
+#### Add URLs to OpenTwins plugin configuration
+
+Access Grafana in any browser with the URL you have obtained. The credentials must match those indicated in the Helm values, which by default are user _admin_ and password _admin_. 
+
+Access the left drop-down menu and select `Administration > Plugins`. Once there, find the _OpenTwins_ plugin and activate it by clicking _Enable_. Then, go to the _Configuration_ tab where you will need to enter the Eclipse Ditto and Extended API URLs in the corresponding fields. Use _ditto_ for both the Eclipse Ditto username and password for the moment. Then click on _Save settings_ to complete the plugin configuration.
+
+:::note
+If you are using the latest version of the interface, you may find two fields intended for an agent service. This functionality is currently under development and is not yet available, so leave them empty and disregard them for now.
+:::
+
+Find the available application in the `App > OpenTwins` section of the left drop-down menu. 
+
+**You can now start using OpenTwins**. 
+
+<details>
+  <summary>Screenshots of the filled form</summary>
+  <div>
+    <center>
+    <img
+      src={require('./img/enable-plugin.png').default}
+      alt="Plugin"
+      style={{ width: 600 }}
+    />
+    </center>
+    <center>
+    <img
+      src={require('./img/configuration-interfaz.png').default}
+      alt="Configuration"
+      style={{ width: 600 }}
+    />
+    </center>
+    <center>
+    <img
+      src={require('./img/opentwins-access.png').default}
+      alt="Configuration"
+      style={{ width: 400 }}
+    />
+    </center>
+  </div>
+</details>
+
+## Lightweight version
+
+OpenTwins has it's own lightweight version that aims to run on IoT devices such as Raspberry Pi devices.
+To install this versión, you have to follow the first step in order to add ERTIS repository to your repository list and then install the platform using the command bellow:
+
+```bash
+helm install ot ertis/OpenTwins-Lightweight -n opentwins
+``` 
+
+In this case connections still need to be made for the platform to work properly.

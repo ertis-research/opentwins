@@ -4,12 +4,13 @@ sidebar_position: 1
 
 # Requirements
 
-This page lists both software and hardware requirements for using opentwins
+This page lists both software and hardware requirements for using OpenTwins.
 
-## Hardware requirements 💻
+## Hardware requirements 
 - 2 CPU cores
 - 8 GB of RAM
-## Software requirements 🔧
+
+## Software requirements 
 - Container manager:
   - Tested on [Docker](https://www.docker.com/) and [ContainerD](https://containerd.io/).
 - [Kubernetes](https://kubernetes.io/releases/download/):

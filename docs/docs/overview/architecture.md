@@ -6,6 +6,8 @@ sidebar_position: 3
 
 OpenTwins is built on a **open source microservices architecture**, designed to enhance scalability, flexibility and efficiency in the development, extension, deployment and maintenance of the platform. All the components that make up this architecture are encapsulated in [Docker](https://www.docker.com/) containers, ideally managed through [Kubernetes](https://kubernetes.io/), which ensures efficient portability and management. 
 
+## Standard architecture
+
 :::note
 
 Although it is possible to deploy and connect the different components without containerization, this approach is not recommended due to the difficulties involved in terms of installation and management. However, it is important to note that OpenTwins could be [manually connected](../installation/manual.md) to non-containerized components, such as a local instance of Grafana.
@@ -76,3 +78,28 @@ Although it may seem a secondary aspect, the representation of the digital twin 
 
   - [Unity panel plugin for Grafana](https://github.com/ertis-research/unity-plugin-for-grafana). Since Grafana serves as the front-end of OpenTwins, it is convenient that the 3D representations are embedded directly into this tool, providing a unified management and visualization of the digital twin. To achieve this, a plugin capable of **rendering WebGL compilations within a Grafana panel** has been developed. This plugin is able to send the digital twin data from Grafana to the compilation, allowing it to influence the rendering in real time. In addition, this plugin enables direct user interaction with the 3D model, allowing actions on 3D elements to affect other panels of the dashboard. For example, by clicking on a 3D element, another Grafana panel can automatically display data related to it.
 
+## Lightweight architecture
+
+:::note
+
+Although it is possible to deploy and connect the different components without containerization, this approach is not recommended due to the difficulties involved in terms of installation and management. However, it is important to note that Lightweight version of OpenTwins could be [manually connected](../installation/manual.md) to non-containerized components.
+
+:::
+
+The following image illustrates the current lightweigh architecture of OpenTwins, the field of digital twins is closely linked to the IoT, highlighting the critical importance of reducing data transmission delays. Additionally, IoT devices typically have limited processing capabilities, which makes running resource-demanding software impractical. This new architecture has been developed to facilitate dependable IoT applications within a distributed Edge/Fog/Cloud infrastructure. Developing a lightweight distributed version of OpenTwins can offer several advantages and address various needs depending on the context and goals of the project.
+
+![LightweightArchitecture](./img/lightweightArchitecture.png)
+
+Like the main platform, the core component of this new architecture remains [Eclipse Ditto](https://www.eclipse.org/ditto/). Most of the components has been removed to achieve lower consumptions.
+
+- **Message broker:** The [Apache Kafka](https://kafka.apache.org/) messaging broker has been replaced by [Eclipse Mosquitto](https://mosquitto.org/) that uses [MQTT5](https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html), as it is best suited messaging protocol for IoT.
+
+- **Persistence:** As the platform is designed to be used in low-resource environments such as IoT devices or Raspberry Pi, for example, it has been decided not to have persistence of historical data, so [InfluxDB](https://www.influxdata.com/products/influxdb-overview/) is not used. In the case of a persistence need, the [MongoDB](https://www.mongodb.com/) database that Eclipse Ditto needs to work can be used. [Telegraf](https://www.influxdata.com/time-series-platform/telegraf/) can introduce the historical data in this database. In this way, although we do not have a database optimized to store data in the form of time series, it would be possible to have persistence with a single database.
+
+- **Visualization:** Both IoT and Edge devices are not typically used for visualization-related tasks and are sometimes lacking the power to do so. This is why it has been decided to remove this component from the new lightweight architecture.
+
+- **Simulation components:** Due to the technical limitations mentioned above, the simulation components present in the original architecture have been eliminated.
+
+- **ML components:** As mentioned above, some edge or IoT are not capable of handling the necessary components to run the ML module, so its installation, although it has been used in this work, is optional.
+
+All modules that are not present in this version of the platform are still fully available and compatible, so users can make use of any component if necessary by activating them in the platform installation process by [Helm](https://helm.sh/)(WIP)

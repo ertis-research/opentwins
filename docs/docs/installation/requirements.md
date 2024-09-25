@@ -7,8 +7,11 @@ sidebar_position: 1
 This page lists both software and hardware requirements for using OpenTwins.
 
 ## Hardware requirements 
-- 2 CPU cores
-- 8 GB of RAM
+- ### For standard architecture
+  - 2 CPU cores
+  - 8 GB of RAM
+- ### For lightweight architecture
+  - Raspberry Pi 4
 
 ## Software requirements 
 - Container manager:

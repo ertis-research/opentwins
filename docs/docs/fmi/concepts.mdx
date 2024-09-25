@@ -1,0 +1,135 @@
+---
+sidebar_position: 2
+---
+
+import useBaseUrl from '@docusaurus/useBaseUrl';
+import ThemedImage from '@theme/ThemedImage';
+
+
+# FMI Simulation concepts
+
+:::warning
+The FMI simulation service is currently being tested.
+:::
+
+## Simulation schema
+The schema is used to create simulation blueprints to store and create several simulation instances.
+
+The schema can be create for a single FMU or several FMUs. The schema for a single FMU is:
+
+```json
+{
+   "id":"schema1",
+   "name":"Schema 1",
+   "description":"Sample schema",
+   "relatedTwins":[
+      "Twin1"
+   ],
+   "fmus":[
+        {
+            "id": "Controller",
+            "inputs": [
+                {"id": "u_s"},
+                {"id": "u_m"}
+            ],
+            "outputs": [
+                {"id": "y"}
+            ]
+        }
+    ]
+}
+```
+
+<details>
+<summary><b>Schema for several FMUs</b></summary>
+
+The following schema is designed to be used with multiple FMUs:
+
+```tsx
+{
+   "id":"schema1",
+   "name":"Schema 1",
+   "description":"Sample schema",
+   "relatedTwins":[
+      "Twin1"
+   ],
+   "fmus":[
+        {
+            "id": "Controller",
+            "inputs": [
+                {"id": "u_s"},
+                {"id": "u_m"}
+            ],
+            "outputs": [
+                {"id": "y"}
+            ]
+        },
+        {
+            "id": "Drivetrain",
+            "inputs": [
+                {"id": "tau"}
+            ],
+            "outputs": [
+                {"id": "w"}
+            ]
+        }
+    ],
+   "schema":[
+        {
+            "from": {"var": "w_ref"},
+            "to": {"id": "controller", "var": "u_s"}
+        },
+        {
+            "from": {"id": "drivetrain", "var": "w"},
+            "to": {"id": "controller", "var": "u_m"}
+        },
+        {
+            "from": {"id": "controller", "var": "y"},
+            "to": {"id": "drivetrain", "var": "tau"}
+        },
+        {
+            "from": {"id": "drivetrain", "var": "w"},
+            "to": {"var": "w"}
+        }
+    ]
+}
+```
+
+
+This will work properly, although hovering over`ApparentGreetProps`may be a little intimidating. You can reduce this boilerplate with the`ComponentProps` utility detailed below.
+
+</details>
+
+
+## Simulation running schema
+
+Once you have a schema stored in the system, you can create a simulation instance using that schema:
+
+```json
+{
+   "id":"Simulation1",
+   "name":"Simulation1",
+   "schemaId": "schema1",
+   "targetConnection":{
+      "BROKER_TYPE" : "mqtt",
+        "BROKER_IP" : "",
+        "BROKER_PORT" : "",
+        "BROKER_TOPIC" : "",
+        "BROKER_USERNAME" : "",
+        "BROKER_PASSWORD" : ""
+   },
+   "configuration":{
+      "SIMULATION_START_TIME":1,
+      "SIMULATION_END_TIME":7,
+      "SIMULATION_STEP_SIZE":1,
+      "SIMULATION_DELAY_WARNING": 1,
+      "SIMULATION_LAST_VALUE": true,
+      "SIMULATION_TYPESCHEDULE": "one-time"
+   },
+   "inputs":[],
+   "outputs": []
+}
+
+```
+
+This schema is not different for one or several FMUs execution. It only contains information about execution.

@@ -123,7 +123,7 @@ The installation of the OpenTwins plugin in Grafana will depend on how Grafana w
 <Tabs groupId="environment">
   <TabItem value="helm" label="Helm" default>
 
-To install the plugin you need to add its compiled code in a folder with the same name as its ID inside the Grafana plugins folder, which is X by default.
+To install the plugin you need to add its compiled code in a folder with the same name as its ID inside the Grafana plugins folder, which is _/var/lib/grafana/plugins_ by default.
 To do this using Helm, add an extraInitContainer to your values.yaml, where you navigate to the plugins folder, download the zip of the latest release and unzip it.
 Below is what you need to add.
 
@@ -169,7 +169,29 @@ Verify that the Grafana pod is in Running and Ready status. The OpenTwins plugin
 
   </TabItem>
   <TabItem value="local" label="Local">
-Por ahora el plugin no está firmado, así que tendremos que especificar en el archivo de configuraci
+
+To install the plugin on a local Grafana, you must first download the zip file of the latest plugin release and then access the Grafana folder on your PC. 
+
+In this folder you have to find the [Grafana configuration file](https://grafana.com/docs/grafana/v9.5/setup-grafana/configure-grafana). Follow the [Grafana documentation](https://grafana.com/docs/grafana/v9.5/setup-grafana/configure-grafana/#configuration-file-location) to know its location, the name of the file and how to modify it. When you have it, modify the appropriate file by uncommenting and adding the following:
+
+```ini
+[plugins]
+# Enter a comma-separated list of plugin identifiers to identify plugins to load even if they are unsigned. Plugins with modified signatures are never loaded.
+allow_loading_unsigned_plugins = ertis-opentwins
+```
+
+In the same file, check the [path to the plugins folder](https://grafana.com/docs/grafana/v9.5/setup-grafana/configure-grafana/#plugins). You can modify it if you consider it convenient. Then, go to that folder and unzip the plugin zip file. You should get a folder with the name "ertis-opentwins" which must have something like this inside (make sure that there are no intermediate folders).
+
+<center> 
+<img
+    src={require('./img/opentwins-plugin-content.png').default}
+    alt="Kubectl get services"
+    style={{ width: 700 }}
+/>
+</center>
+
+For the changes to take effect, **Grafana must be restarted**. Please refer to [its documentation](https://grafana.com/docs/grafana/v9.5/setup-grafana/start-restart-grafana/) to find out how to do this depending on your operating system. The OpenTwins plugin should now be available for enabling in the Grafana configuration.
+
   </TabItem>
 </Tabs>
 

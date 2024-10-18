@@ -8,7 +8,7 @@ import DocCardList from '@theme/DocCardList';
 
 :::warning
 
-The documentation of this method is being written right now. We recommend using [helm installation](./using-helm.mdx).
+The documentation of this method is being written right now. We recommend using [helm installation](../using-helm.mdx).
 
 :::
 

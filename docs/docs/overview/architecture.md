@@ -10,7 +10,7 @@ OpenTwins is built on a **open source microservices architecture**, designed to 
 
 :::note
 
-Although it is possible to deploy and connect the different components without containerization, this approach is not recommended due to the difficulties involved in terms of installation and management. However, it is important to note that OpenTwins could be [manually connected](../installation/manual.md) to non-containerized components, such as a local instance of Grafana.
+Although it is possible to deploy and connect the different components without containerization, this approach is not recommended due to the difficulties involved in terms of installation and management. However, it is important to note that OpenTwins could be [manually connected](../installation/manual/index.md) to non-containerized components, such as a local instance of Grafana.
 
 :::
 

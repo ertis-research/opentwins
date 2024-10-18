@@ -1,25 +1,23 @@
 ---
-sidebar_position: 3
+sidebar_position: 1
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Manual
+# DT definition and monitoring (required)
 
-:::warning
+**This component is the essential functionality of OpenTwins and is required for the system to function properly**. Regardless of your specific use case or configuration, it must be installed as a prerequisite. Please ensure that this component is installed correctly before proceeding with the configuration.
 
-The documentation of this method is being written right now. We recommend using [helm installation](./using-helm.mdx).
+## Prerequisites
 
-:::
+Before you begin, ensure you have the following:
+- Container manager: Currently tested on [Docker](https://www.docker.com/) and [ContainerD](https://containerd.io/).
+- Access to a [Kubernetes](https://kubernetes.io/releases/download/) (recommended) or [K3s](https://k3s.io/) cluster.
+- `kubectl` installed and configured.
+- [Helm](https://helm.sh/docs/intro/install/) version 16.14 or above.
 
-This section will explain how to deploy the platform manually. Basically, you will have to deploy or install the different components and then connect them. The procedure explained below is the one followed to deploy them in **Kubernetes** using in most cases the **Helm** option, but any other installation in which all the components are correctly installed and there is some kind of network between them to be able to communicate can be used. 
-
-It is not necessary to deploy all components if not all functionalities are to be used. Check the [architecture](../overview/architecture.md) section to find out which ones are essential and what functionality is covered by each of them.
-
-## Essential functionality
-
-### Deploy
+## Deploy
 
 :::tip
 Note that the values files have the variables that we recommend for the installation of each Helm Chart, but they **can be extended or modified according to your needs** (please consult the Helm Chart documentation for each component).
@@ -52,9 +50,9 @@ spec:
 ```
 :::
 
-Listed below are the essential components of the [architecture](../overview/architecture.md) along with their versions used, their Helm values and a link to the repository explaining their installation.
+Listed below are the essential components of the [architecture](../../overview/architecture.md) along with their versions used, their Helm values and a link to the repository explaining their installation.
 
-#### MongoDB v6.0
+### MongoDB v6.0
 
 - [App v6.0 documentation](https://www.mongodb.com/docs/v6.0/introduction/)
 - [Helm documentation](https://github.com/bitnami/charts/tree/main/bitnami/mongodb)
@@ -76,7 +74,7 @@ auth:
   enabled: false
 ```
 
-#### Eclipse Ditto v3.3
+### Eclipse Ditto v3.3
 
 - [App v3.3 documentation](https://eclipse.dev/ditto/3.3/intro-overview.html)
 - [Helm documentation](https://github.com/eclipse-ditto/ditto/tree/master/deployment/helm/ditto)
@@ -128,7 +126,7 @@ gateway:
         statusPassword: foobar
 ```
 
-#### InfluxDB v2
+### InfluxDB v2
 
 - [App v2 documentation](https://docs.influxdata.com/influxdb/v2/)
 - [Helm documentation](https://github.com/influxdata/helm-charts/tree/master/charts/influxdb2)
@@ -149,7 +147,7 @@ image:
   pullPolicy: Always
 ```
 
-#### Mosquitto v2.0
+### Mosquitto v2.0
 
 :::tip
 OpenTwins supports the use of Mosquitto and Kafka as intermediaries, but **we recommend using Mosquitto** due to its simpler configuration. Since there is no official Helm chart for Mosquitto, we have created one of our own that works fine, although there is no documentation yet. However, you can install Mosquitto in any of the [available ways](https://mosquitto.org/download/).
@@ -173,7 +171,7 @@ configuration:
     enabled: false
 ```
 
-#### Apache Kafka v3.4
+### Apache Kafka v3.4
 
 - [App v3.4 documentation](https://kafka.apache.org/34/documentation.html)
 - [Helm documentation](https://github.com/bitnami/charts/tree/main/bitnami/kafka)
@@ -186,7 +184,7 @@ helm install kafka oci://registry-1.docker.io/bitnamicharts/kafka --version 22.0
 autoCreateTopicsEnable: true
 ```
 
-#### Grafana v9.5
+### Grafana v9.5
 
 - [App v9.5.1 documentation](https://grafana.com/docs/grafana/v9.5/)
 - [Helm documentation](https://github.com/grafana/helm-charts/tree/main/charts/grafana)
@@ -206,7 +204,7 @@ service:
 grafana.ini:
   plugins:
     plugin_admin_enabled: true
-    allow_loading_unsigned_plugins: 'ertis-opentwins,ertis-unity-panel'
+    allow_loading_unsigned_plugins: ertis-opentwins,ertis-unity-panel
 extraInitContainers:
 - name: install-opentwins-plugins
   image: busybox
@@ -229,7 +227,7 @@ extraInitContainers:
     mountPath: /grafana-storage
 ```
 
-#### Eclipse Hono v2.4
+### Eclipse Hono v2.4
 
 :::warning
 This component is completely optional. We maintain support for its connection to OpenTwins, but **we do not recommend its use**. For a large number of devices or messages it increases considerably the latency of the platform.
@@ -289,13 +287,13 @@ adapters:
 
 ```
 
-### Connect
+## Connect
 
 :::tip
-Check [architecture](../overview/architecture.md) to see which connections you need to set up
+Check [architecture](../../overview/architecture.md) to see which connections you need to set up
 :::
 
-#### Eclipse Ditto and InfluxDB
+### Eclipse Ditto and InfluxDB
 
 The process to connect Eclipse Ditto and InfluxDB will depend on Mosquitto or Apache Kafka. Choose the option you have selected in each step.
 
@@ -350,8 +348,8 @@ Change **KAFKA_SERVICE_NAME** to the name of the Apache Kafka service. You can c
   "connectionStatus": "open",
   "uri": "tcp://KAFKA_SERVICE_NAME:9092",
   "specificConfig": {
-	  "bootstrapServers": "KAFKA_SERVICE_NAME:9092",
-	  "saslMechanism": "plain"
+      "bootstrapServers": "KAFKA_SERVICE_NAME:9092",
+      "saslMechanism": "plain"
   },
   "failoverEnabled": true,
   "sources": [],
@@ -481,14 +479,14 @@ metrics:
 
 With this Eclipse Ditto and InfluxDB should be connected. You can check this by sending update messages to Eclipse Ditto and verifying if they are correctly written to the InfluxDB bucket. If not, check if the messages are arriving correctly to the intermediate broker and, if so, check the logs of the Telegraf pod to see if there is any error in the configuration (usually connection problems).
 
-#### InfluxDB and Grafana
+### InfluxDB and Grafana
 
 1. Obtain a [read access token in InfluxDB](https://docs.influxdata.com/influxdb/v2/admin/tokens/create-token/) for Grafana.
 2. Access `Configuration > Data sources` on the Grafana interface and click on *Add data source*.
 3. Select *InfluxDB* from the list. In the setup form it is very important to select *Flux* as query language. It will be necessary to fill in the URL section with the one that corresponds to InfluxDB service. You will also have to activate _Auth Basic_ and fill in the fields (in our case we have set the default admin of InfluxDB, but you can create a new user and fill in these fields). In the InfluxDB details you should indicate the organization, the bucket (default is *default*) and the token you have generated. 
 4. When saving and testing, it should come out that at least one bucket has been found, indicating that they are already connected.
 
-#### Eclipse Ditto and Eclipse Hono
+### Eclipse Ditto and Eclipse Hono
 
 In the following diagram you can see how Eclipse Hono and Eclipse Ditto are related in OpenTwins. 
 
@@ -632,8 +630,4 @@ curl -i -X POST -u devops:${DITTO_DEVOPS_PWD} -H 'Content-Type: application/json
 
 This connection is configured so that if an [Eclipse Hono device](https://www.eclipse.org/hono/docs/concepts/device-identity/) has the [ThingId](https://www.eclipse.org/ditto/basic-thing.html#thing-id) of an Eclipse Ditto twin as its identifier, its messages will be redirected to that twin directly (explained in more detail in the [usage](#usage) section).
 
-## Compositional support
-
-## Data prediction with machine learning
-
-## 3D representation
+**Now you have all the essential OpenTwins functionality (DT definition and monitoring) working.**

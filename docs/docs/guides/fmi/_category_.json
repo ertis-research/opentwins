@@ -1,6 +1,6 @@
 {
   "label": "FMI Simulation",
-  "position": 5,
+  "position": 4,
   "link": {
     "type": "generated-index",
     "description": "OpenTwins supports the Functional Mock-up Interface (FMI) standard for simulation."

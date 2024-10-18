@@ -82,7 +82,7 @@ Although it may seem a secondary aspect, the representation of the digital twin 
 
 :::note
 
-Although it is possible to deploy and connect the different components without containerization, this approach is not recommended due to the difficulties involved in terms of installation and management. However, it is important to note that Lightweight version of OpenTwins could be [manually connected](../installation/manual.md) to non-containerized components.
+Although it is possible to deploy and connect the different components without containerization, this approach is not recommended due to the difficulties involved in terms of installation and management. However, it is important to note that Lightweight version of OpenTwins could be [manually connected](../installation/manual/index.md) to non-containerized components.
 
 :::
 

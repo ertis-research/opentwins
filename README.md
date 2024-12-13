@@ -28,4 +28,5 @@ You can find more information about OpenTwins and its architecture in the public
 
 >Infante S, Martín C, Robles J, et al. Integrating FMI and ML/AI models on the open-source digital twin framework OpenTwins. [Softw: Pract Exper. 2024; 1-21. doi: 10.1002/spe.3322](https://onlinelibrary.wiley.com/doi/epdf/10.1002/spe.3322)
 
+>Infante S, Robles J, Martín C, et al. Distributed digital twins on the open-source OpenTwins framework. [Advanced Engineering Informatics, 2025, vol. 64, p. 102970](https://doi.org/10.1016/j.aei.2024.102970).
 

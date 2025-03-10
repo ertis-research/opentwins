@@ -8,7 +8,7 @@ sidebar_position: 4
 
 :::warning
 
-The FMI simulation service is currently being tested. Please be patient, as soon as it is properly tested, the public image will be available on Docker Hub.
+The FMI simulation service is currently being tested. Please be patient, as soon as it is properly tested, the public image will be available on Docker Hub. If you want to test or use the service, you can find it in the [GitHub repository](https://github.com/ertis-research/opentwins-fmi-2.0).
 
 :::
 

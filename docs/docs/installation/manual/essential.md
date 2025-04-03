@@ -184,15 +184,15 @@ helm install kafka oci://registry-1.docker.io/bitnamicharts/kafka --version 22.0
 autoCreateTopicsEnable: true
 ```
 
-### Grafana v9.5
+### Grafana v11.3
 
-- [App v9.5.1 documentation](https://grafana.com/docs/grafana/v9.5/)
+- [App v11.3.0 documentation](https://grafana.com/docs/grafana/v11.3/)
 - [Helm documentation](https://github.com/grafana/helm-charts/tree/main/charts/grafana)
 
 ```bash
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
-helm install grafana grafana/grafana -n opentwins --version 6.56.1 -f values.yaml
+helm install grafana grafana/grafana -n opentwins --version 8.5.0 -f values.yaml
 ```
 
 ```yaml title="values.yaml"

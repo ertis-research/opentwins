@@ -162,7 +162,7 @@ grafana.ini:
 Now update the Grafana helm: 
 
 ```bash
-helm upgrade grafana grafana/grafana -n opentwins --version 6.56.1 -f values.yaml
+helm upgrade grafana grafana/grafana -n opentwins --version 8.5.0 -f values.yaml
 ```
 
 Verify that the Grafana pod is in Running and Ready status. The OpenTwins plugin should now be available for enabling in the Grafana configuration.
@@ -170,9 +170,9 @@ Verify that the Grafana pod is in Running and Ready status. The OpenTwins plugin
   </TabItem>
   <TabItem value="local" label="Local">
 
-To install the plugin on a local Grafana, you must first download the zip file of the latest plugin release and then access the Grafana folder on your PC. 
+To install the plugin on a local Grafana, you must first [download the zip file](https://github.com/ertis-research/grafana-app-opentwins/releases/download/latest/ertis-opentwins.zip) of the latest plugin release and then access the Grafana folder on your PC. 
 
-In this folder you have to find the [Grafana configuration file](https://grafana.com/docs/grafana/v9.5/setup-grafana/configure-grafana). Follow the [Grafana documentation](https://grafana.com/docs/grafana/v9.5/setup-grafana/configure-grafana/#configuration-file-location) to know its location, the name of the file and how to modify it. When you have it, modify the appropriate file by uncommenting and adding the following:
+In this folder you have to find the [Grafana configuration file](https://grafana.com/docs/grafana/v11.3/setup-grafana/configure-grafana). Follow the [Grafana documentation](https://grafana.com/docs/grafana/v11.3/setup-grafana/configure-grafana/#configuration-file-location) to know its location, the name of the file and how to modify it. When you have it, modify the appropriate file by uncommenting and adding the following:
 
 ```ini
 [plugins]
@@ -180,7 +180,7 @@ In this folder you have to find the [Grafana configuration file](https://grafana
 allow_loading_unsigned_plugins = ertis-opentwins
 ```
 
-In the same file, check the [path to the plugins folder](https://grafana.com/docs/grafana/v9.5/setup-grafana/configure-grafana/#plugins). You can modify it if you consider it convenient. Then, go to that folder and unzip the plugin zip file. You should get a folder with the name "ertis-opentwins" which must have something like this inside (make sure that there are no intermediate folders).
+In the same file, check the [path to the plugins folder](https://grafana.com/docs/grafana/v11.3/setup-grafana/configure-grafana/#plugins). You can modify it if you consider it convenient. Then, go to that folder and unzip the plugin zip file. You should get a folder with the name "ertis-opentwins" which must have something like this inside (make sure that there are no intermediate folders).
 
 <center> 
 <img
@@ -190,7 +190,7 @@ In the same file, check the [path to the plugins folder](https://grafana.com/doc
 />
 </center>
 
-For the changes to take effect, **Grafana must be restarted**. Please refer to [its documentation](https://grafana.com/docs/grafana/v9.5/setup-grafana/start-restart-grafana/) to find out how to do this depending on your operating system. The OpenTwins plugin should now be available for enabling in the Grafana configuration.
+For the changes to take effect, **Grafana must be restarted**. Please refer to [its documentation](https://grafana.com/docs/grafana/v11.3/setup-grafana/start-restart-grafana/) to find out how to do this depending on your operating system. The OpenTwins plugin should now be available for enabling in the Grafana configuration.
 
   </TabItem>
 </Tabs>

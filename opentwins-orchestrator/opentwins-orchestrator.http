@@ -1,0 +1,6 @@
+@opentwins_orchestrator_HostAddress = http://localhost:5198
+
+GET {{opentwins_orchestrator_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

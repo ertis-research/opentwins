@@ -1,0 +1,6 @@
+@Twins_HostAddress = http://localhost:5290
+
+GET {{Twins_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

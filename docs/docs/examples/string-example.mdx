@@ -1,0 +1,260 @@
+---
+sidebar_position: 1
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# String and number
+This is a example of creating a ONE way digital twin for monitoring a production line where we want to send the consumption and status of each of the components of the system. In this case, the stored information will be a string and a number, both of them have a timestamp asociated.
+
+This tutorial will have the following structure covering the creation using the Grafana plugin:
+
+1. Creation of type machine.
+2. Creation of general twin.
+3. Creating the schemma of the message.
+4. Sending the data.
+
+## 1. Creation of type machine.
+
+As explained in the [Create a type](docs/guides/definition/type-creation.mdx), we will create a type called machine with the following structure:
+
+
+```json
+{
+    "thingId": "productionline:machinetype",
+    "policyId": "default:basic_policy",
+    "attributes": {
+        "name": "Machine definition"
+    },
+    "features": {
+        "state": {
+            "properties": {
+                "value": null
+            }
+        },
+        "consumption": {
+            "properties": {
+                "value": null
+            }
+        }
+    }
+}
+```
+
+## 2. Creation of general twin.
+
+As explained in the [Create a thing](docs/guides/definition/dt-schema-creation.mdx), we will create a thing called productionline with the following structure:
+
+```json
+{
+    "thingId": "productionline:productionline",
+    "policyId": "default:basic_policy",
+    "attributes": {
+        "name": "Production line"
+    },
+    "features": {}
+}
+```
+### 2.1. Creation of the child twin.
+
+As explained in the concept of [Child twin](/opentwins/docs/examples/docs/overeview/definition/concepts), we will create a child twin called robotic_arm_1 with the following structure, using the existing type that we created in the previous step:
+
+
+```json
+{
+    "thingId": "productionline:robotic_arm_1",
+    "policyId": "default:basic_policy",
+    "attributes": {
+        "name": "Machine definition",
+        "type": "productionline:machinetype"
+    },
+    "features": {
+        "state": {
+            "properties": {
+                "value": null
+            }
+        },
+        "consumption": {
+            "properties": {
+                "value": null
+            }
+        }
+    }
+}
+```
+
+## 3. Creating the schemma of the message.
+
+Sending the data to the digital twin is done using two methods:
+- Using [Ditto Protocol](https://eclipse.dev/ditto/protocol-overview.html).
+- Using [Using JavaScript Mapping](https://eclipse.dev/ditto/connectivity-mapping.html).
+
+
+```mdx-code-block
+<Tabs className="unique-tabs"
+    defaultValue="dittop"
+    values={[
+        {label: 'Using Ditto Protocol', value: 'dittop'},
+        {label: 'Using JavaScript Mapping', value: 'jsmap'},
+    ]}>
+<TabItem value="dittop">
+```
+
+Although the Ditto protocol is the most efficient way to send the data, as it is the native protocol of Eclipse Ditto, it may not be the most convenient way as it requires a specific format.
+For this example, we will use MQTT as the transport protocol.
+
+Following the Ditto protocol, the message will be as follows:
+
+```json
+{
+    "topic": "productionline/robotis_arm_1/things/twin/commands/merge",
+    "headers": {
+        "content-type": "application/merge-patch+json"
+    },
+    "path": "/features",
+    "value": {
+        "robotic_arm_1_state": {
+            "properties": {
+                "value": "State",
+                "time": "Today's timestamp"
+            }
+        },
+        "robotic_arm_1_consumption": {
+            "properties": {
+                "value": "Arm consumption",
+                "time": "Today's timestamp"
+            }
+        }
+    }
+}
+```
+- The topic contains information about the contents of the payload; the affected Thing (namespace and Thing ID), the type of operation (command/event, create/retrieve/modify/delete)
+- The headers are the part where we define the way this message interacts with Eclipse Ditto.
+- The path is the part of the thing that is affected by this message. 
+- Value is the data that we want to send to the digital twin.
+
+This message will be sent to the MQTT broker so that it can be read by Eclipse Ditto and therefore the digital twin.
+
+```mdx-code-block
+</TabItem>
+
+<TabItem value="jsmap">
+```
+
+
+The JavaScript mapping is a more flexible way to send the data, as it allows you recieve data in any format. However, it is less efficient than the Ditto protocol, as it requires more processing.
+
+Suppose that our machine send the data in the following format:
+
+```json
+{
+    "robotic_arm_1": {
+        "state": "State",
+        "time": "Today's timestamp",
+        "consumption": "Arm consumption"
+    }
+}
+```
+Eclipse Ditto will not recognize this format, so we need to use a JavaScript mapping to convert it to the Ditto protocol format. The mapping will be as follows:
+
+```javascript
+
+function mapToDittoProtocolMsg(headers, textPayload, bytePayload, contentType) { 
+    const jsonData = JSON.parse(textPayload);
+    const jsonData2 = jsonData['robotic_arm_1'];
+    const consumption = jsonData2['consumption']; 
+    const state = jsonData2['state'];
+    headers = Object.assign(headers, { 'Content-Type': 'application/merge-patch+json' });
+
+    const features = { 
+        state: { 
+            properties: { 
+                value: state, 
+                time: Date.now()
+            } 
+        }, 
+        consumption: { 
+            properties: { 
+                value: consumption, 
+                time: Date.now()
+            } 
+        } 
+    }; 
+    return Ditto.buildDittoProtocolMsg('productionline', 'robotic_arm_1', 'things', 'twin', 'commands', 'merge', '/features', headers, features); 
+};
+
+```
+
+Using this JavaScript mapping when creating a connection, we can send the data in the format that we want and Eclipse Ditto will convert it to the Ditto protocol format.
+
+
+```mdx-code-block
+</TabItem>
+</Tabs>
+
+```
+
+
+## 4. Sending the data.
+
+For this example, we will use a simple Python script to send the data to the MQTT broker. The script will be as follows:
+
+```python
+import paho.mqtt.client as mqtt
+import json
+import time
+import datetime
+import random
+
+# Define the MQTT broker address and topic
+broker_address = "localhost"
+broker_port = 1883
+topic = "ditto/productionline/robotic_arm_1"
+# Create an MQTT client
+client = mqtt.Client()
+# Connect to the MQTT broker
+client.connect(broker_address, broker_port)
+# Start the MQTT client loop
+client.loop_start()
+# Define the message payload
+
+while True:
+    message = {
+        "topic": "productionline/robotis_arm_1/things/twin/commands/merge",
+        "headers": {
+            "content-type": "application/merge-patch+json"
+        },
+        "path": "/features",
+        "value": {
+            "robotic_arm_1_state": {
+                "properties": {
+                    "value": "State",
+                    "time": datetime.datetime.now().isoformat()
+                }
+            },
+            "robotic_arm_1_consumption": {
+                "properties": {
+                    "value": random.randint(0, 100),
+                    "time": datetime.datetime.now().isoformat()
+                }
+            }
+        }
+    }
+    # Convert the message to JSON
+    message_json = json.dumps(message)
+    # Publish the message to the topic
+    client.publish(topic, message_json)
+    # Wait for a few seconds before sending the next message
+    time.sleep(5)
+# Stop the MQTT client loop
+client.loop_stop()
+# Disconnect from the MQTT broker
+client.disconnect()
+```
+
+This script will send a message every 5 seconds with the state and consumption of the robotic arm. The state is a string and the consumption is a random number between 0 and 100. The timestamp is the current time in ISO format.
+The message will be sent to the MQTT broker and Eclipse Ditto will receive it and update the digital twin accordingly.
+
+
+

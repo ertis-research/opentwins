@@ -15,17 +15,19 @@ Output:
 CLI version: 1.15.1 
 Runtime version: 1.15.4
 
-
+Tenemos 4 proyectos, cada uno por cada componente de la arquictura que tiene que ser desarrollado.
 
 
 Crear los proyectos .NET:
-dotnet new webapi -n opentwins-twins -f net8.0
-dotnet new webapi -n opentwins-things -f net8.0
-dotnet new webapi -n opentwins-orchestrator -f net8.0
+dotnet new webapi -n Twins -f net8.0
+dotnet new webapi -n Things -f net8.0
+dotnet new webapi -n Orchestrator -f net8.0
 
 Añadir los paquetes a cada proyecto que lo necesite:
 dotnet add package Dapr.Client
 dotnet add package Dapr.Actors.AspNetCore
+dotnet add package Confluent.Kafka
+dotnet add package Dapr.AspNetCore
 
 Ejecutar el proyecto (los contenedores de dapr tienen que estar iniciados!):
 dapr run --app-id myapp --app-port 5000 --dapr-http-port 3500 -- dotnet run

@@ -1,44 +1,48 @@
+///
+/// To compile: dapr run --app-id actorservice --app-port 5001 --app-protocol http --dapr-http-port 56001 -- dotnet run --urls=http://localhost:5001/  
+/// 
+using OpenTwinsv2.Things.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddControllers();
+
+builder.Services.AddActors(options =>
+{
+    // Register actor types and configure actor settings
+    options.Actors.RegisterActor<TestActor>();
+    options.Actors.RegisterActor<ThingActor>();
+    options.ReentrancyConfig = new Dapr.Actors.ActorReentrancyConfig()
+        {
+            Enabled = true,
+            MaxStackDepth = 32,
+        };
+});
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
+    app.UseDeveloperExceptionPage();
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-
-app.UseHttpsRedirection();
-
-var summaries = new[]
+else
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+    // By default, ASP.Net Core uses port 5000 for HTTP. The HTTP
+    // redirection will interfere with the Dapr runtime. You can
+    // move this out of the else block if you use port 5001 in this
+    // example, and developer tooling (such as the VSCode extension).
+    app.UseHttpsRedirection();
+}
 
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast")
-.WithOpenApi();
+app.MapGet("/health", () => Results.Ok("Actor service is running"));
+
+app.MapActorsHandlers();
+
+app.MapControllers();
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}

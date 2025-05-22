@@ -83,7 +83,7 @@ namespace OpenTwinsv2.Things.Services
             return (td is null) ? await StateManager.GetStateAsync<string>(Id.ToString()) : td.ToString();
         }
 
-        public Task HandleExternalEventAsync(IThingEvent evnt)
+        public Task HandleExternalEventAsync(ICloudEvent evnt)
         {
             return Task.CompletedTask;
         }

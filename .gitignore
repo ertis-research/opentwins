@@ -3,6 +3,10 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
+# Dapr components
+**/components/
+**/DaprComponents/
+
 # dotenv files
 .env
 

@@ -1,16 +1,16 @@
-using Dapr.Actors;
+using System.Text.Json;
 using Dapr.Actors.Runtime;
+using Dapr.Client;
 using OpenTwinsv2.Things.Interfaces;
 using OpenTwinsv2.Things.Models;
-using System;
-using System.Text.Json;
-using System.Threading.Tasks;
 
 namespace OpenTwinsv2.Things.Services
 {
     internal class ThingActor : Actor, IThingActor, IRemindable
     {
-        private const string StateName = "ThingState";
+        private const string ThingDescriptionKey = "TD_";
+        private const string CurrentStateKey = "CS_";
+        private const string RulesKey = "Rules_";
         private ThingDescription? td;
 
         // The constructor must accept ActorHost as a parameter, and can also accept additional
@@ -66,11 +66,32 @@ namespace OpenTwinsv2.Things.Services
             Console.WriteLine(data.ToString());
             Console.WriteLine(Id.ToString());
             td = data;
+            if (td.Events != null) SubscribeToEvents(td.Events);
             await StateManager.SetStateAsync<string>(
                 Id.ToString(),  // state name
                 data.ToString());      // data saved for the named state "my_data"
 
             return "Success";
+        }
+
+        private async void SubscribeToEvents(Dictionary<string, EventAffordance> events)
+        {
+            string[] eventNames = [.. events.Keys.Where(e => !string.IsNullOrWhiteSpace(e))];
+            Console.WriteLine(JsonSerializer.Serialize(eventNames));
+            // Llama al servicio "events-service" registrado en Dapr
+            /*await _daprClient.InvokeMethodAsync(
+                HttpMethod.Post,
+                "events-service",
+                $"events/things/{Id}",
+                eventNames
+            );*/
+            var client = DaprClient.CreateInvokeHttpClient();
+            var cts = new CancellationTokenSource();
+            //HttpResponseMessage responde = await client.GetAsync("http://events-service/events/test", cts.Token);
+            Console.WriteLine($"http://events-service/events/things/{Id}");
+            var response = await client.PostAsJsonAsync($"http://events-service/events/things/{Id}", eventNames, cts.Token);
+
+            Console.WriteLine(response.ToString());
         }
 
         /// <summary>
@@ -82,12 +103,32 @@ namespace OpenTwinsv2.Things.Services
             // Gets state from the state store.
             return (td is null) ? await StateManager.GetStateAsync<string>(Id.ToString()) : td.ToString();
         }
+        /*
+                public async Task HandleExternalEventAsync(ICloudEvent evnt)
+                {
+                    if (td is null || td.Events is null) return;
+                    var eventName = evnt.Type;
+                    if (!td.Events.TryGetValue(eventName, out var eventAffordance)) return;
+                    await ExecuteEventLogicAsync(eventAffordance, evnt.Data);
+                }
 
-        public Task HandleExternalEventAsync(ICloudEvent evnt)
-        {
-            return Task.CompletedTask;
-        }
+                private async Task ExecuteEventLogicAsync(EventAffordance eventAffordance, object? eventData)
+                {
+                    Console.WriteLine(eventAffordance.Description);
+                    if (eventAffordance.DataResponse != null)
+                    {
 
+                    }
+                    // También podrías actualizar propiedades o emitir otros eventos
+                    if (eventAffordance. != null)
+                    {
+                        foreach (var prop in eventAffordance.PropertiesToUpdate)
+                        {
+                            await UpdatePropertyAsync(prop.Key, prop.Value);
+                        }
+                    }
+                }
+        */
         /// <summary>
         /// Register MyReminder reminder with the actor
         /// </summary>
@@ -157,5 +198,21 @@ namespace OpenTwinsv2.Things.Services
             return Task.CompletedTask;
         }
 
+        public Task OnEventReceived(object evnt)
+        {
+            Console.WriteLine($"{Id}: ME HA LLEGADO ALGO REY");
+            Console.WriteLine(evnt);
+            return Task.CompletedTask;
+        }
+
+        public Task InvokeAction(string actionName, object parameters)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task SendEvent(ICloudEvent evnt)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

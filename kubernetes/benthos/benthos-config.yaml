@@ -1,0 +1,28 @@
+input:
+  mqtt:
+    urls: [tcp://mosquitto.opentwinsv2.svc.cluster.local:1883]
+    topics: [example-device]
+    client_id: benthos-mqtt-client-edge
+
+pipeline:
+  processors:
+    - bloblang: |
+        {
+            "specversion": "1.0",
+            "id": uuid_v4(),
+            "source": "mqtt://sensor",
+            "type": "overheating",
+            "time": now(),
+            "datacontenttype": "application/json",
+            "data": this
+        }
+
+output:
+  kafka:
+    addresses:
+      - kafka-controller-0.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092
+      - kafka-controller-1.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092
+      - kafka-controller-2.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092
+    topic: opentwinsv2.events
+    client_id: benthos-kafka-producer
+    max_in_flight: 64

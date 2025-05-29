@@ -9,7 +9,9 @@ namespace OpenTwinsv2.Things.Interfaces
     {
         Task<string> SetThingDescriptionAsync(ThingDescription data);
         Task<string> GetThingDescriptionAsync();
-        Task HandleExternalEventAsync (ICloudEvent evnt);
+        Task OnEventReceived(object evnt);
+        Task InvokeAction(string actionName, object parameters);
+        Task SendEvent(ICloudEvent evnt);
         /*
         ¿Que debe hacer el actor?
         - Estar subcrito a eventos
@@ -23,6 +25,7 @@ namespace OpenTwinsv2.Things.Interfaces
         Task<IActorReminder> GetReminder();
         Task RegisterTimer();
         Task UnregisterTimer();
+
     }
 
 }

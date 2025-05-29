@@ -1,0 +1,25 @@
+controller:
+  persistence: 
+    enabled: false
+  replicaCount: 3
+broker:
+  persistence:
+    enabled: false
+listeners:
+  client:
+    protocol: PLAINTEXT
+  controller:
+    protocol: PLAINTEXT
+  interbroker:
+    protocol: PLAINTEXT
+  external:
+    protocol: PLAINTEXT
+externalAccess:
+  enabled: true
+  controller:
+    service:
+      type: NodePort
+      nodePorts: 
+        - 32001
+        - 32002
+        - 32003

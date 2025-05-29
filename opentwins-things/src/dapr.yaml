@@ -1,0 +1,14 @@
+version: 1
+apps:
+  - appID: events-service
+    appDirPath: ./Events/
+    appPort: 5000
+    command: ["dotnet", "run"]
+    args: []
+    resourcesPath: "./DaprComponents"
+  
+  - appID: things-service
+    appPort: 5001
+    appDirPath: ./Things/
+    command: ["dotnet", "run"]
+    args: ["--urls=http://localhost:5001/"]

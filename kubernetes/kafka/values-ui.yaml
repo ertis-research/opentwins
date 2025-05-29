@@ -1,0 +1,14 @@
+yamlApplicationConfig:
+  kafka:
+    clusters:
+      - name: OpenTwinsKafka
+        bootstrapServers: >
+          kafka.opentwinsv2.svc.cluster.local:9092
+  auth:
+    type: disabled
+  management:
+    health:
+      ldap:
+        enabled: false
+service:
+  type: NodePort

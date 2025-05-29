@@ -22,8 +22,9 @@ public class ThingsController : ControllerBase
     [HttpPost("")]
     public async Task<IActionResult> CreateThing([FromBody] JsonElement value)
     {
-        var deserializedValue  = JsonSerializer.Deserialize<ThingDescription>(value.GetRawText());
-        if(deserializedValue is null) {
+        var deserializedValue = JsonSerializer.Deserialize<ThingDescription>(value.GetRawText());
+        if (deserializedValue is null)
+        {
             return BadRequest("Body cannot be empty");
         }
         IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(deserializedValue.Id), ActorType);
@@ -35,37 +36,41 @@ public class ThingsController : ControllerBase
     public async Task<IActionResult> GetThingDescription(string thingId)
     {
         IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
-        Console.WriteLine("AAAAAAAA");
-        Console.WriteLine(thingId);
         string td = await actor.GetThingDescriptionAsync();
-        Console.WriteLine(td);
-        Console.WriteLine("AAAAAA55555AA");
         return Content(td, "application/td+json");
     }
-/*
-    [HttpGet("{thingId}/properties")]
-    public async Task<IActionResult> GetProperties(string thingId)
+    
+    [HttpPost("{thingId}/action/{actionName}/execute")]
+    public async Task<IActionResult> ExecuteAction(string thingId, string actionName, [FromBody] JsonElement body)
     {
-        var actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
-        var props = await actor.GetPropertiesAsync();
-        return Ok(props);
+        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+        await actor.InvokeAction(actionName, body);
+        return Ok();
     }
-*/
 /*
-    [HttpPost("{thingId}/properties/{prop}")]
-    public async Task<IActionResult> SetProperty(string thingId, string prop, [FromBody] JsonElement value)
-    {
-        var actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
-        var deserializedValue  = JsonSerializer.Deserialize<object>(value.GetRawText());
-        if (deserializedValue is null)
+            [HttpGet("{thingId}/properties")]
+            public async Task<IActionResult> GetProperties(string thingId)
+            {
+                var actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+                var props = await actor.GetPropertiesAsync();
+                return Ok(props);
+            }
+        */
+    /*
+        [HttpPost("{thingId}/properties/{prop}")]
+        public async Task<IActionResult> SetProperty(string thingId, string prop, [FromBody] JsonElement value)
         {
-            return BadRequest("Body cannot be empty");
-        }
-        var res = await actor.SetPropertyAsync(prop, deserializedValue);
-        if(res) {
-            return NoContent();
-        } else {
-            return NotFound();
-        }
-    }*/
+            var actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+            var deserializedValue  = JsonSerializer.Deserialize<object>(value.GetRawText());
+            if (deserializedValue is null)
+            {
+                return BadRequest("Body cannot be empty");
+            }
+            var res = await actor.SetPropertyAsync(prop, deserializedValue);
+            if(res) {
+                return NoContent();
+            } else {
+                return NotFound();
+            }
+        }*/
 }

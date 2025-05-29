@@ -31,3 +31,49 @@ dotnet add package Dapr.AspNetCore
 
 Ejecutar el proyecto (los contenedores de dapr tienen que estar iniciados!):
 dapr run --app-id myapp --app-port 5000 --dapr-http-port 3500 -- dotnet run
+
+Benthos:
+docker pull jeffail/benthos:latest
+kubectl create configmap benthos-config --from-file=benthos.yaml=kubernetes\benthos\benthos-config.yaml
+kubectl apply -f .\kubernetes\benthos\benthos-deploy.yaml
+
+Mosquitto:
+kubectl apply -f .\kubernetes\mosquitto\mosquitto-deploy.yaml
+
+
+Kafka:
+helm install kafka oci://registry-1.docker.io/bitnamicharts/kafka -f .\kubernetes\kafka\values.yaml --set externalAccess.controller.service.domain="ip del cluster"
+helm install kafka-ui kafka-ui/kafka-ui -f .\kubernetes\kafka\values-ui.yaml
+
+
+
+Kafka can be accessed by consumers via port 9092 on the following DNS name from within your cluster:
+
+    kafka.opentwinsv2.svc.cluster.local
+
+Each Kafka broker can be accessed by producers via port 9092 on the following DNS name(s) from within your cluster:
+
+    kafka-controller-0.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092
+    kafka-controller-1.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092
+    kafka-controller-2.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092
+
+{
+  "@context": ["https://www.w3.org/2019/wot/td/v1"],
+  "id": "urn:dev:wot:com:example:temperature-sensor",
+  "title": "TemperatureSensor",
+  "properties": {
+    "temperature": {
+      "type": "number",
+      "description": "Current temperature in Celsius",
+      "readOnly": true,
+      "observable": true,
+      "forms": [
+        {
+          "href": "mqtt://localhost:1883/sensors/temperature",
+          "contentType": "application/json",
+          "subprotocol": "mqtt"
+        }
+      ]
+    }
+  }
+}

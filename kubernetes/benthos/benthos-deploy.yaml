@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: benthos
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: benthos
+  template:
+    metadata:
+      labels:
+        app: benthos
+    spec:
+      containers:
+        - name: benthos
+          image: jeffail/benthos:latest
+          args: ["-c", "/config/benthos.yaml"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          configMap:
+            name: benthos-config

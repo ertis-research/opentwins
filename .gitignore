@@ -3,12 +3,21 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
+#secrets
+/kubernetes/benthos/benthos-secret.yaml
+
 # Dapr components
 **/components/
 **/DaprComponents/
 
 # dotenv files
 .env
+
+# Entornos virtuales
+env/
+.venv/
+venv/
+ENV/
 
 # User-specific files
 *.rsuser

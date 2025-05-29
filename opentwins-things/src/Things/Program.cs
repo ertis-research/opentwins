@@ -1,6 +1,5 @@
-///
-/// To compile: dapr run --app-id actorservice --app-port 5001 --app-protocol http --dapr-http-port 56001 -- dotnet run --urls=http://localhost:5001/  
-/// 
+// Execute with: dapr run --app-id things-service --app-port 5001 --app-protocol http --dapr-http-port 56001 -- dotnet run --urls=http://localhost:5001/  
+
 using OpenTwinsv2.Things.Services;
 
 var builder = WebApplication.CreateBuilder(args);

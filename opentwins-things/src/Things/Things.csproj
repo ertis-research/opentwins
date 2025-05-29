@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="Dapr.Actors.AspNetCore" Version="1.15.4" />
     <PackageReference Include="Dapr.Client" Version="1.15.4" />
+    <PackageReference Include="JsonLogic" Version="5.4.0" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="8.0.5" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.15" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />

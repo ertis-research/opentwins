@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Dapr.Actors;
+using Shared.Models;
 
 namespace Events.Services
 {
@@ -20,18 +21,18 @@ namespace Events.Services
                 }
             }
         */
-        private static readonly string defaultTopic = "opentwinsv2-events";
+        private static readonly string defaultTopic = "opentwinsv2.events";
         // 
-        private readonly ConcurrentDictionary<string, List<ActorReference>> _events = [];
+        private readonly ConcurrentDictionary<string, List<ActorIdentity>> _events = [];
         private readonly ConcurrentDictionary<string, List<string>> _routes = new();
 
-        public List<ActorReference> GetActorsByEventType(string eventType)
+        public List<ActorIdentity> GetActorsByEventType(string eventType)
         {
             return _events.TryGetValue(eventType, out var actors) ? actors : [];
         }
 
         // No meto aqui el topic porque creo que es cosa de este proyecto (o del orquestador) gestionar que topicos usa cada evento etc y no de los actores
-        public void UpdateEvents(Dictionary<string, List<ActorReference>> updates)
+        public void UpdateEvents(Dictionary<string, List<ActorIdentity>> updates)
         {
             foreach (var (topic, actors) in updates)
             {
@@ -39,7 +40,13 @@ namespace Events.Services
             }
         }
 
-        public void UpdateEventsByActor(ActorReference actor, string[] updatedEvents)
+        public Dictionary<string, List<string>> GetSubscriptions()
+        {
+            // Retorna un diccionario de topic -> lista de eventos
+            return new Dictionary<string, List<string>>(_routes);
+        }
+
+        public void UpdateEventsByActor(ActorIdentity actor, string[] updatedEvents)
         {
             var removeEvents = _events.Where(x => !updatedEvents.Contains(x.Key) && x.Value.Any(a => a.Equals(actor))).ToDictionary();
             var removeTopics = _routes.Where(x => x.Value.Count == 1 && x.Value.Any(y => removeEvents.ContainsKey(y))).ToDictionary();

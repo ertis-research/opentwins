@@ -1,6 +1,9 @@
+using Dapr;
 using Dapr.Actors;
 using Dapr.Actors.Runtime;
 using OpenTwinsv2.Things.Models;
+using Shared.Models;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace OpenTwinsv2.Things.Interfaces
@@ -9,9 +12,10 @@ namespace OpenTwinsv2.Things.Interfaces
     {
         Task<string> SetThingDescriptionAsync(ThingDescription data);
         Task<string> GetThingDescriptionAsync();
-        Task OnEventReceived(object evnt);
+        Task<Dictionary<string, object?>> GetCurrentStateAsync();
+        Task OnEventReceived(MyCloudEvent<string> eventRecv);
         Task InvokeAction(string actionName, object parameters);
-        Task SendEvent(ICloudEvent evnt);
+        Task SendEvent(MyCloudEvent<string> evnt);
         /*
         ¿Que debe hacer el actor?
         - Estar subcrito a eventos

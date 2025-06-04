@@ -39,7 +39,16 @@ public class ThingsController : ControllerBase
         string td = await actor.GetThingDescriptionAsync();
         return Content(td, "application/td+json");
     }
-    
+
+    [HttpGet("{thingId}/state")]
+    public async Task<IActionResult> GetCurrentState(string thingId)
+    {
+        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+        Dictionary<string, object?> state = await actor.GetCurrentStateAsync();
+        if (state is null) return NotFound();
+        return Content(JsonSerializer.Serialize(state), "application/td+json");
+    }
+
     [HttpPost("{thingId}/action/{actionName}/execute")]
     public async Task<IActionResult> ExecuteAction(string thingId, string actionName, [FromBody] JsonElement body)
     {
@@ -47,30 +56,7 @@ public class ThingsController : ControllerBase
         await actor.InvokeAction(actionName, body);
         return Ok();
     }
-/*
-            [HttpGet("{thingId}/properties")]
-            public async Task<IActionResult> GetProperties(string thingId)
-            {
-                var actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
-                var props = await actor.GetPropertiesAsync();
-                return Ok(props);
-            }
-        */
-    /*
-        [HttpPost("{thingId}/properties/{prop}")]
-        public async Task<IActionResult> SetProperty(string thingId, string prop, [FromBody] JsonElement value)
-        {
-            var actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
-            var deserializedValue  = JsonSerializer.Deserialize<object>(value.GetRawText());
-            if (deserializedValue is null)
-            {
-                return BadRequest("Body cannot be empty");
-            }
-            var res = await actor.SetPropertyAsync(prop, deserializedValue);
-            if(res) {
-                return NoContent();
-            } else {
-                return NotFound();
-            }
-        }*/
+
+
+
 }

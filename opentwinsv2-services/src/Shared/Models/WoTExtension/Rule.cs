@@ -1,13 +1,18 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Shared.Models
 {
     public class Rule
     {
+        [JsonPropertyName("@id")]
         public required string Id { get; set; }                 // Identificador de la regla
+        [JsonPropertyName("otv2:description")]
         public string? Description { get; set; }        // Texto descriptivo
-        public required JsonElement Condition { get; set; }     // Condición JSONLogic (almacenada como JObject)
-        public required List<object> Actions { get; set; }  // Lista de acciones a ejecutar
+        [JsonPropertyName("otv2:if")]
+        public required JsonElement If { get; set; }     // Condición JSONLogic (almacenada como JObject)
+        [JsonPropertyName("otv2:then")]
+        public required List<Then> Then  { get; set; }  // Lista de acciones a ejecutar
 
     }
 /*

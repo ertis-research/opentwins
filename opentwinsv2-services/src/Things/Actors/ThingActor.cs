@@ -1,8 +1,13 @@
+using System.Drawing;
 using System.Text.Json;
+using System.Threading.Tasks;
+using Dapr;
 using Dapr.Actors.Runtime;
 using Dapr.Client;
 using OpenTwinsv2.Things.Interfaces;
 using OpenTwinsv2.Things.Models;
+using Shared.Models;
+using Shared.Utilities;
 
 namespace OpenTwinsv2.Things.Services
 {
@@ -11,7 +16,8 @@ namespace OpenTwinsv2.Things.Services
         private const string ThingDescriptionKey = "TD_";
         private const string CurrentStateKey = "CS_";
         private const string RulesKey = "Rules_";
-        private ThingDescription? td;
+        private Dictionary<string, object?> currentState = [];
+        private ThingDescription? thingDescription;
 
         // The constructor must accept ActorHost as a parameter, and can also accept additional
         // parameters that will be retrieved from the dependency injection container
@@ -29,106 +35,178 @@ namespace OpenTwinsv2.Things.Services
         /// This method is called whenever an actor is activated.
         /// An actor is activated the first time any of its methods are invoked.
         /// </summary>
-        protected override Task OnActivateAsync()
+        protected override async Task OnActivateAsync()
         {
-            // Provides opportunity to perform some optional setup.
             Console.WriteLine($"Activating actor id: {this.Id}");
-            // If no exists, initializ
-
-            return Task.CompletedTask;
+            try
+            {
+                await LoadThingDescriptionAsync();
+                await LoadStateAsync();
+            }
+            catch
+            {
+                Console.WriteLine("ES NUEVO");
+            }
         }
 
         /// <summary>
         /// This method is called whenever an actor is deactivated after a period of inactivity.
         /// </summary>
-        protected override Task OnDeactivateAsync()
+        protected override async Task OnDeactivateAsync()
         {
             // Provides Opporunity to perform optional cleanup.
             Console.WriteLine($"Deactivating actor id: {this.Id}");
-            if (td is not null)
-            {
-                return StateManager.SetStateAsync<string>(
-                    Id.ToString(),  // state name
-                    td.ToString());
-            }
-            return Task.CompletedTask;
+            await SaveThingDescriptionAsync(thingDescription);
+            await SaveStateAsync(currentState);
+
         }
 
         /// <summary>
         /// Set MyData into actor's private state store
         /// </summary>
-        /// <param name="data">the user-defined MyData which will be stored into state store as "my_data" state</param>
-        public async Task<string> SetThingDescriptionAsync(ThingDescription data)
+        /// <param name="newThingDescription">the user-defined MyData which will be stored into state store as "my_data" state</param>
+        public async Task<string> SetThingDescriptionAsync(ThingDescription newThingDescription)
         {
-            // Data is saved to configured state store implicitly after each method execution by Actor's runtime.
-            // Data can also be saved explicitly by calling this.StateManager.SaveStateAsync();
-            // State to be saved must be DataContract serializable.
-            Console.WriteLine(data.ToString());
-            Console.WriteLine(Id.ToString());
-            td = data;
-            if (td.Events != null) SubscribeToEvents(td.Events);
-            await StateManager.SetStateAsync<string>(
-                Id.ToString(),  // state name
-                data.ToString());      // data saved for the named state "my_data"
-
+            thingDescription = newThingDescription;
+            if (newThingDescription.Events != null) await SubscribeToEvents(newThingDescription.Events);
+            await InitializeOrUpdateThingState(newThingDescription.Properties);
             return "Success";
         }
 
-        private async void SubscribeToEvents(Dictionary<string, EventAffordance> events)
-        {
-            string[] eventNames = [.. events.Keys.Where(e => !string.IsNullOrWhiteSpace(e))];
-            Console.WriteLine(JsonSerializer.Serialize(eventNames));
-            // Llama al servicio "events-service" registrado en Dapr
-            /*await _daprClient.InvokeMethodAsync(
-                HttpMethod.Post,
-                "events-service",
-                $"events/things/{Id}",
-                eventNames
-            );*/
-            var client = DaprClient.CreateInvokeHttpClient();
-            var cts = new CancellationTokenSource();
-            //HttpResponseMessage responde = await client.GetAsync("http://events-service/events/test", cts.Token);
-            Console.WriteLine($"http://events-service/events/things/{Id}");
-            var response = await client.PostAsJsonAsync($"http://events-service/events/things/{Id}", eventNames, cts.Token);
-
-            Console.WriteLine(response.ToString());
-        }
-
-        /// <summary>
-        /// Get MyData from actor's private state store
-        /// </summary>
-        /// <return>the user-defined MyData which is stored into state store as "my_data" state</return>
         public async Task<string> GetThingDescriptionAsync()
         {
             // Gets state from the state store.
-            return (td is null) ? await StateManager.GetStateAsync<string>(Id.ToString()) : td.ToString();
+            return await Task.FromResult(thingDescription != null ? thingDescription.ToString() : "Thing description is not available.");
         }
-        /*
-                public async Task HandleExternalEventAsync(ICloudEvent evnt)
+
+        public async Task<Dictionary<string, object?>> GetCurrentStateAsync()
+        {
+            // Gets state from the state store.
+            return (currentState is null) ? await StateManager.GetStateAsync<Dictionary<string, object?>>(CurrentStateKey + Id.ToString()) : currentState;
+        }
+
+        private async Task LoadThingDescriptionAsync()
+        {
+            thingDescription = await StateManager.GetStateAsync<ThingDescription>(ThingDescriptionKey + Id.ToString());
+        }
+
+        private async Task LoadStateAsync()
+        {
+            currentState = await StateManager.GetStateAsync<Dictionary<string, object?>>(CurrentStateKey + Id.ToString());
+        }
+
+        private async Task SaveThingDescriptionAsync(ThingDescription? newThingDescription)
+        {
+            thingDescription = newThingDescription;
+            await StateManager.SetStateAsync(ThingDescriptionKey + Id.ToString(), newThingDescription);
+        }
+
+        private async Task SaveStateAsync(Dictionary<string, object?> newState)
+        {
+            currentState = newState;
+            await StateManager.SetStateAsync(CurrentStateKey + Id.ToString(), newState);
+        }
+
+
+        private async Task InitializeOrUpdateThingState(Dictionary<string, PropertyAffordance>? properties)
+        {
+            if (properties is null)
+            {
+                currentState = [];
+                return;
+            }
+            var newState = currentState.Where(x => properties.ContainsKey(x.Key)).ToDictionary();
+            foreach (var property in properties)
+            {
+                if (!(newState.TryGetValue(property.Key, out object? value) && SchemaValidator.IsTypeCompatible(property.Value.DataType, value)))
                 {
-                    if (td is null || td.Events is null) return;
-                    var eventName = evnt.Type;
-                    if (!td.Events.TryGetValue(eventName, out var eventAffordance)) return;
-                    await ExecuteEventLogicAsync(eventAffordance, evnt.Data);
+                    newState[property.Key] = null;
+                }
+            }
+            currentState = newState;
+            await Task.CompletedTask;
+        }
+
+        private async Task UpdateState(Dictionary<string, object?> updatedProperties)
+        {
+            if (thingDescription is null || thingDescription.Properties is null) return;
+
+            foreach (var kvp in updatedProperties)
+            {
+                string propName = kvp.Key;
+                object? newValue = kvp.Value;
+
+                if (!thingDescription.Properties.TryGetValue(propName, out var affordance))
+                {
+                    Console.WriteLine($"[WARN] Property '{propName}' does not exist in the ThingDescription.");
+                    continue;
                 }
 
-                private async Task ExecuteEventLogicAsync(EventAffordance eventAffordance, object? eventData)
+                if (!SchemaValidator.IsTypeCompatible(affordance.DataType, newValue))
                 {
-                    Console.WriteLine(eventAffordance.Description);
-                    if (eventAffordance.DataResponse != null)
-                    {
-
-                    }
-                    // También podrías actualizar propiedades o emitir otros eventos
-                    if (eventAffordance. != null)
-                    {
-                        foreach (var prop in eventAffordance.PropertiesToUpdate)
-                        {
-                            await UpdatePropertyAsync(prop.Key, prop.Value);
-                        }
-                    }
+                    Console.WriteLine($"[WARN] Value for '{propName}' is not of the expected type: '{affordance.Type}'.");
+                    continue;
                 }
-        */
+
+                currentState[propName] = newValue;
+                Console.WriteLine($"[INFO] Property '{propName}' updated to: {newValue}");
+            }
+
+            await Task.CompletedTask;
+        }
+
+        private async Task SubscribeToEvents(Dictionary<string, EventAffordance> events)
+        {
+            string[] eventNames = [.. events.Keys.Where(e => !string.IsNullOrWhiteSpace(e))];
+            var client = DaprClient.CreateInvokeHttpClient();
+            var cts = new CancellationTokenSource();
+            var response = await client.PostAsJsonAsync($"http://events-service/events/things/{Id}", eventNames, cts.Token);
+            Console.WriteLine(response.ToString());
+        }
+
+        public async Task OnEventReceived(MyCloudEvent<string> eventRecv)
+        {
+            Console.WriteLine(eventRecv);
+            var eventAffordance = IsMyEvent(eventRecv);
+            if (eventAffordance is not null) Console.WriteLine("MI EVENTO: " + eventAffordance.ToString());
+            await Task.CompletedTask;
+        }
+
+        private EventAffordance? IsMyEvent(MyCloudEvent<string> msg)
+        {
+            // Validación básica del evento recibido
+            if (thingDescription?.Events is null || string.IsNullOrEmpty(msg.Type))
+            {
+                return null;
+            }
+
+            var exists = thingDescription.Events.FirstOrDefault(x =>
+            {
+                if (x.Key != msg.Type) return false;
+                if (x.Value.Data is null) return msg.Data is null;
+                if (msg.Data is null) return x.Value.Data.Type == "null";
+                return SchemaValidator.IsTypeCompatible(x.Value.Data.Type, SchemaValidator.DetectJsonElementType(msg.Data));
+            });
+
+            return (exists.Key is null) ? null : exists.Value;
+        }
+
+        public Task InvokeAction(string actionName, object parameters)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task SendEvent(MyCloudEvent<string> evnt)
+        {
+            throw new NotImplementedException();
+        }
+
+
+
+
+
+
+
         /// <summary>
         /// Register MyReminder reminder with the actor
         /// </summary>
@@ -196,23 +274,6 @@ namespace OpenTwinsv2.Things.Services
         {
             Console.WriteLine("OnTimerCallBack is called!");
             return Task.CompletedTask;
-        }
-
-        public Task OnEventReceived(object evnt)
-        {
-            Console.WriteLine($"{Id}: ME HA LLEGADO ALGO REY");
-            Console.WriteLine(evnt);
-            return Task.CompletedTask;
-        }
-
-        public Task InvokeAction(string actionName, object parameters)
-        {
-            throw new NotImplementedException();
-        }
-
-        public Task SendEvent(ICloudEvent evnt)
-        {
-            throw new NotImplementedException();
         }
     }
 }

@@ -1,0 +1,62 @@
+{
+    "@context": {
+        "xsd": "http://www.w3.org/2001/XMLSchema#",
+        "otv2": "https://example.com/wot/otv2#",
+        "otv2:rules": {
+            "@id": "otv2:rules",
+            "@type": "@json"
+        },
+        "otv2:description": {
+            "@id": "otv2:description",
+            "@type": "xsd:string"
+        },
+        "otv2:if": {
+            "@id": "otv2:if",
+            "@type": "@json"
+        },
+        "otv2:then": {
+            "@id": "otv2:then",
+            "@type": "@json"
+        },
+        "otv2:invoke": {
+            "@id": "otv2:invoke",
+            "@type": "@json"
+        },
+        "otv2:action": {
+            "@id": "otv2:action",
+            "@type": "xsd:string"
+        },
+        "otv2:thing": {
+            "@id": "otv2:thing",
+            "@type": "@id"
+        },
+        "otv2:input": {
+            "@id": "otv2:input",
+            "@type": "@json"
+        },
+        "otv2:emit": {
+            "@id": "otv2:emit",
+            "@type": "@json"
+        },
+        "otv2:event": {
+            "@id": "otv2:event",
+            "@type": "xsd:string"
+        },
+        "otv2:data": {
+            "@id": "otv2:data",
+            "@type": "@json"
+        },
+        "otv2:subscribesTo": {
+            "@id": "otv2:subscribesTo",
+            "@type": "@id"
+        },
+        "otv2:hasChild": {
+            "@id": "otv2:hasChild",
+            "@type": "@id"
+        },
+        "otv2:type": {
+            "@id": "otv2:model",
+            "@type": "@id"
+        }
+    }
+}

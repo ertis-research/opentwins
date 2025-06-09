@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Shared.Converters;
 
 namespace OpenTwinsv2.Things.Models
 {

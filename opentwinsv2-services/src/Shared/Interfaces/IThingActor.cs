@@ -10,11 +10,11 @@ namespace OpenTwinsv2.Things.Interfaces
 {
     public interface IThingActor : IActor
     {
-        Task<string> SetThingDescriptionAsync(ThingDescription data);
+        Task<string> SetThingDescriptionAsync(string data);
         Task<string> GetThingDescriptionAsync();
-        Task<Dictionary<string, object?>> GetCurrentStateAsync();
+        Task<Dictionary<string, PropertyState>> GetCurrentStateAsync();
         Task OnEventReceived(MyCloudEvent<string> eventRecv);
-        Task InvokeAction(string actionName, object parameters);
+        Task InvokeAction(string actionName, string parameters);
         Task SendEvent(MyCloudEvent<string> evnt);
         /*
         ¿Que debe hacer el actor?

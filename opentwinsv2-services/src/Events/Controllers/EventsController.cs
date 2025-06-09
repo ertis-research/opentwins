@@ -16,7 +16,7 @@ public class EventsController : ControllerBase
     }
 
     [HttpPost("things/{idActor}")]
-    public async Task<IActionResult> UpdateRoutes(string idActor, [FromBody] string[] events)
+    public async Task<IActionResult> UpdateRoutes(string idActor, [FromBody] List<string> events)
     {
         Console.WriteLine("Me ha llegado algo");
         Console.WriteLine(events.ToString());

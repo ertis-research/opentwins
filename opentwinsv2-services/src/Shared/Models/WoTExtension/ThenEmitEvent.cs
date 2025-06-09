@@ -1,13 +1,14 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Shared.Models
 {
-    public abstract class ThenEmitEvent : Then
+    public class ThenEmitEvent : Then
     {
-        [JsonPropertyName("otv2:event")]
+        [JsonPropertyName("event")]
         public required string Event { get; set; }
 
-        [JsonPropertyName("otv2:data")]
-        public Dictionary<string, object>? Data { get; set; }
+        [JsonPropertyName("data")]
+        public JsonElement? Data { get; set; }
     }
 }

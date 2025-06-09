@@ -1,9 +1,9 @@
-using System.Drawing;
 using System.Text.Json;
-using System.Threading.Tasks;
-using Dapr;
+using System.Text.Json.Nodes;
 using Dapr.Actors.Runtime;
 using Dapr.Client;
+using Json.Logic;
+using Json.More;
 using OpenTwinsv2.Things.Interfaces;
 using OpenTwinsv2.Things.Models;
 using Shared.Models;
@@ -15,8 +15,7 @@ namespace OpenTwinsv2.Things.Services
     {
         private const string ThingDescriptionKey = "TD_";
         private const string CurrentStateKey = "CS_";
-        private const string RulesKey = "Rules_";
-        private Dictionary<string, object?> currentState = [];
+        private Dictionary<string, PropertyState> currentState = [];
         private ThingDescription? thingDescription;
 
         // The constructor must accept ActorHost as a parameter, and can also accept additional
@@ -65,12 +64,57 @@ namespace OpenTwinsv2.Things.Services
         /// Set MyData into actor's private state store
         /// </summary>
         /// <param name="newThingDescription">the user-defined MyData which will be stored into state store as "my_data" state</param>
-        public async Task<string> SetThingDescriptionAsync(ThingDescription newThingDescription)
+        private static ThingDescription? CloneJsonElement(ThingDescription newThingDescription)
         {
-            thingDescription = newThingDescription;
-            if (newThingDescription.Events != null) await SubscribeToEvents(newThingDescription.Events);
-            await InitializeOrUpdateThingState(newThingDescription.Properties);
+            var json = JsonSerializer.Serialize(newThingDescription);
+            return JsonSerializer.Deserialize<ThingDescription>(json);
+        }
+
+        public async Task<string> SetThingDescriptionAsync(string newThingDescription)
+        {
+            thingDescription = JsonSerializer.Deserialize<ThingDescription>(newThingDescription);
+            if (thingDescription is not null) Console.WriteLine(JsonSerializer.Serialize<ThingDescription>(thingDescription));
+            if (thingDescription?.Events != null)
+            {
+                //string[] eventNames = [.. newThingDescription.Events.Keys.Where(e => !string.IsNullOrWhiteSpace(e))];
+                var eventNames = GetSubscribedEvents(thingDescription?.Links);
+                await SubscribeToEvents(eventNames);
+            }
+            await InitializeOrUpdateThingState(thingDescription?.Properties);
             return "Success";
+        }
+
+        private List<string> GetSubscribedEvents(List<Link>? links)
+        {
+            if (links is null) return [];
+
+            List<string> subscribedEvents = [];
+
+            foreach (Link link in links)
+            {
+                if (link.Rel != null &&
+                    link.Rel.Equals("subscribeEvent", StringComparison.OrdinalIgnoreCase))
+                {
+                    /*
+{
+    "rel": "subscribeEvent",
+    "href": "https://example.com/things/SensorTemp/events/temperatureChange",
+    "type": "application/json",
+    "title": "SensorTemp:temperatureChange"
+}
+                    */
+                    var segments = link.Href.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                    if (segments.Length >= 4 && segments[0] == "things" && segments[2] == "events")
+                    {
+                        string thingName = segments[1];
+                        string eventName = segments[3];
+                        Console.WriteLine($"{thingName}:{eventName}");
+                        subscribedEvents.Add($"{thingName}:{eventName}");
+                    }
+                }
+            }
+
+            return subscribedEvents;
         }
 
         public async Task<string> GetThingDescriptionAsync()
@@ -79,10 +123,10 @@ namespace OpenTwinsv2.Things.Services
             return await Task.FromResult(thingDescription != null ? thingDescription.ToString() : "Thing description is not available.");
         }
 
-        public async Task<Dictionary<string, object?>> GetCurrentStateAsync()
+        public async Task<Dictionary<string, PropertyState>> GetCurrentStateAsync()
         {
             // Gets state from the state store.
-            return (currentState is null) ? await StateManager.GetStateAsync<Dictionary<string, object?>>(CurrentStateKey + Id.ToString()) : currentState;
+            return (currentState is null) ? await StateManager.GetStateAsync<Dictionary<string, PropertyState>>(CurrentStateKey + Id.ToString()) : currentState;
         }
 
         private async Task LoadThingDescriptionAsync()
@@ -92,7 +136,7 @@ namespace OpenTwinsv2.Things.Services
 
         private async Task LoadStateAsync()
         {
-            currentState = await StateManager.GetStateAsync<Dictionary<string, object?>>(CurrentStateKey + Id.ToString());
+            currentState = await StateManager.GetStateAsync<Dictionary<string, PropertyState>>(CurrentStateKey + Id.ToString());
         }
 
         private async Task SaveThingDescriptionAsync(ThingDescription? newThingDescription)
@@ -101,7 +145,7 @@ namespace OpenTwinsv2.Things.Services
             await StateManager.SetStateAsync(ThingDescriptionKey + Id.ToString(), newThingDescription);
         }
 
-        private async Task SaveStateAsync(Dictionary<string, object?> newState)
+        private async Task SaveStateAsync(Dictionary<string, PropertyState> newState)
         {
             currentState = newState;
             await StateManager.SetStateAsync(CurrentStateKey + Id.ToString(), newState);
@@ -118,23 +162,23 @@ namespace OpenTwinsv2.Things.Services
             var newState = currentState.Where(x => properties.ContainsKey(x.Key)).ToDictionary();
             foreach (var property in properties)
             {
-                if (!(newState.TryGetValue(property.Key, out object? value) && SchemaValidator.IsTypeCompatible(property.Value.DataType, value)))
+                if (!(newState.TryGetValue(property.Key, out PropertyState? value) && SchemaValidator.IsTypeCompatible(property.Value.DataType, value.Value)))
                 {
-                    newState[property.Key] = null;
+                    newState[property.Key] = new PropertyState();
                 }
             }
             currentState = newState;
             await Task.CompletedTask;
         }
 
-        private async Task UpdateState(Dictionary<string, object?> updatedProperties)
+        private async Task UpdateState(Dictionary<string, PropertyState> updatedProperties)
         {
             if (thingDescription is null || thingDescription.Properties is null) return;
 
             foreach (var kvp in updatedProperties)
             {
                 string propName = kvp.Key;
-                object? newValue = kvp.Value;
+                PropertyState newValue = kvp.Value;
 
                 if (!thingDescription.Properties.TryGetValue(propName, out var affordance))
                 {
@@ -142,7 +186,7 @@ namespace OpenTwinsv2.Things.Services
                     continue;
                 }
 
-                if (!SchemaValidator.IsTypeCompatible(affordance.DataType, newValue))
+                if (!SchemaValidator.IsTypeCompatible(affordance.DataType, newValue.Value))
                 {
                     Console.WriteLine($"[WARN] Value for '{propName}' is not of the expected type: '{affordance.Type}'.");
                     continue;
@@ -155,20 +199,126 @@ namespace OpenTwinsv2.Things.Services
             await Task.CompletedTask;
         }
 
-        private async Task SubscribeToEvents(Dictionary<string, EventAffordance> events)
+        private async Task SubscribeToEvents(List<string> events)
         {
-            string[] eventNames = [.. events.Keys.Where(e => !string.IsNullOrWhiteSpace(e))];
             var client = DaprClient.CreateInvokeHttpClient();
             var cts = new CancellationTokenSource();
-            var response = await client.PostAsJsonAsync($"http://events-service/events/things/{Id}", eventNames, cts.Token);
+            var response = await client.PostAsJsonAsync($"http://events-service/events/things/{Id}", events, cts.Token);
             Console.WriteLine(response.ToString());
         }
 
         public async Task OnEventReceived(MyCloudEvent<string> eventRecv)
         {
+            Console.WriteLine("Ha llegado algo");
             Console.WriteLine(eventRecv);
-            var eventAffordance = IsMyEvent(eventRecv);
-            if (eventAffordance is not null) Console.WriteLine("MI EVENTO: " + eventAffordance.ToString());
+
+            if (eventRecv.Type != null)
+            {
+                JsonObject info = [];
+                info["eventName"] = eventRecv.Type;
+
+                JsonNode? payload;
+                try
+                {
+                    payload = (eventRecv.Data is null) ? null : JsonNode.Parse(eventRecv.Data);
+                }
+                catch
+                {
+                    payload = null;
+                }
+
+                await CheckRules(info, payload);
+            }
+            //var eventAffordance = IsMyEvent(eventRecv);
+            //if (eventAffordance is not null) Console.WriteLine("MI EVENTO: " + eventAffordance.ToString());
+            await Task.CompletedTask;
+        }
+
+        private async Task CheckRules(JsonObject info, JsonNode? payload)
+        {
+            if (thingDescription is null || thingDescription.Rules is null) return;
+            Console.WriteLine("PAYLOAD: " + payload?.ToString());
+            Console.WriteLine("INFO: " + info.ToString());
+            JsonNode data = GetCurrentStateAsJsonNode(info, payload);
+
+            foreach (var (name, logic) in thingDescription.Rules)
+            {
+                Console.WriteLine("Compruebo regla" + name);
+                Console.WriteLine("then" + JsonSerializer.Serialize(logic.Then));
+
+                Console.WriteLine("logic " + logic.ToString());
+                //bool res = logic.If.All(rule => JsonLogic.Apply(rule, data)?.GetValue<bool>() == true);
+                /*JsonNode? node = logic.If?.AsNode();
+                Console.WriteLine("ADSADSAD");
+                if (node is null)
+                {
+                    Console.WriteLine("NODE ES NULL");
+                    continue;
+                }
+                else
+                {
+                    Console.WriteLine("NODE: " + node.ToString());
+                }
+                Console.WriteLine("Aqui ha fallado rey?");
+                Console.WriteLine("data: " + data.ToString());
+                var aa = JsonLogic.Apply(node, data);
+                Console.WriteLine(aa?.ToString());
+                //bool res = JsonLogic.Apply(node, data)?.GetValue<bool>() == true;
+                Console.WriteLine("Aqui ha fallado rsdsdasey?");
+                if (true)
+                {
+                    Console.WriteLine("Recibida regla " + name);
+                    await ApplyRule(logic.Then, data);
+                }
+                */
+            }
+
+            await Task.CompletedTask;
+        }
+
+        private JsonNode GetCurrentStateAsJsonNode(JsonObject info, JsonNode? payload)
+        {
+            JsonObject json = info?.DeepClone().AsObject() ?? [];
+            if (payload != null) json["payload"] = payload;
+            foreach (var (propertyName, value) in currentState)
+            {
+                JsonNode? node = (value is null || value.Value is null) ? null : value.Value?.AsNode();
+                if (node is not null) json[propertyName] = node;
+            }
+            Console.WriteLine(json.ToJsonString());
+            return json;
+        }
+
+        private async Task ApplyRule(Then then, JsonNode data)
+        {
+            Console.WriteLine("Se aplica then");
+            if (then.UpdateState != null) await HandleUpdateStateAsync(then.UpdateState, data);
+            if (then.InvokeAction != null)
+            {
+                foreach (ThenInvokeAction action in then.InvokeAction) await HandleInvokeActionAsync(action, data);
+            }
+
+            if (then.EmitEvent != null)
+            {
+                foreach (ThenEmitEvent evnt in then.EmitEvent) await HandleEmitEventAsync(evnt, data);
+            }
+        }
+
+        private async Task HandleUpdateStateAsync(JsonElement? payload, JsonNode data)
+        {
+            Console.WriteLine("UPDATE STATE");
+            await Task.CompletedTask;
+        }
+
+        private async Task HandleInvokeActionAsync(ThenInvokeAction invokeAction, JsonNode data)
+        {
+            Console.WriteLine("INVOKE ACTION");
+            await Task.CompletedTask;
+        }
+
+        private async Task HandleEmitEventAsync(ThenEmitEvent emitEvent, JsonNode data)
+        {
+            Console.WriteLine("EMIT EVENT");
             await Task.CompletedTask;
         }
 
@@ -188,12 +338,54 @@ namespace OpenTwinsv2.Things.Services
                 return SchemaValidator.IsTypeCompatible(x.Value.Data.Type, SchemaValidator.DetectJsonElementType(msg.Data));
             });
 
+            Console.WriteLine(exists);
+
             return (exists.Key is null) ? null : exists.Value;
         }
 
-        public Task InvokeAction(string actionName, object parameters)
+        private ActionAffordance? IsMyAction(string name, string parameters)
         {
-            throw new NotImplementedException();
+            // Validación básica del evento recibido
+            if (thingDescription?.Actions is null || string.IsNullOrEmpty(name))
+            {
+                return null;
+            }
+
+            var exists = thingDescription.Actions.FirstOrDefault(x =>
+            {
+                if (x.Key != name) return false;
+                return true;
+                //Por ahora comentamos
+                //if (x.Value.Input is null) return parameters is null;
+                //if (parameters is null) return x.Value.Input.Type == "null";
+                //return SchemaValidator.IsTypeCompatible(x.Value.Input.Type, SchemaValidator.DetectJsonElementType(parameters));
+            });
+
+            return (exists.Key is null) ? null : exists.Value;
+        }
+
+        public async Task InvokeAction(string action, string parameters)
+        {
+            Console.WriteLine("ACCION INVOCADA: " + action);
+            // Falta comprobacion de si la accion es mia jeje
+            if (IsMyAction(action, parameters) is null) return;
+            switch (action)
+            {
+                case "updateProperties":
+                    try
+                    {
+                        Dictionary<string, PropertyState>? data = JsonSerializer.Deserialize<Dictionary<string, PropertyState>>(parameters, new JsonSerializerOptions
+                        {
+                            PropertyNameCaseInsensitive = true
+                        });
+                        if (data is not null) await UpdateState(data);
+                    }
+                    catch { }
+                    break;
+
+                default:
+                    throw new ArgumentException($"Unsupported action: {action}");
+            }
         }
 
         public Task SendEvent(MyCloudEvent<string> evnt)

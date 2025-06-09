@@ -1,5 +1,3 @@
-using System;
-
 namespace Shared.Models
 {
     public class ActorIdentity(string actorId, string actorType) : IEquatable<ActorIdentity>

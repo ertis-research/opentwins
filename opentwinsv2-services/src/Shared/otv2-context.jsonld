@@ -46,7 +46,7 @@
             "@id": "otv2:data",
             "@type": "@json"
         },
-        "otv2:subscribesTo": {
+        "otv2:subscribesToEvent": {
             "@id": "otv2:subscribesTo",
             "@type": "@id"
         },

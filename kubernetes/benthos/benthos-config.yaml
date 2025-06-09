@@ -11,7 +11,7 @@ pipeline:
             "specversion": "1.0",
             "id": uuid_v4(),
             "source": "mqtt://sensor",
-            "type": "overheating",
+            "type": "mqtt:changes",
             "time": now(),
             "datacontenttype": "application/json",
             "data": this

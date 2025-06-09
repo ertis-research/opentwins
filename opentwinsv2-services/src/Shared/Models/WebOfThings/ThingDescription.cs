@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Shared.Converters;
+using Shared.Models;
 
 namespace OpenTwinsv2.Things.Models
 {
@@ -74,6 +76,9 @@ namespace OpenTwinsv2.Things.Models
 
         [JsonPropertyName("uriVariables")]
         public Dictionary<string, DataSchema>? UriVariables { get; set; }
+
+        [JsonPropertyName("otv2:rules")]
+        public Dictionary<string, ThingLogic>? Rules { get; set; }
 
         public override string ToString()
         {

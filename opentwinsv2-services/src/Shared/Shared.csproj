@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="Dapr.Actors.AspNetCore" Version="1.15.4" />
+    <PackageReference Include="JsonLogic" Version="5.4.0" />
   </ItemGroup>
 
 </Project>

@@ -46,7 +46,7 @@ namespace Events.Services
             return new Dictionary<string, List<string>>(_routes);
         }
 
-        public void UpdateEventsByActor(ActorIdentity actor, string[] updatedEvents)
+        public void UpdateEventsByActor(ActorIdentity actor, List<string> updatedEvents)
         {
             var removeEvents = _events.Where(x => !updatedEvents.Contains(x.Key) && x.Value.Any(a => a.Equals(actor))).ToDictionary();
             var removeTopics = _routes.Where(x => x.Value.Count == 1 && x.Value.Any(y => removeEvents.ContainsKey(y))).ToDictionary();

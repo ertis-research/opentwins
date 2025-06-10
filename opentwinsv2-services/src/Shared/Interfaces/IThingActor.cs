@@ -12,7 +12,7 @@ namespace OpenTwinsv2.Things.Interfaces
     {
         Task<string> SetThingDescriptionAsync(string data);
         Task<string> GetThingDescriptionAsync();
-        Task<Dictionary<string, PropertyState>> GetCurrentStateAsync();
+        Task<string> GetCurrentStateAsync();
         Task OnEventReceived(MyCloudEvent<string> eventRecv);
         Task InvokeAction(string actionName, string parameters);
         Task SendEvent(MyCloudEvent<string> evnt);

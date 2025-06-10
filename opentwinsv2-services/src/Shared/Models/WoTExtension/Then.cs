@@ -7,8 +7,7 @@ namespace Shared.Models
     public class Then
     {
         [JsonPropertyName("otv2:updateState")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-        public JsonElement? UpdateState { get; set; }
+        public Dictionary<string, UpdatePropertyState>? UpdateState { get; set; }
 
         [JsonPropertyName("otv2:emitEvent")]
         public List<ThenEmitEvent>? EmitEvent { get; set; }

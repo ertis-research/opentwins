@@ -21,14 +21,12 @@ public class ThingsController : ControllerBase
     [HttpPost("")]
     public async Task<IActionResult> CreateThing([FromBody] JsonElement value)
     {
-        Console.WriteLine(value.GetRawText());
+        //Console.WriteLine(value.GetRawText());
         var deserializedValue = JsonSerializer.Deserialize<ThingDescription>(value.GetRawText());
         if (deserializedValue is null)
         {
             return BadRequest("Body cannot be empty");
         }
-        Console.WriteLine(JsonSerializer.Serialize<ThingDescription>(deserializedValue));
-        Console.WriteLine(JsonSerializer.Serialize(deserializedValue.Rules?.ElementAt(0).Value.If));
         IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(deserializedValue.Id), ActorType);
         var td = await actor.SetThingDescriptionAsync(value.GetRawText()); //MIRA ESTO LO HAGO Y NO PASO DIRECTAMENTE SERIALIZADO PORQUE ME CAGO EN TODO LO QUE ME HA COSTADO ESTO DIOS MIO SI LO PASO SERIALIZADO NO SE PASA BIEN NO PUEDO MAS SON LAS 9:30 QUIERO CENAR
         return Ok(td);
@@ -46,9 +44,9 @@ public class ThingsController : ControllerBase
     public async Task<IActionResult> GetCurrentState(string thingId)
     {
         IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
-        Dictionary<string, PropertyState> state = await actor.GetCurrentStateAsync();
+        string state = await actor.GetCurrentStateAsync();
         if (state is null) return NotFound();
-        return Content(JsonSerializer.Serialize(state), "application/td+json");
+        return Content(state, "application/td+json");
     }
 
     [HttpPost("{thingId}/action/{actionName}/execute")]

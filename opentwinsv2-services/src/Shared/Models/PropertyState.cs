@@ -7,8 +7,11 @@ namespace Shared.Models
 {
     public class PropertyState
     {
-        [JsonConverter(typeof(ObjectJsonConverter))]
+        //[JsonConverter(typeof(ObjectJsonConverter))]
+        //[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        [JsonPropertyName("value")]
         public JsonElement? Value { get; set; }
+        [JsonPropertyName("lastUpdate")]
         public DateTime? LastUpdate { get; set; }
 
         public PropertyState()
@@ -25,6 +28,12 @@ namespace Shared.Models
         {
             Value = value;
             LastUpdate = lastUpdate;
+        }
+
+        public PropertyState(JsonElement value, DateTime? lastUpdate)
+        {
+            Value = value;
+            LastUpdate = (lastUpdate != null) ? lastUpdate : DateTime.UtcNow;
         }
 
         public override string ToString()

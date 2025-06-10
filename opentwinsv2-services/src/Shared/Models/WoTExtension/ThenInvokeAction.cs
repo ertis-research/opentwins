@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Shared.Models
 {
-    public class ThenInvokeAction : Then
+    public class ThenInvokeAction
     {
         [JsonPropertyName("thing")]
         public string? Thing { get; set; }  // Si es null, se asume que es el mismo Thing

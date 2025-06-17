@@ -60,7 +60,7 @@ namespace OpenTwinsv2.Things.Models
         [JsonPropertyName("format")]
         public string? Format { get; set; }
 
-        [JsonPropertyName("type")]
-        public string? Type { get; set; }
+        [JsonIgnore]
+        public abstract string? Type { get; }
     }
 }

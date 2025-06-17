@@ -1,10 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using Dapr.Actors.Runtime;
 using Dapr.Client;
 using Json.Logic;
 using Json.More;
-using OpenTwinsv2.Things.Interfaces;
 using OpenTwinsv2.Things.Models;
 using Shared.Models;
 using Shared.Utilities;
@@ -119,7 +119,10 @@ namespace OpenTwinsv2.Things.Services
         public async Task<string> GetThingDescriptionAsync()
         {
             // Gets state from the state store.
-            return await Task.FromResult(thingDescription != null ? thingDescription.ToString() : "Thing description is not available.");
+            return await Task.FromResult(thingDescription != null ? JsonSerializer.Serialize(thingDescription, new JsonSerializerOptions
+            {
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+            }) : "Thing description is not available.");
         }
 
         public async Task<string> GetCurrentStateAsync()

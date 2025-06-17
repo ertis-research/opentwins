@@ -15,7 +15,7 @@ namespace OpenTwinsv2.Things.Models
         [JsonPropertyName("maxItems")]
         public uint? MaxItems { get; set; }
 
-        [JsonPropertyName("type")]
-        public new string Type => "array";
+        [JsonIgnore]
+        public override string Type => "array";
     }
 }

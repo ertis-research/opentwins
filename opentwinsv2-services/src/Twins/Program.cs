@@ -1,18 +1,21 @@
-var builder = WebApplication.CreateBuilder(args);
+using Dgraph4Net.ActiveRecords;
+using OpenTwinsv2.Twins.Services;
 
-// Add services to the container.
-builder.Services.AddControllers();
-builder.Services.AddDaprClient();
+var builder = WebApplication.CreateBuilder(args);
+//builder.Services.AddDaprPubSubClient();
+builder.Services.AddSingleton<DGraphService>();
+builder.Services.AddControllers().AddDapr();
+
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-app.UseRouting();
-app.UseCloudEvents();
-app.UseEndpoints(endpoints =>
-{
-    endpoints.MapSubscribeHandler();
-    endpoints.MapControllers();
-});
+app.UseDeveloperExceptionPage();
+app.UseSwagger();
+app.UseSwaggerUI();
+app.MapControllers();
 
-app.Run();
+ClassMapping.Map();
+
+await app.RunAsync();

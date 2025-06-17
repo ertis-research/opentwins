@@ -10,7 +10,7 @@ namespace OpenTwinsv2.Things.Models
         [JsonPropertyName("required")]
         public List<string>? Required { get; set; }
 
-        [JsonPropertyName("type")]
-        public new string Type => "object";
+        [JsonIgnore]
+        public override string Type => "object";
     }
 }

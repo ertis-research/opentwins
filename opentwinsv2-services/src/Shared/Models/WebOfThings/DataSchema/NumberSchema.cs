@@ -19,7 +19,7 @@ namespace OpenTwinsv2.Things.Models
         [JsonPropertyName("multipleOf")]
         public double? MultipleOf { get; set; }
         
-        [JsonPropertyName("type")]
-        public new string Type => "number";
+        [JsonIgnore]
+        public override string Type => "number";
     }
 }

@@ -4,7 +4,7 @@ namespace OpenTwinsv2.Things.Models
 {
     public class NullSchema : DataSchema
     {
-        [JsonPropertyName("type")]
-        public new string Type => "null";
+        [JsonIgnore]
+        public override string Type => "null";
     }
 }

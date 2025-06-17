@@ -6,7 +6,7 @@ using Shared.Models;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace OpenTwinsv2.Things.Interfaces
+namespace OpenTwinsv2.Things.Models
 {
     public interface IThingActor : IActor
     {

@@ -40,11 +40,16 @@ kubectl apply -f .\kubernetes\benthos\benthos-deploy.yaml
 Mosquitto:
 kubectl apply -f .\kubernetes\mosquitto\mosquitto-deploy.yaml
 
+helm install opentwinsv2-dgraph dgraph/dgraph -f kubernetes/dgraph/values.yaml
 
 Kafka:
 helm install kafka oci://registry-1.docker.io/bitnamicharts/kafka -f .\kubernetes\kafka\values.yaml --set externalAccess.controller.service.domain="ip del cluster"
 helm install kafka-ui kafka-ui/kafka-ui -f .\kubernetes\kafka\values-ui.yaml
 
+
+DGraph:
+helm repo add dgraph https://charts.dgraph.io
+helm install opentwinsv2-dgraph dgraph/dgraph
 
 
 Kafka can be accessed by consumers via port 9092 on the following DNS name from within your cluster:

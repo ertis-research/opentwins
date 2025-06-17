@@ -1,8 +1,5 @@
-using Dapr.Actors;
 using Dapr.Actors.Runtime;
-using OpenTwinsv2.Things.Interfaces;
-using System;
-using System.Threading.Tasks;
+using OpenTwinsv2.Things.Models;
 
 namespace OpenTwinsv2.Things.Services
 {

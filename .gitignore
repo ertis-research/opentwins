@@ -3,6 +3,10 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
+# app config
+#**/appsettings.json
+**/appsettings.Development.json
+
 #secrets
 /kubernetes/benthos/benthos-secret.yaml
 

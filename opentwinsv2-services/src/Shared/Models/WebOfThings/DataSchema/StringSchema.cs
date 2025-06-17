@@ -19,7 +19,7 @@ namespace OpenTwinsv2.Things.Models
         [JsonPropertyName("contentMediaType")]
         public string? ContentMediaType { get; set; }
 
-        [JsonPropertyName("type")]
-        public new string Type => "string";
+        [JsonIgnore]
+        public override string? Type => "string";
     }
 }

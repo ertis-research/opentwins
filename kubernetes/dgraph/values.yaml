@@ -1,0 +1,21 @@
+# helm install opentwinsv2-dgraph dgraph/dgraph -f kubernetes/dgraph/values.yaml
+
+zero:
+  service:
+    type: NodePort
+    nodePort: 32008
+
+alpha:
+  acl:
+    enabled: false
+  service:
+    type: NodePort
+    nodePort: 32009
+  persistentVolume:
+    enabled: true
+
+ratel:
+  enabled: true
+  service:
+    type: NodePort
+    nodePort: 32010

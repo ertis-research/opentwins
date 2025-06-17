@@ -1,14 +1,11 @@
 using System.Text;
-using System.Text.Json;
-using Dapr;
 using Dapr.Actors;
 using Dapr.Actors.Client;
 using Dapr.Client;
 using Dapr.Messaging.PublishSubscribe;
 using Events.Services;
-using OpenTwinsv2.Things.Interfaces;
+using OpenTwinsv2.Things.Models;
 using Shared.Models;
-using Shared.Utilities;
 
 namespace Events.Handlers
 {

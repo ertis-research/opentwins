@@ -1,0 +1,10 @@
+# helm install opentwinsv2-redis oci://registry-1.docker.io/bitnamicharts/redis -f .\kubernetes\redis\values.yaml
+
+auth:
+  enabled: false
+
+master:
+  service:
+    type: NodePort
+    nodePorts:
+      redis: "47342"

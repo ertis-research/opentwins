@@ -46,6 +46,9 @@ Kafka:
 helm install kafka oci://registry-1.docker.io/bitnamicharts/kafka -f .\kubernetes\kafka\values.yaml --set externalAccess.controller.service.domain="ip del cluster"
 helm install kafka-ui kafka-ui/kafka-ui -f .\kubernetes\kafka\values-ui.yaml
 
+Redis:
+helm install opentwinsv2-redis oci://registry-1.docker.io/bitnamicharts/redis
+
 
 DGraph:
 helm repo add dgraph https://charts.dgraph.io

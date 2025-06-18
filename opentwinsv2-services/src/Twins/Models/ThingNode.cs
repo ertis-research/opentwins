@@ -7,10 +7,16 @@ namespace OpenTwinsv2.Twins.Models
     {
         //uid te lo incluye AEntity
         [JsonPropertyName("name")]
-        public required string Name { get; set; }
+        public string? Name { get; set; }
 
-        [JsonPropertyName("twins")]
-        public List<ThingNode> Twins { get; set; } = [];
+        [JsonPropertyName("thingId")]
+        public string? ThingId { get; set; }
+
+        [JsonPropertyName("isTwin")]
+        public bool IsTwin { get; set; } = false;
+
+        [JsonPropertyName("contains")]
+        public List<ThingNode> Contains { get; set; } = [];
 
         [JsonPropertyName("events")]
         public List<EventNode> Events { get; set; } = [];
@@ -18,8 +24,14 @@ namespace OpenTwinsv2.Twins.Models
         [JsonPropertyName("types")]
         public List<ThingNode> Types { get; set; } = [];
 
-        [JsonPropertyName("thingId")]
-        public string? ThingId { get; set; }
+        public ThingNode() { }
+
+        public ThingNode(string thingId, string? name, bool isTwin)
+        {
+            Name = name;
+            ThingId = thingId;
+            IsTwin = isTwin;
+        }
     }
 
     internal sealed class ThingNodeMapping : ClassMap<ThingNode>
@@ -29,7 +41,8 @@ namespace OpenTwinsv2.Twins.Models
             SetType("Thing"); // Ajusta el tipo al nombre de la entidad, si es necesario
 
             String(x => x.Name, "name");
-            HasMany(x => x.Twins, "twins");
+            Boolean(x => x.IsTwin, "isTwin"); 
+            HasMany(x => x.Contains, "contains");
             HasMany(x => x.Events, "events", x => x.Publishers);
             HasMany(x => x.Types, "types");
             String(x => x.ThingId, "thingId");

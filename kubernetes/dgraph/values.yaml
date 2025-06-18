@@ -8,6 +8,12 @@ zero:
 alpha:
   acl:
     enabled: false
+  encryption:
+    enabled: false
+  configFile:
+    config.yaml: |
+      security:
+        whitelist: 10.0.0.0/8,172.0.0.0/8,192.168.0.0/16
   service:
     type: NodePort
     nodePort: 32009

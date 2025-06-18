@@ -4,7 +4,7 @@ namespace OpenTwinsv2.Twins.Models
 {
     public static class ThingMapper
     {
-        public static ThingNode MapToThingNode(ThingDescription td)
+        public static ThingNode? MapToThingNode(ThingDescription td)
         {
             return new ThingNode
             {

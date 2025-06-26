@@ -85,3 +85,19 @@ Each Kafka broker can be accessed by producers via port 9092 on the following DN
     }
   }
 }
+
+OLVIDATE DE LO SIGUIENTE: ESTO Configurar Meinberg NTP en Windows https://www.meinbergglobal.com/english/sw/ntp.htm#ntp_stable
+CON NTP:
+0.pool.ntp.org
+1.pool.ntp.org
+2.pool.ntp.org
+time.google.com
+time.cloudflare.com
+
+net start w32time
+w32tm /resync desde CMD con privilegios de admin.
+
+w32tm /config /manualpeerlist:"ntp.ubuntu.com" /syncfromflags:manual /update
+net stop w32time
+net start w32time
+w32tm /resync

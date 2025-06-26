@@ -1,4 +1,4 @@
-// Execute with: dapr run --app-id things-service --app-port 5001 --app-protocol http --dapr-http-port 56001 -- dotnet run --urls=http://localhost:5001/  
+// dapr run --app-id things-service --app-port 5001 --app-protocol http --dapr-http-port 56001 --resources-path ./DaprComponents  -- dotnet run --urls=http://localhost:5001/
 
 using OpenTwinsv2.Things.Services;
 

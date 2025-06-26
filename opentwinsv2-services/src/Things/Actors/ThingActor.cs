@@ -17,6 +17,8 @@ namespace OpenTwinsv2.Things.Services
         private const string CurrentStateKey = "CS_";
         private Dictionary<string, PropertyState> currentState = [];
         private ThingDescription? thingDescription;
+        private const string StateStoreName = "actorstatestore";
+        private static readonly DaprClient _daprClient = new DaprClientBuilder().Build();
 
         // The constructor must accept ActorHost as a parameter, and can also accept additional
         // parameters that will be retrieved from the dependency injection container
@@ -42,9 +44,9 @@ namespace OpenTwinsv2.Things.Services
                 await LoadThingDescriptionAsync();
                 await LoadStateAsync();
             }
-            catch
+            catch (Exception exc)
             {
-                Console.WriteLine("[INFO] There is no data about the thing: its new.");
+                Console.WriteLine("[INFO] There is no data about the thing: its new." + exc.Message);
             }
         }
 
@@ -73,6 +75,7 @@ namespace OpenTwinsv2.Things.Services
         public async Task<string> SetThingDescriptionAsync(string newThingDescription)
         {
             thingDescription = JsonSerializer.Deserialize<ThingDescription>(newThingDescription);
+            await SaveThingDescriptionAsync(thingDescription);
             if (thingDescription?.Events != null)
             {
                 //string[] eventNames = [.. newThingDescription.Events.Keys.Where(e => !string.IsNullOrWhiteSpace(e))];
@@ -125,35 +128,57 @@ namespace OpenTwinsv2.Things.Services
             }) : "Thing description is not available.");
         }
 
-        public async Task<string> GetCurrentStateAsync()
+        public Task<string> GetCurrentStateAsync()
         {
             // Gets state from the state store.
-            var res = (currentState is null) ? await StateManager.GetStateAsync<Dictionary<string, PropertyState>>(CurrentStateKey + Id.ToString()) : currentState;
-            return JsonSerializer.Serialize(res);
+            return Task.FromResult(JsonSerializer.Serialize(currentState));
         }
 
         private async Task LoadThingDescriptionAsync()
         {
-            thingDescription = await StateManager.GetStateAsync<ThingDescription>(ThingDescriptionKey + Id.ToString());
+            Console.WriteLine("LOAD");
+            var bulkStateItems = await _daprClient.GetBulkStateAsync<string>(StateStoreName, [ThingDescriptionKey + Id.ToString()], parallelism: 1);
+
+            if (bulkStateItems.Count > 0 && !string.IsNullOrEmpty(bulkStateItems[0].Value))
+            {
+                thingDescription = JsonSerializer.Deserialize<ThingDescription>(bulkStateItems[0].Value);
+            }
+            else
+            {
+                Console.WriteLine("No se encontró ThingDescription en el estado.");
+            }
         }
 
         private async Task LoadStateAsync()
         {
-            currentState = await StateManager.GetStateAsync<Dictionary<string, PropertyState>>(CurrentStateKey + Id.ToString());
+            Console.WriteLine("LOAD");
+            var bulkStateItems = await _daprClient.GetBulkStateAsync<Dictionary<string, PropertyState>>(StateStoreName, [CurrentStateKey + Id.ToString()], parallelism: 1);
+            foreach (var item in bulkStateItems)
+            {
+                if (item.Value != null)
+                {
+                    foreach (var kvp in item.Value)
+                    {
+                        currentState[kvp.Key] = kvp.Value;
+                    }
+                }
+            }
         }
 
         private async Task SaveThingDescriptionAsync(ThingDescription? newThingDescription)
         {
+            Console.WriteLine("SAVE");
             thingDescription = newThingDescription;
-            await StateManager.SetStateAsync(ThingDescriptionKey + Id.ToString(), newThingDescription);
+            await _daprClient.SaveStateAsync(StateStoreName, ThingDescriptionKey + Id.ToString(), JsonSerializer.Serialize(thingDescription));
+            await LoadThingDescriptionAsync();
         }
 
         private async Task SaveStateAsync(Dictionary<string, PropertyState> newState)
         {
+            Console.WriteLine("SAVE");
             currentState = newState;
-            await StateManager.SetStateAsync(CurrentStateKey + Id.ToString(), newState);
+            await _daprClient.SaveStateAsync(StateStoreName, CurrentStateKey + Id.ToString(), newState);
         }
-
 
         private async Task InitializeOrUpdateThingState(Dictionary<string, PropertyAffordance>? properties)
         {
@@ -171,7 +196,7 @@ namespace OpenTwinsv2.Things.Services
                 }
             }
             currentState = newState;
-            await Task.CompletedTask;
+            await SaveStateAsync(newState);
         }
 
         private async Task UpdateState(Dictionary<string, PropertyState> updatedProperties)
@@ -199,7 +224,7 @@ namespace OpenTwinsv2.Things.Services
                 Console.WriteLine($"[INFO] Property '{propName}' updated to: {newValue}");
             }
 
-            await Task.CompletedTask;
+            await SaveStateAsync(currentState);
         }
 
         private async Task SubscribeToEvents(List<string> events)

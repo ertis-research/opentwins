@@ -37,7 +37,7 @@ public class SubscriptionManager
             _pubsubName,
             topic,
             new DaprSubscriptionOptions(new MessageHandlingPolicy(TimeSpan.FromSeconds(10), TopicResponseAction.Drop)),
-                (msg, ct) => Events.Handlers.EventHandler.Handle(msg, topic, _routingService), CancellationToken.None);
+                (msg, ct) => Task.Run(() => Events.Handlers.EventHandler.Handle(msg, topic, _routingService), CancellationToken.None));
     }
 
     // Call this method whenever routes are updated

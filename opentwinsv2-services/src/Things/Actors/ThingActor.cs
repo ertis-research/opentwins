@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Dapr.Actors.Runtime;
 using Dapr.Client;
+using Dapr.Client.Autogen.Grpc.v1;
 using Json.Logic;
 using Json.More;
 using OpenTwinsv2.Things.Models;
@@ -76,7 +77,7 @@ namespace OpenTwinsv2.Things.Services
         {
             thingDescription = JsonSerializer.Deserialize<ThingDescription>(newThingDescription);
             await SaveThingDescriptionAsync(thingDescription);
-            if (thingDescription?.Events != null)
+            if (thingDescription?.Links != null)
             {
                 //string[] eventNames = [.. newThingDescription.Events.Keys.Where(e => !string.IsNullOrWhiteSpace(e))];
                 var eventNames = GetSubscribedEvents(thingDescription?.Links);
@@ -136,7 +137,6 @@ namespace OpenTwinsv2.Things.Services
 
         private async Task LoadThingDescriptionAsync()
         {
-            Console.WriteLine("LOAD");
             var bulkStateItems = await _daprClient.GetBulkStateAsync<string>(StateStoreName, [ThingDescriptionKey + Id.ToString()], parallelism: 1);
 
             if (bulkStateItems.Count > 0 && !string.IsNullOrEmpty(bulkStateItems[0].Value))
@@ -145,13 +145,12 @@ namespace OpenTwinsv2.Things.Services
             }
             else
             {
-                Console.WriteLine("No se encontró ThingDescription en el estado.");
+                Console.WriteLine("[INFO] No ThingDescription found in statestore.");
             }
         }
 
         private async Task LoadStateAsync()
         {
-            Console.WriteLine("LOAD");
             var bulkStateItems = await _daprClient.GetBulkStateAsync<Dictionary<string, PropertyState>>(StateStoreName, [CurrentStateKey + Id.ToString()], parallelism: 1);
             foreach (var item in bulkStateItems)
             {
@@ -167,7 +166,6 @@ namespace OpenTwinsv2.Things.Services
 
         private async Task SaveThingDescriptionAsync(ThingDescription? newThingDescription)
         {
-            Console.WriteLine("SAVE");
             thingDescription = newThingDescription;
             await _daprClient.SaveStateAsync(StateStoreName, ThingDescriptionKey + Id.ToString(), JsonSerializer.Serialize(thingDescription));
             await LoadThingDescriptionAsync();
@@ -175,7 +173,6 @@ namespace OpenTwinsv2.Things.Services
 
         private async Task SaveStateAsync(Dictionary<string, PropertyState> newState)
         {
-            Console.WriteLine("SAVE");
             currentState = newState;
             await _daprClient.SaveStateAsync(StateStoreName, CurrentStateKey + Id.ToString(), newState);
         }
@@ -221,7 +218,7 @@ namespace OpenTwinsv2.Things.Services
                 }
 
                 currentState[propName] = newValue;
-                Console.WriteLine($"[INFO] Property '{propName}' updated to: {newValue}");
+                //Console.WriteLine($"[INFO] Property '{propName}' updated to: {newValue}");
             }
 
             await SaveStateAsync(currentState);
@@ -237,7 +234,7 @@ namespace OpenTwinsv2.Things.Services
 
         public async Task OnEventReceived(MyCloudEvent<string> eventRecv)
         {
-            Console.WriteLine("[INFO] Received new event.");
+            //Console.WriteLine($"[INFO: {Id}] Received new event");
 
             if (eventRecv.Type != null)
             {
@@ -276,7 +273,7 @@ namespace OpenTwinsv2.Things.Services
                 //bool res = JsonLogic.Apply(node, data)?.GetValue<bool>() == true;
                 if (res && logic.Then != null)
                 {
-                    Console.WriteLine("[INFO] Executing rule " + name + "...");
+                    //Console.WriteLine("[INFO] Executing rule " + name + "...");
                     await ApplyRule(logic.Then, data);
                 }
             }
@@ -312,7 +309,7 @@ namespace OpenTwinsv2.Things.Services
 
         private async Task HandleUpdateStateAsync(Dictionary<string, UpdatePropertyState> howToUpdate, JsonNode data)
         {
-            Console.WriteLine("[INFO] Updating state with received values...");
+            //Console.WriteLine("[INFO] Updating state with received values...");
             Dictionary<string, PropertyState> updatedProperties = [];
 
             foreach (var (propertyName, schema) in howToUpdate)
@@ -358,20 +355,34 @@ namespace OpenTwinsv2.Things.Services
                 }
             }
 
-            Console.WriteLine("[INFO] New values: " + JsonSerializer.Serialize(updatedProperties));
+            //Console.WriteLine("[INFO] New values: " + JsonSerializer.Serialize(updatedProperties));
             await UpdateState(updatedProperties);
         }
 
         private async Task HandleInvokeActionAsync(ThenInvokeAction invokeAction, JsonNode data)
         {
-            Console.WriteLine("INVOKE ACTION. NOT IMPLEMENTED.");
+            Console.WriteLine($"[WARNING: {Id}] INVOKE ACTION. NOT IMPLEMENTED");
             await Task.CompletedTask;
         }
 
         private async Task HandleEmitEventAsync(ThenEmitEvent emitEvent, JsonNode data)
         {
-            Console.WriteLine("EMIT EVENT. NOT IMPLEMENTED.");
-            await Task.CompletedTask;
+            //Console.WriteLine($"[INFO: {Id}] EMIT EVENT. NOT FULLY IMPLEMENTED");
+            JsonNode payload;
+            //Console.WriteLine(emitEvent.Data);
+            if (emitEvent.Data.HasValue &&
+                emitEvent.Data.Value.ValueKind == JsonValueKind.String &&
+                emitEvent.Data.Value.GetString()?.Trim().ToLowerInvariant() == "state")
+            {
+                payload = data["payload"] ?? new JsonObject(); // !!CAMBIAR Esto lo cambio en un futuro para que tenga en cuenta un formato, ahora mismo lo envio en el que tiene que ser
+                payload["thingId"] = Id.ToString();
+            }
+            else
+            {
+                payload = new JsonObject();
+            }
+            //Console.WriteLine(JsonSerializer.Serialize(payload));
+            await _daprClient.PublishEventAsync("kafka-pubsub", emitEvent.Event, payload);
         }
 
         private EventAffordance? IsMyEvent(MyCloudEvent<string> msg)

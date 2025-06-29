@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: benthos-kafka-timescaledb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: benthos-kafka-timescaledb
+  template:
+    metadata:
+      labels:
+        app: benthos-kafka-timescaledb
+    spec:
+      containers:
+        - name: benthos-kafka-timescaledb
+          image: jeffail/benthos:latest
+          args: ["-c", "/config/benthos.yaml"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          configMap:
+            name: benthos-kafka-timescaledb-config

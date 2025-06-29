@@ -1,0 +1,24 @@
+input:
+  kafka:
+    addresses:
+      - kafka-controller-0.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092
+      - kafka-controller-1.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092
+      - kafka-controller-2.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092
+    topics: [ "thing.state.changed" ]
+    consumer_group: benthos-group
+
+logger:
+  level: DEBUG
+
+output:
+  sql_raw:
+    driver: postgres
+    dsn: postgres://postgres:postgres@opentwinsv2-timescaledb.opentwinsv2.svc.cluster.local:5432/postgres?sslmode=disable
+    query: |
+      INSERT INTO thing_test_data (thing_id, payload)
+      VALUES ($1, $2)
+    args_mapping: |
+      root = [
+        this.data.thingId,
+        this.data.without("thingId").string()
+      ]

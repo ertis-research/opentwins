@@ -37,6 +37,9 @@ docker pull jeffail/benthos:latest
 kubectl create configmap benthos-config --from-file=benthos.yaml=kubernetes\benthos\benthos-config.yaml
 kubectl apply -f .\kubernetes\benthos\benthos-deploy.yaml
 
+kubectl create configmap benthos-kafka-timescaledb-config --from-file=benthos.yaml=kubernetes\benthos-kafka-timescaledb\benthos-config.yaml
+
+
 Mosquitto:
 kubectl apply -f .\kubernetes\mosquitto\mosquitto-deploy.yaml
 
@@ -48,6 +51,9 @@ helm install kafka-ui kafka-ui/kafka-ui -f .\kubernetes\kafka\values-ui.yaml
 
 Redis:
 helm install opentwinsv2-redis oci://registry-1.docker.io/bitnamicharts/redis
+
+PostgreSQL:
+helm install opentwinsv2-postgresql oci://registry-1.docker.io/bitnamicharts/postgresql -f kubernetes/postgresql/values.yaml
 
 
 DGraph:

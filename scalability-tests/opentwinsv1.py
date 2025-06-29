@@ -11,7 +11,6 @@ import warnings
 from influxdb_client.client.warnings import MissingPivotFunction
 from dotenv import load_dotenv
 import os
-import ntplib
 
 warnings.simplefilter("ignore", MissingPivotFunction)
 
@@ -22,9 +21,9 @@ EXTENDED_CONF = {
 }
 
 MQTT_CONF = {
-    "host": os.getenv("MQTT_HOST"),
-    "port": int(os.getenv("MQTT_PORT", 1883)),
-    "topic": os.getenv("MQTT_TOPIC")
+    "host": os.getenv("MQTT_V1_HOST"),
+    "port": int(os.getenv("MQTT_V1_PORT", 1883)),
+    "topic": os.getenv("MQTT_V1_TOPIC")
 }
 
 INFLUX_CONF = {
@@ -56,24 +55,13 @@ default_thing =  {
 
 _sent_map = {}
 
-def get_ntp_offset():
-    try:
-        c = ntplib.NTPClient()
-        response = c.request('time.windows.com', version=3)
-        offset = response.offset  # en segundos
-        if abs(offset) > 0.05:
-            print(f"[WARNING] Clock offset vs NTP exceeds threshold (0.05s): {offset:.6f} seconds")
-        else:
-            print(f"[INFO] Clock offset vs NTP within acceptable range: {offset:.6f} seconds")
-    except Exception as e:
-        print(f"[WARNING] Failed to get NTP offset: {e}")
-
 def prepare_test(num_devices, update_interval, test_duration):
     print(f"[OpenTwinsV1] Preparing test with {num_devices} devices, interval {update_interval}s, duration {test_duration}s.")
     for i in range(num_devices):
         response = requests.put(EXTENDED_CONF["url"] + "/api/twins/test:device" + str(i), headers=headers, data=json.dumps(default_thing))
         if response.status_code < 200 and response.status_code >= 300:
             print(f"[✗] Failed to initialize test:device{i}. Status code: {response.status_code}, Response: {response.text}")
+    _sent_map.clear()
 
 
 def generate_ditto_protocol(name, uid):
@@ -141,7 +129,6 @@ def get_written_times_influx(start_time):
     return df
 
 def run_test(num_devices, update_interval, test_duration, stop_event):
-    get_ntp_offset()
     print("[OpenTwinsV1] Running test...")
     start_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S") + "Z"
     with ThreadPoolExecutor(max_workers=num_devices) as executor:
@@ -159,13 +146,17 @@ def run_test(num_devices, update_interval, test_duration, stop_event):
     written_map = get_written_times_influx(start_time)
     
     latencies = []
+    lost_count = 0
+    
     for uid, t_sent in _sent_map.items():
         if uid in written_map.index:
             t_sent = parser.isoparse(t_sent)
             t_received = written_map.loc[uid, "_time"]
             #print(f"{uid} | SENT: {t_sent} ({t_sent.tzinfo}) | RECEIVED: {t_received} ({t_received.tzinfo}) | DIFF: {(t_received - t_sent).total_seconds()}")
             latencies.append((t_received - t_sent).total_seconds())
+        else:
+            lost_count += 1
 
     #print(latencies)
 
-    return latencies
+    return latencies, (lost_count / len(_sent_map)) * 100 if len(_sent_map) > 0 else 0

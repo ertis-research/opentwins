@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: opentwinsv2-timescaledb
+spec:
+  serviceName: opentwinsv2-timescaledb
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opentwinsv2-timescaledb
+  template:
+    metadata:
+      labels:
+        app: opentwinsv2-timescaledb
+    spec:
+      containers:
+        - name: opentwinsv2-timescaledb
+          image: 'timescale/timescaledb:latest-pg17'
+          env:
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              value: postgres
+            - name: POSTGRES_DB
+              value: postgres
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: timescale-storage
+      volumes:
+        - name: timescale-storage
+          persistentVolumeClaim:
+            claimName: opentwinsv2-timescale-pvc
+
+---
+
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: opentwinsv2-timescaledb
+spec:
+  selector:
+    app: opentwinsv2-timescaledb
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+      nodePort: 47523
+  type: NodePort

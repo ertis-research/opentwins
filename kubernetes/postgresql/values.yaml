@@ -1,0 +1,18 @@
+# helm install opentwinsv2-postgresql oci://registry-1.docker.io/bitnamicharts/postgresql -f kubernetes/postgresql/values.yaml
+
+architecture: "replication"
+
+auth:
+  user: "user"
+  postgresPassword: "postgres"
+  password: "password" ##Contrasenia del postgresql
+  replicationPassword: "reppostgres"
+
+primary:
+  service:
+    type: NodePort
+    nodePorts:
+      postgresql: 47522
+
+passwordUpdateJob:
+  enabled: true

@@ -18,8 +18,6 @@ public class EventsController : ControllerBase
     [HttpPost("things/{idActor}")]
     public async Task<IActionResult> UpdateRoutes(string idActor, [FromBody] List<string> events)
     {
-        Console.WriteLine("Me ha llegado algo");
-        Console.WriteLine(events.ToString());
         _routingService.UpdateEventsByActor(actor: new ActorIdentity(idActor, "ThingActor"), events);
         await _subscriptionManager.RefreshSubscriptionsAsync();
         return Ok("Routing actualizado.");

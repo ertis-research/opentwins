@@ -1,0 +1,49 @@
+input:
+  mqtt:
+    urls: [tcp://mosquitto.opentwinsv2.svc.cluster.local:1883]
+    topics: [telemetry/#]
+    client_id: benthos-mqtt-client-edge
+    dynamic_client_id_suffix: nanoid
+    qos: 1                                      # QoS 1 garantiza al menos una vez (recomendado)
+    clean_session: false                        # Mantiene estado de sesión (ideal para alta disponibilidad)
+    auto_replay_nacks: true                     # Retransmite automáticamente en errores (evita pérdida de datos)
+    connect_timeout: 10s                        # Menor tiempo para detectar fallos de conexión
+    keepalive: 15                               # Más frecuente para detectar conexiones caídas rápidamente
+
+buffer:
+  none: {}
+
+pipeline:
+  processors:
+    - bloblang: |
+        let topic_parts = metadata("mqtt_topic").split("/")
+        let device = $topic_parts.index(-1)
+        root = {
+            "specversion": "1.0",
+            "id": uuid_v4(),
+            "source": "mqtt://sensor",
+            "type": "mqtt:changes_" + $device,
+            "time": now(),
+            "datacontenttype": "application/json",
+            "data": this
+        }
+
+output:
+  kafka_franz:
+    seed_brokers:
+      - kafka-controller-0.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092
+      - kafka-controller-1.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092
+      - kafka-controller-2.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092
+    topic: opentwinsv2.events
+    client_id: benthos-kafka-producer
+    idempotent_write: true
+    partitioner: murmur2_hash
+    key: ${! json("sensor_id") }
+    max_in_flight: 256                        # Muy alto paralelismo
+    max_message_bytes: 1000000
+    compression: zstd                         # Mejor ratio que snappy para alto volumen
+    timeout: 10s
+    batching:
+      count: 1000                             # Hasta 1000 mensajes por lote
+      byte_size: 2097152                      # O 2 MiB por lote
+      period: 500ms                           # O cada 0.5 segundos

@@ -34,11 +34,18 @@ dapr run --app-id myapp --app-port 5000 --dapr-http-port 3500 -- dotnet run
 
 Benthos:
 docker pull jeffail/benthos:latest
-kubectl create configmap benthos-config --from-file=benthos.yaml=kubernetes\benthos\benthos-config.yaml
-kubectl apply -f .\kubernetes\benthos\benthos-deploy.yaml
+kubectl create configmap benthos-config --from-file=benthos.yaml=kubernetes\benthos-mqtt-kafka\benthos-config.yaml
+kubectl apply -f .\kubernetes\benthos-mqtt-kafka\benthos-deploy.yaml
 
-kubectl create configmap benthos-kafka-timescaledb-config --from-file=benthos.yaml=kubernetes\benthos-kafka-timescaledb\benthos-config.yaml
 
+kubectl create configmap benthos-mqtt-kafka-config --from-file=benthos.yaml=kubernetes\benthos-mqtt-kafka\benthos-config-basic.yaml
+kubectl create configmap benthos-kafka-timescaledb-config --from-file=benthos.yaml=kubernetes\benthos-kafka-timescaledb\benthos-config-basic.yaml
+
+kubectl apply -f .\kubernetes\benthos-mqtt-kafka\benthos-deploy.yaml
+kubectl apply -f .\kubernetes\benthos-kafka-timescaledb\benthos-deploy.yaml
+
+
+https://github.com/schivei/dgraph4net
 
 Mosquitto:
 kubectl apply -f .\kubernetes\mosquitto\mosquitto-deploy.yaml

@@ -23,15 +23,15 @@ SCENARIOS = [
     (20, 0.2, 10),   # 20 dispositivos, 5 Hz (0.2s), 10 segundos
     (50, 0.1, 10),   # 50 dispositivos, 10 Hz (0.1s), 10 segundos
 
-    #(100, 0.1, 15),  # 100 dispositivos, 10 Hz, 15 segundos
-    #(200, 0.05, 15), # 200 dispositivos, 20 Hz, 15 segundos
+    (100, 0.1, 15),  # 100 dispositivos, 10 Hz, 15 segundos
+    (200, 0.05, 15), # 200 dispositivos, 20 Hz, 15 segundos
     #(500, 0.02, 20), # 500 dispositivos, 50 Hz, 20 segundos
     #(1000, 0.01, 20),# 1000 dispositivos, 100 Hz, 20 segundos
 
-    #(1500, 0.01, 30)# 1500 dispositivos, 100 Hz, 30 segundos
+    #(1500, 0.01, 30),# 1500 dispositivos, 100 Hz, 30 segundos
     #(2000, 0.005, 30),# 2000 dispositivos, 200 Hz, 30 segundos
     #(3000, 0.002, 40),# 3000 dispositivos, 500 Hz, 40 segundos
-    #(5000, 0.001, 60),# 5000 dispositivos, 1000 Hz, 60 segundos
+    #(5000, 0.001, 60)# 5000 dispositivos, 1000 Hz, 60 segundos
 ]
 
 labels = []

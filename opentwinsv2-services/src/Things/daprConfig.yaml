@@ -1,0 +1,12 @@
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: actorconfig
+spec:
+  actor:
+    idleTimeout: "30s"
+    scanInterval: "10s"
+    drainOngoingCallTimeout: "30s"
+    drainRebalancedActors: true
+    reentrancy:
+      enabled: true

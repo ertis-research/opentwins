@@ -130,6 +130,10 @@ def simulate_device(name, update_interval, test_duration, stop_event):
 
     start_time = time.time()
     topic = MQTT_CONF["topic"] + name
+    
+    payload = generate_payload(str(uuid4()))
+    client.publish(topic, json.dumps(payload)) ## cold-start
+    time.sleep(0.5)
 
     while time.time() - start_time < test_duration and not stop_event.is_set():
         uid = str(uuid4())
@@ -170,7 +174,7 @@ def get_written_times_timescale(start_time):
     df["_time"] = pd.to_datetime(df["_time"], utc=True)
     df = df.set_index("uid")
 
-    print(df.head())
+    #print(df.head())
 
     return df
 
@@ -188,7 +192,7 @@ def run_test(num_devices, update_interval, test_duration, stop_event):
             future.result()
     
     print("[OpenTwinsV2] Waiting for data to appear in PostgreSQL...")
-    time.sleep(5)
+    time.sleep(15)
     written_map = get_written_times_timescale(start_time)
     
     latencies = []
@@ -203,6 +207,6 @@ def run_test(num_devices, update_interval, test_duration, stop_event):
         else:
             lost_count += 1
 
-    print(latencies)
+    #print(latencies)
 
     return latencies, (lost_count / len(_sent_map)) * 100 if len(_sent_map) > 0 else 0

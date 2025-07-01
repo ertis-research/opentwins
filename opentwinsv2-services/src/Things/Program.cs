@@ -1,4 +1,4 @@
-// dapr run --app-id things-service --app-port 5001 --app-protocol http --dapr-http-port 56001 --resources-path ./DaprComponents  -- dotnet run --urls=http://localhost:5001/
+// dapr run --app-id things-service --app-port 5001 --app-protocol http --dapr-http-port 56001 --config ./daprConfig.yaml --resources-path ./DaprComponents  -- dotnet run --urls=http://localhost:5001/
 
 using OpenTwinsv2.Things.Services;
 
@@ -11,13 +11,13 @@ builder.Services.AddControllers();
 builder.Services.AddActors(options =>
 {
     // Register actor types and configure actor settings
-    options.Actors.RegisterActor<TestActor>();
+    //options.Actors.RegisterActor<TestActor>();
     options.Actors.RegisterActor<ThingActor>();
     options.ReentrancyConfig = new Dapr.Actors.ActorReentrancyConfig()
-        {
-            Enabled = true,
-            MaxStackDepth = 32,
-        };
+    {
+        Enabled = true,
+        MaxStackDepth = 16,
+    };
 });
 
 var app = builder.Build();

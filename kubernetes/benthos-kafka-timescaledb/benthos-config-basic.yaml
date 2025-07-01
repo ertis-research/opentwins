@@ -7,9 +7,6 @@ input:
     topics: [ "thing.state.changed" ]
     consumer_group: benthos-group
 
-logger:
-  level: DEBUG
-
 output:
   sql_raw:
     driver: postgres

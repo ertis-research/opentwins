@@ -92,6 +92,10 @@ def simulate_device(name, update_interval, test_duration, stop_event):
     client.loop_start()
 
     start_time = time.time()
+    
+    payload = generate_ditto_protocol(name, str(uuid4()))
+    client.publish(MQTT_CONF["topic"], json.dumps(payload)) ## cold-start
+    time.sleep(0.5)
 
     while time.time() - start_time < test_duration and not stop_event.is_set():
         uid = str(uuid4())
@@ -142,7 +146,7 @@ def run_test(num_devices, update_interval, test_duration, stop_event):
             future.result()
     
     print("[OpenTwinsV1] Waiting for data to appear in InfluxDB...")
-    time.sleep(5)
+    time.sleep(15)
     written_map = get_written_times_influx(start_time)
     
     latencies = []

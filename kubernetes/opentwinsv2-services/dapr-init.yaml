@@ -1,0 +1,58 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: mypubsub
+spec:
+  type: pubsub.kafka
+  version: v1
+  metadata:
+  - name: brokers # Required. Kafka broker connection setting
+    value: "kafka-controller-0.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092,kafka-controller-1.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092,kafka-controller-2.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092"
+  - name: clientID # Optional. Used as client tracing ID by Kafka brokers.
+    value: "opentwinsv2-client-events"
+  - name: authType # Required.
+    value: "none"
+
+---
+
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: kafka-pubsub
+spec:
+  type: pubsub.kafka
+  version: v1
+  metadata:
+  - name: brokers # Required. Kafka broker connection setting
+    value: "kafka-controller-0.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092,kafka-controller-1.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092,kafka-controller-2.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092"
+  - name: clientID # Optional. Used as client tracing ID by Kafka brokers.
+    value: "opentwinsv2-client-things"
+  - name: authType # Required.
+    value: "none"
+
+---
+
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: actorstatestore
+spec:
+  type: state.redis
+  version: v1
+  metadata:
+    - name: redisHost
+      value: opentwinsv2-redis-master.opentwinsv2.svc.cluster.local:6379
+
+---
+
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: dapr-config
+spec:
+  mtls:
+    enabled: false
+    sentryAddress: "sentry.dapr-system.svc:7443"
+    controlPlaneTrustDomain: "cluster.local"
+  tracing:
+    samplingRate: "0"

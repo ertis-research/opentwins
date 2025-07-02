@@ -163,4 +163,4 @@ def run_test(num_devices, update_interval, test_duration, stop_event):
 
     #print(latencies)
 
-    return latencies, (lost_count / len(_sent_map)) * 100 if len(_sent_map) > 0 else 0
+    return latencies, (lost_count / len(_sent_map)) if len(_sent_map) > 0 else 0

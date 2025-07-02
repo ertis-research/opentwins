@@ -1,4 +1,4 @@
-// dapr run --app-id things-service --app-port 5001 --app-protocol http --dapr-http-port 56001 --config ./daprConfig.yaml --resources-path ./DaprComponents  -- dotnet run --urls=http://localhost:5001/
+// dapr run --app-id things-service --app-port 5001 --app-protocol http --dapr-http-port 56001 --config ./daprConfig.yaml --resources-path ./DaprComponentsLocal  -- dotnet run --urls=http://localhost:5001/
 
 using OpenTwinsv2.Things.Services;
 
@@ -18,6 +18,11 @@ builder.Services.AddActors(options =>
         Enabled = true,
         MaxStackDepth = 16,
     };
+
+    options.ActorIdleTimeout = TimeSpan.FromSeconds(30);           // idleTimeout
+    options.ActorScanInterval = TimeSpan.FromSeconds(10);          // scanInterval
+    options.DrainOngoingCallTimeout = TimeSpan.FromSeconds(30);    // drainOngoingCallTimeout
+    options.DrainRebalancedActors = true;                           // drainRebalancedActors
 });
 
 var app = builder.Build();

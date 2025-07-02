@@ -1,19 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: benthos
+  name: benthos-mqtt-kafka
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: benthos
+      app: benthos-mqtt-kafka
   template:
     metadata:
       labels:
-        app: benthos
+        app: benthos-mqtt-kafka
     spec:
       containers:
-        - name: benthos
+        - name: benthos-mqtt-kafka
           image: jeffail/benthos:latest
           args: ["-c", "/config/benthos.yaml"]
           volumeMounts:

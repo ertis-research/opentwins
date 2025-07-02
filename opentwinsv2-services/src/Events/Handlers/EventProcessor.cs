@@ -1,11 +1,7 @@
 using System.Text;
 using System.Threading.Channels;
-using Dapr.Actors;
-using Dapr.Actors.Client;
 using Dapr.Messaging.PublishSubscribe;
-using Events.Models;
 using Events.Services;
-using OpenTwinsv2.Things.Models;
 using Shared.Models;
 
 namespace Events.Handlers

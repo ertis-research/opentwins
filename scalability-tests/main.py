@@ -17,6 +17,27 @@ def signal_handler(sig, frame):
 
 signal.signal(signal.SIGINT, signal_handler)
 
+SCENARIOS_BASELINE = [
+    (10, 60.0, 10),     # 10 dispositivos, 1 msg/min, 10s
+    (100, 60.0, 10),    # 100 dispositivos, 1 msg/min, 10s
+    (100, 10.0, 10),    # 100 dispositivos, 1 msg/10s, 10s
+    (1000, 10.0, 15),   # 1000 dispositivos, 1 msg/10s, 15s
+]
+
+SCENARIOS_MEDIUM_LOAD = [
+    (1000, 1.0, 15),    # 1000 dispositivos, 1 msg/s, 15s
+    (5000, 1.0, 20),    # 5000 dispositivos, 1 msg/s, 20s
+    (10000, 1.0, 20),   # 10,000 dispositivos, 1 msg/s, 20s
+    (10000, 0.1, 20),   # 10,000 dispositivos, 10 msg/s, 20s (ráfaga)
+]
+
+SCENARIOS_STRESS = [
+    (20000, 1.0, 25),   # 20,000 dispositivos, 1 msg/s, 25s
+    (50000, 1.0, 30),   # 50,000 dispositivos, 1 msg/s, 30s
+    (100000, 1.0, 30),  # 100,000 dispositivos, 1 msg/s, 30s
+    (100000, 0.1, 30),  # 100,000 dispositivos, 10 msg/s (burst), 30s
+]
+
 SCENARIOS = [
     (5, 1.0, 10),    # 5 dispositivos, 1 Hz, 10 segundos
     (10, 0.5, 10),   # 10 dispositivos, 2 Hz (0.5s), 10 segundos
@@ -34,6 +55,7 @@ SCENARIOS = [
     #(5000, 0.001, 60)# 5000 dispositivos, 1000 Hz, 60 segundos
 ]
 
+
 labels = []
 avg_latencies_v1 = []
 avg_latencies_v2 = []
@@ -43,7 +65,7 @@ loss_rate_v2 = []
 def get_ntp_offset():
     try:
         c = ntplib.NTPClient()
-        response = c.request('time.windows.com', version=3)
+        response = c.request('ntp.ubuntu.com', version=3)
         offset = response.offset  # en segundos
         if abs(offset) > 0.05:
             print(f"[WARNING] Clock offset vs NTP exceeds threshold (0.05s): {offset:.6f} seconds")
@@ -52,29 +74,57 @@ def get_ntp_offset():
     except Exception as e:
         print(f"[WARNING] Failed to get NTP offset: {e}")
 
-def run_scenario(num_devices, interval, duration):
+def run_scenario(num_devices, interval, duration, runs: int = 1):
+    """
+    Runs the same test scenario `runs` times and returns the average results.
+
+    Parameters
+    ----------
+    num_devices : int
+        Number of simulated devices.
+    interval : float
+        Message interval in seconds.
+    duration : float
+        Total duration of each test run in seconds.
+    runs : int, optional
+        Number of times to repeat the scenario (default is 5).
+    """
+    
     label = f"{num_devices}x@{1/interval:.1f}Hz"
-    print(f"\n=== Scenario: {label} ===")
+    print(f"\n=== Scenario: {label} ({runs} runs) ===")
 
     get_ntp_offset()
+
+    all_lat_v1, all_lat_v2 = [], []
+    lossr_v1_runs, lossr_v2_runs = [], []
 
     opentwinsv1.prepare_test(num_devices, interval, duration)
     opentwinsv2.prepare_test(num_devices, interval, duration)
 
-    print("[Main] Running OpenTwinsV1...")
-    lat_v1, lossr_v1 = opentwinsv1.run_test(num_devices, interval, duration, stop_event)
-    avg_v1 = np.mean(lat_v1)
-    print(f"[Main] OpenTwinsV1 avg latency: {avg_v1:.4f} s")
+    for run in range(1, runs + 1):
+        print(f"[Run {run}/{runs}] Running OpenTwinsV1...")
+        lat_v1, lossr_v1 = opentwinsv1.run_test(num_devices, interval, duration, stop_event)
+        all_lat_v1.extend(lat_v1)         # Accumulate all latency samples
+        lossr_v1_runs.append(lossr_v1)    # Store run-level loss rate
 
+        print(f"[Run {run}/{runs}] Running OpenTwinsV2...")
+        lat_v2, lossr_v2 = opentwinsv2.run_test(num_devices, interval, duration, stop_event)
+        all_lat_v2.extend(lat_v2)         # Accumulate all latency samples
+        lossr_v2_runs.append(lossr_v2)    # Store run-level loss rate
 
-    print("[Main] Running OpenTwinsV2...")
-    lat_v2, lossr_v2 = opentwinsv2.run_test(num_devices, interval, duration, stop_event)
-    avg_v2 = np.mean(lat_v2)
-    print(f"[Main] OpenTwinsV2 avg latency: {avg_v2:.4f} s")
+    # Final statistics (overall averages)
+    avg_v1 = np.mean(all_lat_v1)
+    avg_v2 = np.mean(all_lat_v2)
+    mean_lossr_v1 = np.mean(lossr_v1_runs)
+    mean_lossr_v2 = np.mean(lossr_v2_runs)
 
-    return label, avg_v1, lossr_v1, avg_v2, lossr_v2
+    print(f"\n=== Average Results after {runs} runs ===")
+    print(f"OpenTwinsV1 · Avg latency: {avg_v1:.4f} s · Avg loss: {mean_lossr_v1*100:.2f}%")
+    print(f"OpenTwinsV2 · Avg latency: {avg_v2:.4f} s · Avg loss: {mean_lossr_v2*100:.2f}%")
 
-def plot_latencies_summary(labels, lat_v1, lat_v2):
+    return label, avg_v1, mean_lossr_v1, avg_v2, mean_lossr_v2
+
+def plot_latencies_summary(labels, lat_v1, lat_v2, name=""):
     x = np.arange(len(labels))
     width = 0.35
 
@@ -86,10 +136,10 @@ def plot_latencies_summary(labels, lat_v1, lat_v2):
     plt.title("Latency from MQTT Publish to DB Write")
     plt.legend()
     plt.tight_layout()
-    plt.savefig("db_latency_comparison.png")
+    plt.savefig(name + "db_latency_comparison.png")
     plt.show()
 
-def plot_loss_rate_summary(labels, loss_rate_v1, loss_rate_v2):
+def plot_loss_rate_summary(labels, loss_rate_v1, loss_rate_v2, name=""):
     x = np.arange(len(labels))
     width = 0.35
 
@@ -102,24 +152,34 @@ def plot_loss_rate_summary(labels, loss_rate_v1, loss_rate_v2):
     plt.title("Message Loss Rate Comparison Between Platforms")
     plt.legend()
     plt.tight_layout()
-    plt.savefig("loss_rate_comparison.png")
+    plt.savefig(name + "loss_rate_comparison.png")
     plt.show()
+
+def run_test(scenarios, name):
+    for devices, interval, duration in scenarios:
+        if stop_event.is_set():
+            print("[Main] Stop event detected. Exiting loop.")
+            break
+        label, avg1, lrv1, avg2, lrv2 = run_scenario(devices, interval, duration)
+        labels.append(label)
+        avg_latencies_v1.append(avg1)
+        avg_latencies_v2.append(avg2)
+        loss_rate_v1.append(lrv1)
+        loss_rate_v2.append(lrv2)
+
+    plot_latencies_summary(labels, avg_latencies_v1, avg_latencies_v2, name)
+    plot_loss_rate_summary(labels, loss_rate_v1, loss_rate_v2, name)
 
 if __name__ == "__main__":
     try: 
-        for devices, interval, duration in SCENARIOS:
-            if stop_event.is_set():
-                print("[Main] Stop event detected. Exiting loop.")
-                break
-            label, avg1, lrv1, avg2, lrv2 = run_scenario(devices, interval, duration)
-            labels.append(label)
-            avg_latencies_v1.append(avg1)
-            avg_latencies_v2.append(avg2)
-            loss_rate_v1.append(lrv1)
-            loss_rate_v2.append(lrv2)
-
-        plot_latencies_summary(labels, avg_latencies_v1, avg_latencies_v2)
-        plot_loss_rate_summary(labels, loss_rate_v1, loss_rate_v2)
+        print("[Main] SCENARIOS BASELINE")
+        run_test(SCENARIOS_BASELINE, "baseline_")
+        
+        print("[Main] SCENARIOS MEDIUM LOAD")
+        run_test(SCENARIOS_MEDIUM_LOAD, "medium_load_")
+        
+        print("[Main] SCENARIOS STRESS")
+        run_test(SCENARIOS_STRESS, "stress_")
         
     except KeyboardInterrupt:
         print("\n[Main] KeyboardInterrupt detected. Exiting gracefully.")

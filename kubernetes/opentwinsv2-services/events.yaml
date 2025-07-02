@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opentwinsv2-events-deploy
+  labels:
+    app: opentwinsv2-events
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opentwinsv2-events
+  template:
+    metadata:
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "events-service"
+        dapr.io/app-port: "8080"
+        dapr.io/config: "dapr-config"               # Nombre del ConfigMap si lo usas
+      labels:
+        app: opentwinsv2-events
+    spec:
+      containers:
+        - name: opentwinsv2-events
+          image: registry.ertis.uma.es/opentwinsv2-events:0.0.1 
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:8080"
+ 
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: opentwinsv2-events-svc
+spec:
+  selector:
+    app: opentwinsv2-events
+  ports:
+    - port: 80
+      targetPort: 8080

@@ -1,0 +1,24 @@
+# Build image
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+# Copy csproj files first
+COPY Things/Things.csproj Things/
+COPY Shared/Shared.csproj Shared/
+RUN dotnet restore Things/Things.csproj
+
+# Copy the rest of the source
+COPY Things/ Things/
+COPY Shared/ Shared/
+
+# Publish
+RUN dotnet publish Things/Things.csproj -c Release -o /App/out
+
+# Runtime image with digest
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+WORKDIR /App
+COPY --from=build /App/out .
+
+EXPOSE 8080
+
+ENTRYPOINT ["dotnet", "Things.dll"]

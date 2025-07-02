@@ -12,7 +12,7 @@
 
 # Dapr components
 **/components/
-**/DaprComponents/
+**/DaprComponentsLocal/
 
 # dotenv files
 .env

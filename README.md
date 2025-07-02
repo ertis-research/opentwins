@@ -114,3 +114,19 @@ w32tm /config /manualpeerlist:"ntp.ubuntu.com" /syncfromflags:manual /update
 net stop w32time
 net start w32time
 w32tm /resync
+
+
+helm upgrade --install dapr dapr/dapr 
+ --version=1.15 
+ --namespace dapr-system 
+ --create-namespace 
+ --set global.ha.enabled=false 
+ --set dapr_scheduler.ha=true 
+ --set dapr_placement.ha=true 
+ --set global.mtls.enabled=false 
+ --wait
+
+helm upgrade --install dapr-dashboard dapr/dapr-dashboard --namespace dapr-system --set serviceType=NodePort
+
+docker build -t REGISTRYID/opentwinsv2-events:0.0.1 . -f Dockerfile.Events
+docker push REGISTRYID/opentwinsv2-events:0.0.1

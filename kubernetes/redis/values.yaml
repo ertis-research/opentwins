@@ -8,3 +8,14 @@ master:
     type: NodePort
     nodePorts:
       redis: "47342"
+  resources:
+    limits: 
+      memory: "1Gi"
+    requests: 
+      memory: "512Mi"
+replica:
+  resources:
+    limits: 
+      memory: "1Gi"
+    requests: 
+      memory: "512Mi"

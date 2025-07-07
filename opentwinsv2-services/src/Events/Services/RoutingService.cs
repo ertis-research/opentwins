@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using Dapr.Actors;
+using Events.Handlers;
 using Shared.Models;
 
 namespace Events.Services
@@ -22,22 +22,20 @@ namespace Events.Services
             }
         */
         private static readonly string defaultTopic = "opentwinsv2.events";
-        // 
+        //
         private readonly ConcurrentDictionary<string, List<ActorIdentity>> _events = [];
         private readonly ConcurrentDictionary<string, List<string>> _routes = new();
+
+        private readonly FastEventConfig _fastEventConfig;
+
+        public RoutingService(FastEventConfig fastEventConfig)
+        {
+            _fastEventConfig = fastEventConfig;
+        }
 
         public List<ActorIdentity> GetActorsByEventType(string eventType)
         {
             return _events.TryGetValue(eventType, out var actors) ? actors : [];
-        }
-
-        // No meto aqui el topic porque creo que es cosa de este proyecto (o del orquestador) gestionar que topicos usa cada evento etc y no de los actores
-        public void UpdateEvents(Dictionary<string, List<ActorIdentity>> updates)
-        {
-            foreach (var (topic, actors) in updates)
-            {
-                _events[topic] = actors;
-            }
         }
 
         public Dictionary<string, List<string>> GetSubscriptions()
@@ -46,9 +44,11 @@ namespace Events.Services
             return new Dictionary<string, List<string>>(_routes);
         }
 
-        public void UpdateEventsByActor(ActorIdentity actor, List<string> updatedEvents)
+        public void UpdateEventsByActor(ActorIdentity actor, List<EventSubscription> updatedEvents)
         {
-            var removeEvents = _events.Where(x => !updatedEvents.Contains(x.Key) && x.Value.Any(a => a.Equals(actor))).ToDictionary();
+            var updatedEventNames = updatedEvents.Select(e => e.EventId).ToHashSet();
+
+            var removeEvents = _events.Where(x => !updatedEventNames.Contains(x.Key) && x.Value.Any(a => a.Equals(actor))).ToDictionary();
             var removeTopics = _routes.Where(x => x.Value.Count == 1 && x.Value.Any(y => removeEvents.ContainsKey(y))).ToDictionary();
 
             // 1. Eliminar el actor de los tópicos que ya no están en events
@@ -68,13 +68,18 @@ namespace Events.Services
                 }
             }
 
-            // 2. Añadir el actor a los tópicos nuevos (si no está ya)
+            // 2. Añadir el actor a los tópicos nuevos (si no esta ya)
             foreach (var evt in updatedEvents)
             {
-                _events.AddOrUpdate(evt,
+                if (evt.IsFastPath)
+                {
+                    _fastEventConfig.RegisterFastEvent(actor.ActorId, evt.EventId);
+                }
+
+                _events.AddOrUpdate(evt.EventId,
                     (_) => // Si no existe la clave, crea lista con el actor
                     {
-                        AddEvent(defaultTopic, evt); /// Por ahora solo defaultTopic
+                        AddEvent(defaultTopic, evt.EventId); /// Por ahora solo defaultTopic
                         return [actor];
                     },
                     (_, actors) => // Si existe la clave, actualiza la lista (añadir si no está)

@@ -58,9 +58,14 @@ _sent_map = {}
 def prepare_test(num_devices, update_interval, test_duration):
     print(f"[OpenTwinsV1] Preparing test with {num_devices} devices, interval {update_interval}s, duration {test_duration}s.")
     for i in range(num_devices):
-        response = requests.put(EXTENDED_CONF["url"] + "/api/twins/test:device" + str(i), headers=headers, data=json.dumps(default_thing))
-        if response.status_code < 200 and response.status_code >= 300:
-            print(f"[✗] Failed to initialize test:device{i}. Status code: {response.status_code}, Response: {response.text}")
+        try:
+            response = requests.put(EXTENDED_CONF["url"] + "/api/twins/test:device" + str(i), headers=headers, data=json.dumps(default_thing), timeout=5)
+            if response.status_code < 200 and response.status_code >= 300:
+                print(f"[ERROR] Failed to initialize test:device{i}. Status code: {response.status_code}, Response: {response.text}")
+        except requests.exceptions.Timeout:
+            print(f"[ERROR] Timeout while initializing test:device{i}")
+        except requests.exceptions.RequestException as e:
+            print(f"[ERROR] Error while initializing test:device{i}: {e}")
     _sent_map.clear()
 
 
@@ -133,6 +138,7 @@ def get_written_times_influx(start_time):
     return df
 
 def run_test(num_devices, update_interval, test_duration, stop_event):
+    _sent_map.clear()
     print("[OpenTwinsV1] Running test...")
     start_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S") + "Z"
     with ThreadPoolExecutor(max_workers=num_devices) as executor:

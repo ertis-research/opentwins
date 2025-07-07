@@ -16,7 +16,7 @@ public class EventsController : ControllerBase
     }
 
     [HttpPost("things/{idActor}")]
-    public async Task<IActionResult> UpdateRoutes(string idActor, [FromBody] List<string> events)
+    public async Task<IActionResult> UpdateRoutes(string idActor, [FromBody] List<EventSubscription> events)
     {
         _routingService.UpdateEventsByActor(actor: new ActorIdentity(idActor, "ThingActor"), events);
         await _subscriptionManager.RefreshSubscriptionsAsync();

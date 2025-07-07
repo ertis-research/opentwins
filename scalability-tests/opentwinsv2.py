@@ -70,40 +70,9 @@ def get_default_TD(num):
         {
             "rel": "subscribeEvent",
             "href": f"https://example.com/things/mqtt/events/changes_device{num}",
-            "type": "application/json"
-        }],
-        "otv2:rules": {
-            "update": {
-                "otv2:if": {
-                    "==": [
-                        {
-                            "var": "eventName"
-                        },
-                        f"mqtt:changes_device{num}"
-                    ]
-                },
-                "otv2:then": {
-                    "otv2:updateState": {
-                        "temperature": {
-                            "value": {
-                                "var": "payload.temperature"
-                            }
-                        },
-                        "humidity": {
-                            "value": {
-                                "var": "payload.humidity"
-                            }
-                        }
-                    },
-                    "otv2:emitEvent": [
-                    {
-                        "event" : "thing.state.changed",
-                        "data": "state" 
-                    }
-                ]
-                }
-            }
-        }
+            "type": "application/json",
+            "otv2:emitStateOnReceive": True
+        }]
     }
 
 _sent_map = {}
@@ -111,9 +80,14 @@ _sent_map = {}
 def prepare_test(num_devices, update_interval, test_duration):
     print(f"[OpenTwinsV2] Preparing test with {num_devices} devices, interval {update_interval}s, duration {test_duration}s.")
     for i in range(num_devices):
-        response = requests.post(OPENTWINSV2_CONF.get("things") + "/things", headers=headers, data=json.dumps(get_default_TD(str(i))))
-        if response.status_code < 200 and response.status_code >= 300:
-            print(f"[✗] Failed to initialize test:device{i}. Status code: {response.status_code}, Response: {response.text}")
+        try:
+            response = requests.post(OPENTWINSV2_CONF.get("things") + "/things", headers=headers, data=json.dumps(get_default_TD(str(i))), timeout=5)
+            if response.status_code < 200 and response.status_code >= 300:
+                print(f"[ERROR] Failed to initialize test:device{i}. Status code: {response.status_code}, Response: {response.text}")
+        except requests.exceptions.Timeout:
+            print(f"[ERROR] Timeout while initializing test:device{i}")
+        except requests.exceptions.RequestException as e:
+            print(f"[ERROR] Error while initializing test:device{i}: {e}")
     _sent_map.clear()
 
 def generate_payload(uid):
@@ -179,6 +153,7 @@ def get_written_times_timescale(start_time):
     return df
 
 def run_test(num_devices, update_interval, test_duration, stop_event):
+    _sent_map.clear()
     print("[OpenTwinsV2] Running test...")
     start_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S") + "Z"
     with ThreadPoolExecutor(max_workers=num_devices) as executor:

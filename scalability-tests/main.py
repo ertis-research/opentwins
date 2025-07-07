@@ -4,6 +4,8 @@ import signal
 import threading
 import opentwinsv1
 import opentwinsv2
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import sys
@@ -90,7 +92,7 @@ def run_scenario(num_devices, interval, duration, runs: int = 1):
         Number of times to repeat the scenario (default is 5).
     """
     
-    label = f"{num_devices}x@{1/interval:.1f}Hz"
+    label = f"{num_devices}x@1/{interval:.0f}s"
     print(f"\n=== Scenario: {label} ({runs} runs) ===")
 
     get_ntp_offset()
@@ -129,8 +131,8 @@ def plot_latencies_summary(labels, lat_v1, lat_v2, name=""):
     width = 0.35
 
     plt.figure(figsize=(12, 6))
-    plt.bar(x - width/2, lat_v1, width, label='OpenTwinsV1 (InfluxDB)')
-    plt.bar(x + width/2, lat_v2, width, label='OpenTwinsV2 (TimescaleDB)')
+    plt.bar(x - width/2, lat_v1, width, label='OpenTwinsV1')
+    plt.bar(x + width/2, lat_v2, width, label='OpenTwinsV2')
     plt.xticks(x, labels, rotation=45)
     plt.ylabel("End-to-End Latency (s)")
     plt.title("Latency from MQTT Publish to DB Write")
@@ -144,8 +146,8 @@ def plot_loss_rate_summary(labels, loss_rate_v1, loss_rate_v2, name=""):
     width = 0.35
 
     plt.figure(figsize=(12, 6))
-    plt.bar(x - width/2, loss_rate_v1, width, label='OpenTwinsV1 (InfluxDB)', color='tomato')
-    plt.bar(x + width/2, loss_rate_v2, width, label='OpenTwinsV2 (TimescaleDB)', color='steelblue')
+    plt.bar(x - width/2, loss_rate_v1, width, label='OpenTwinsV1', color='tomato')
+    plt.bar(x + width/2, loss_rate_v2, width, label='OpenTwinsV2', color='steelblue')
 
     plt.xticks(x, labels, rotation=45)
     plt.ylabel("Loss Rate (%)")

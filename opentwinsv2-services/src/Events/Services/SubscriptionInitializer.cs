@@ -1,4 +1,4 @@
-namespace Events.Handlers
+namespace Events.Services
 {
     public class SubscriptionInitializer : IHostedService
     {

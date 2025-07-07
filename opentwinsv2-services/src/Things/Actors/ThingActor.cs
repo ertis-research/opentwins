@@ -87,37 +87,28 @@ namespace OpenTwinsv2.Things.Services
             return "Success";
         }
 
-        private List<string> GetSubscribedEvents(List<Link>? links)
+        private List<EventSubscription> GetSubscribedEvents(List<Link>? links)
         {
             if (links is null) return [];
 
-            List<string> subscribedEvents = [];
+            List<EventSubscription> subscriptions = [];
 
             foreach (Link link in links)
             {
                 if (link.Rel != null &&
                     link.Rel.Equals("subscribeEvent", StringComparison.OrdinalIgnoreCase))
                 {
-                    /*
-{
-    "rel": "subscribeEvent",
-    "href": "https://example.com/things/SensorTemp/events/temperatureChange",
-    "type": "application/json",
-    "title": "SensorTemp:temperatureChange"
-}
-                    */
                     var segments = link.Href.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
                     if (segments.Length >= 4 && segments[0] == "things" && segments[2] == "events")
                     {
                         string thingName = segments[1];
                         string eventName = segments[3];
-                        //Console.WriteLine($"{thingName}:{eventName}");
-                        subscribedEvents.Add($"{thingName}:{eventName}");
+                        subscriptions.Add(new EventSubscription($"{thingName}:{eventName}", link.EmitStateOnReceive));
                     }
                 }
             }
-            Console.WriteLine($"[INFO] Thing with ID {Id} is subscribed to: {string.Join(", ", subscribedEvents)}");
-            return subscribedEvents;
+            //Console.WriteLine($"[INFO] Thing with ID {Id} is subscribed to: {string.Join(", ", subscriptions)}");
+            return subscriptions;
         }
 
         public async Task<string> GetThingDescriptionAsync()
@@ -224,7 +215,7 @@ namespace OpenTwinsv2.Things.Services
             await SaveStateAsync(currentState);
         }
 
-        private async Task SubscribeToEvents(List<string> events)
+        private async Task SubscribeToEvents(List<EventSubscription> events)
         {
             var client = DaprClient.CreateInvokeHttpClient();
             var cts = new CancellationTokenSource();

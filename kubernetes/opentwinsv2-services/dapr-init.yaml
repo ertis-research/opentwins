@@ -8,7 +8,7 @@ spec:
   metadata:
   - name: brokers # Required. Kafka broker connection setting
     value: "kafka-controller-0.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092,kafka-controller-1.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092,kafka-controller-2.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092"
-  - name: clientID # Optional. Used as client tracing ID by Kafka brokers.
+  - name: consumerGroup # Optional. Used as client tracing ID by Kafka brokers.
     value: "opentwinsv2-client-events"
   - name: authType # Required.
     value: "none"

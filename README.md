@@ -119,9 +119,7 @@ helm upgrade --install dapr dapr/dapr
  --version=1.15 
  --namespace dapr-system 
  --create-namespace 
- --set global.ha.enabled=false 
- --set dapr_scheduler.ha=true 
- --set dapr_placement.ha=true 
+ --set dapr_scheduler.cluster.storageSize=16Gi
  --set global.mtls.enabled=false 
  --wait
 

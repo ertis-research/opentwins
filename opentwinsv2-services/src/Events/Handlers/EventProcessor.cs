@@ -44,6 +44,7 @@ namespace Events.Handlers
         {
             try
             {
+                //Console.WriteLine("[DEBUG] HandleEvent: " + evt.Message);
                 var cloudEvent = FromTopicMessageToCloudEvent(evt.Message);
 
                 if (evt.Message.Type is null)

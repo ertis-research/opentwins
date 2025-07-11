@@ -22,6 +22,7 @@ spec:
       containers:
         - name: things-service
           image: registry.ertis.uma.es/opentwinsv2-things:0.0.1 
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
           env:

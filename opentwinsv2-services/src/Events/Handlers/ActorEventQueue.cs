@@ -37,6 +37,7 @@ namespace Events.Handlers
         {
             await foreach (var cloudEvent in _channel.Reader.ReadAllAsync())
             {
+                //Console.WriteLine("[DEBUG] ProcessQueueAsync: " + cloudEvent.Data ?? "NO DATA");
                 try
                 {
                     if (_fastEventConfig.IsFastEvent(_actorId, cloudEvent.Type))
@@ -46,6 +47,7 @@ namespace Events.Handlers
                             pubsubName: "mypubsub",
                             topicName: "thing.state.changed",
                             data: transformed);
+                        //Console.WriteLine("[DEBUG] PublishEventAsync: " + transformed ?? "NO DATA");
                         //Console.WriteLine("PUBLICADO: " + JsonSerializer.Serialize(transformed));
                     }
                     else

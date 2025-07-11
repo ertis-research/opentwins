@@ -7,6 +7,8 @@ data:
     listener 1883
     allow_anonymous true
     persistence false
+    max_inflight_messages 10000
+    max_queued_messages 1000000
 ---
 apiVersion: v1
 kind: Service

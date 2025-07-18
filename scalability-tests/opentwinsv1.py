@@ -138,6 +138,7 @@ def simulate_device(name, update_interval, test_duration, stop_event):
     client.loop_start()
 
     start_time = time.time()
+    topic = MQTT_CONF["topic"] + name
     
     # Cold-start
     payload = generate_ditto_protocol(name, str(uuid4()))
@@ -149,7 +150,7 @@ def simulate_device(name, update_interval, test_duration, stop_event):
         t_sent = datetime.now(timezone.utc).isoformat()
         
         payload = generate_ditto_protocol(name, uid)
-        msg = client.publish(MQTT_CONF["topic"], json.dumps(payload), qos=1)
+        msg = client.publish(topic, json.dumps(payload), qos=1)
         
         with mid_to_uid_lock:
             mid_to_uid[name + "_" + str(msg.mid)] = (uid, t_sent)

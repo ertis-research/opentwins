@@ -34,12 +34,12 @@ SCENARIOS_MEDIUM_LOAD = [
     (5000, 0.2, 15),     # 5000 dispositivos, 5 msg/s (~25k msg/s), 15s
 ]
 
-SCENARIOS_STRESS = [
-    (10000, 1.0, 20),    # 10,000 dispositivos, 1 msg/s (~10k msg/s), 20s
-    (15000, 1.0, 20),    # 15,000 dispositivos, 1 msg/s (~15k msg/s), 20s
-    (20000, 0.5, 25),    # 20,000 dispositivos, 2 msg/s (~40k msg/s), 25s
-    (25000, 0.2, 30),    # 25,000 dispositivos, 5 msg/s (~125k msg/s), 30s (burst)
-]
+# SCENARIOS_STRESS = [
+#     (10000, 1.0, 20),    # 10,000 dispositivos, 1 msg/s (~10k msg/s), 20s
+#     (15000, 1.0, 20),    # 15,000 dispositivos, 1 msg/s (~15k msg/s), 20s
+#     (20000, 0.5, 25),    # 20,000 dispositivos, 2 msg/s (~40k msg/s), 25s
+#     (25000, 0.2, 30),    # 25,000 dispositivos, 5 msg/s (~125k msg/s), 30s (burst)
+# ]
 
 
 def get_ntp_offset():
@@ -54,7 +54,7 @@ def get_ntp_offset():
     except Exception as e:
         print(f"[WARNING] Failed to get NTP offset: {e}")
 
-async def run_scenario(num_devices, interval, duration, wait_time, runs: int = 1):
+async def run_scenario(num_devices, interval, duration, wait_time, runs: int = 5):
     """
     Runs the same test scenario `runs` times and returns the average results.
 
@@ -109,23 +109,27 @@ async def run_scenario(num_devices, interval, duration, wait_time, runs: int = 1
 def plot_latencies_summary(labels, lat_v1, lat_v2, name=""):
     x = np.arange(len(labels))
     width = 0.35
-    short_name = name.lower().replace("-", "").replace(" ", "_")
+    short_name = name.lower().replace(" ", "_")
 
     plt.figure(figsize=(12, 6))
     plt.bar(x - width/2, lat_v1, width, label='OpenTwinsV1', color='darkcyan')
     plt.bar(x + width/2, lat_v2, width, label='OpenTwinsV2', color='darkorange')
     plt.xticks(x, labels, rotation=45)
     plt.ylabel("End-to-End Latency (s)")
-    plt.title(name + "Latency from MQTT Publish to DB Write")
+    plt.title(name + " - Latency from MQTT Publish to DB Write")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(short_name + "db_latency_comparison.png")
+    plt.savefig(short_name + "_db_latency_comparison.pdf")
     #plt.show()
 
 def plot_loss_rate_summary(labels, loss_rate_v1, loss_rate_v2, name=""):
     x = np.arange(len(labels))
     width = 0.35
-    short_name = name.lower().replace("-", "").replace(" ", "_")
+    short_name = name.lower().replace(" ", "_")
+
+    # Convertir a porcentaje
+    loss_rate_v1 = np.array(loss_rate_v1) * 100
+    loss_rate_v2 = np.array(loss_rate_v2) * 100
 
     plt.figure(figsize=(12, 6))
     plt.bar(x - width/2, loss_rate_v1, width, label='OpenTwinsV1', color='darkcyan')
@@ -133,10 +137,10 @@ def plot_loss_rate_summary(labels, loss_rate_v1, loss_rate_v2, name=""):
 
     plt.xticks(x, labels, rotation=45)
     plt.ylabel("Loss Rate (%)")
-    plt.title(name + "Message Loss Rate Comparison Between Platforms")
+    plt.title(name + " - Message Loss Rate Comparison Between Platforms")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(short_name + "loss_rate_comparison.png")
+    plt.savefig(short_name + "_loss_rate_comparison.pdf")
     #plt.show()
 
 def run_test(scenarios, name, wait_time):
@@ -164,13 +168,13 @@ def run_test(scenarios, name, wait_time):
 if __name__ == "__main__":
     try: 
         print("[Main] SCENARIOS BASELINE")
-        run_test(SCENARIOS_BASELINE, "Baseline -", 15)
+        run_test(SCENARIOS_BASELINE, "Baseline", 15)
         
         print("[Main] SCENARIOS MEDIUM LOAD")
-        run_test(SCENARIOS_MEDIUM_LOAD, "Medium Load - ", 45)
+        run_test(SCENARIOS_MEDIUM_LOAD, "Medium Load", 45)
         
-        print("[Main] SCENARIOS STRESS")
-        run_test(SCENARIOS_STRESS, "Stress - ", 75)
+        #print("[Main] SCENARIOS STRESS")
+        #run_test(SCENARIOS_STRESS, "Stress", 75)
         
     except KeyboardInterrupt:
         print("\n[Main] KeyboardInterrupt detected. Exiting gracefully.")

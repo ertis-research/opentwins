@@ -1,6 +1,6 @@
-using OpenTwinsv2.Things.Models;
+using OpenTwinsV2.Things.Models;
 
-namespace OpenTwinsv2.Twins.Models
+namespace OpenTwinsV2.Twins.Models
 {
     public static class ThingMapper
     {

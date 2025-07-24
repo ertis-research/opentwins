@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Shared.Converters
+namespace OpenTwinsV2.Shared.Converters
 {
     public class ObjectJsonConverter : JsonConverter<object>
     {

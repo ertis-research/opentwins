@@ -4,7 +4,7 @@ using Dgraph4Net;
 using Google.Protobuf;
 using Grpc.Core;
 
-namespace OpenTwinsv2.Twins.Services
+namespace OpenTwinsV2.Twins.Services
 {
     public class DGraphService : IDisposable
     {

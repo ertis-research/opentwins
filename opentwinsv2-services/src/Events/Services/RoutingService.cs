@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using Events.Handlers;
-using Shared.Models;
+using OpenTwinsV2.Shared.Models;
 
 namespace Events.Services
 {

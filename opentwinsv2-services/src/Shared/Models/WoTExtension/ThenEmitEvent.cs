@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Shared.Models
+namespace OpenTwinsV2.Shared.Models
 {
     public class ThenEmitEvent
     {

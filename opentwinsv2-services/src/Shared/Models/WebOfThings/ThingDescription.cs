@@ -1,9 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Shared.Converters;
-using Shared.Models;
+using OpenTwinsV2.Shared.Converters;
+using OpenTwinsV2.Shared.Models;
 
-namespace OpenTwinsv2.Things.Models
+namespace OpenTwinsV2.Things.Models
 {
     public class ThingDescription
     {

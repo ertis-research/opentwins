@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace OpenTwinsv2.Twins.Models
+namespace OpenTwinsV2.Twins.Models
 {
     public class GenericNode
     {

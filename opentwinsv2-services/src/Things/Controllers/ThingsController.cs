@@ -2,14 +2,14 @@ using System.Text.Json;
 using Dapr.Actors;
 using Dapr.Actors.Client;
 using Microsoft.AspNetCore.Mvc;
-using OpenTwinsv2.Things.Models;
-using Shared.Models;
+using OpenTwinsV2.Things.Models;
+using OpenTwinsV2.Shared.Constants;
 
 [ApiController]
 [Route("things")]
 public class ThingsController : ControllerBase
 {
-    private const string ActorType = "ThingActor";
+    private const string ActorType = Actors.ThingActor;
     private readonly IActorProxyFactory _actorProxyFactory;
 
     public ThingsController(IActorProxyFactory actorProxyFactory)

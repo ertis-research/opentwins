@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Events.Services;
-using Shared.Models;
+using OpenTwinsV2.Shared.Models;
+using OpenTwinsV2.Shared.Constants;
 
 [ApiController]
 [Route("events")]
@@ -18,7 +19,7 @@ public class EventsController : ControllerBase
     [HttpPost("things/{idActor}")]
     public async Task<IActionResult> UpdateRoutes(string idActor, [FromBody] List<EventSubscription> events)
     {
-        _routingService.UpdateEventsByActor(actor: new ActorIdentity(idActor, "ThingActor"), events);
+        _routingService.UpdateEventsByActor(actor: new ActorIdentity(idActor, Actors.ThingActor), events);
         await _subscriptionManager.RefreshSubscriptionsAsync();
         return Ok("Routing actualizado.");
     }

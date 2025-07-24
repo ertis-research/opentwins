@@ -1,6 +1,6 @@
 using System.Runtime.Serialization;
 
-namespace OpenTwinsv2.Things.Models
+namespace OpenTwinsV2.Things.Models
 {
     public enum OperationType
     {

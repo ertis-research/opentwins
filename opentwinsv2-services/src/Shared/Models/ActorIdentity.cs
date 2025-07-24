@@ -1,4 +1,4 @@
-namespace Shared.Models
+namespace OpenTwinsV2.Shared.Models
 {
     public class ActorIdentity(string actorId, string actorType) : IEquatable<ActorIdentity>
     {

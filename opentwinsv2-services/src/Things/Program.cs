@@ -1,6 +1,6 @@
 // dapr run --app-id things-service --app-port 5001 --app-protocol http --dapr-http-port 56001 --config ./daprConfig.yaml --resources-path ./DaprComponentsLocal  -- dotnet run --urls=http://localhost:5001/
 
-using OpenTwinsv2.Things.Services;
+using OpenTwinsV2.Things.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 

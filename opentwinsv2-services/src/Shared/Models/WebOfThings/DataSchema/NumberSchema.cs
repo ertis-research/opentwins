@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace OpenTwinsv2.Things.Models
+namespace OpenTwinsV2.Things.Models
 {
     public class NumberSchema : DataSchema
     {

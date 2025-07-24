@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.Serialization;
 
-namespace Shared.Models
+namespace OpenTwinsV2.Shared.Models
 {
     [DataContract]
     public class MyCloudEvent<T>

@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
 using Dgraph4Net.ActiveRecords;
 
-namespace OpenTwinsv2.Twins.Models
+namespace OpenTwinsV2.Twins.Models
 {
     public class EventNode : AEntity<EventNode>
     {

@@ -1,7 +1,7 @@
 using System.Text.Json;
-using OpenTwinsv2.Things.Models;
+using OpenTwinsV2.Things.Models;
 
-namespace Shared.Utilities
+namespace OpenTwinsV2.Shared.Utilities
 {
     public static class SchemaValidator
     {

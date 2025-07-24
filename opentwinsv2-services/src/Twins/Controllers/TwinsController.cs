@@ -1,20 +1,21 @@
-using OpenTwinsv2.Twins.Services;
+using OpenTwinsV2.Twins.Services;
 using Microsoft.AspNetCore.Mvc;
-using OpenTwinsv2.Things.Models;
+using OpenTwinsV2.Things.Models;
 using Dapr.Actors;
 using Dapr.Actors.Client;
 using System.Text.Json;
-using OpenTwinsv2.Twins.Models;
+using OpenTwinsV2.Twins.Models;
 using Dapr.Client;
+using OpenTwinsV2.Shared.Constants;
 
-namespace OpenTwinsv2.Twins.Controllers
+namespace OpenTwinsV2.Twins.Controllers
 {
     [ApiController]
     [Route("twins")]
     public class GraphController : ControllerBase
     {
         private readonly DGraphService _dgraphService;
-        private const string ActorType = "ThingActor";
+        private const string ActorType = Actors.ThingActor;
 
         public GraphController(DGraphService dgraphService)
         {

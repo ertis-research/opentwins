@@ -1,7 +1,7 @@
 using Dapr.Actors.Runtime;
-using OpenTwinsv2.Things.Models;
+using OpenTwinsV2.Things.Models;
 
-namespace OpenTwinsv2.Things.Services
+namespace OpenTwinsV2.Things.Services
 {
     internal class TestActor : Actor, ITestActor, IRemindable
     {

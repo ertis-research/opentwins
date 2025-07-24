@@ -2,7 +2,7 @@ using System.Text;
 using System.Threading.Channels;
 using Dapr.Messaging.PublishSubscribe;
 using Events.Services;
-using Shared.Models;
+using OpenTwinsV2.Shared.Models;
 
 namespace Events.Handlers
 {

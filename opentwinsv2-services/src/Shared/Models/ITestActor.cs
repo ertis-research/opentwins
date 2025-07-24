@@ -2,7 +2,7 @@ using Dapr.Actors;
 using Dapr.Actors.Runtime;
 using System.Threading.Tasks;
 
-namespace OpenTwinsv2.Things.Models
+namespace OpenTwinsV2.Things.Models
 {
     public interface ITestActor : IActor
     {       

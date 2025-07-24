@@ -6,11 +6,11 @@ using Dapr.Client;
 using Dapr.Client.Autogen.Grpc.v1;
 using Json.Logic;
 using Json.More;
-using OpenTwinsv2.Things.Models;
-using Shared.Models;
-using Shared.Utilities;
+using OpenTwinsV2.Things.Models;
+using OpenTwinsV2.Shared.Models;
+using OpenTwinsV2.Shared.Utilities;
 
-namespace OpenTwinsv2.Things.Services
+namespace OpenTwinsV2.Things.Services
 {
     internal class ThingActor : Actor, IThingActor, IRemindable
     {

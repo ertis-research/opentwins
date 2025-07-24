@@ -5,8 +5,8 @@ using Dapr.Actors;
 using Dapr.Actors.Client;
 using Dapr.Client;
 using Events.Services;
-using OpenTwinsv2.Things.Models;
-using Shared.Models;
+using OpenTwinsV2.Things.Models;
+using OpenTwinsV2.Shared.Models;
 
 namespace Events.Handlers
 {

@@ -1,12 +1,12 @@
 using Dapr;
 using Dapr.Actors;
 using Dapr.Actors.Runtime;
-using OpenTwinsv2.Things.Models;
-using Shared.Models;
+using OpenTwinsV2.Things.Models;
+using OpenTwinsV2.Shared.Models;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace OpenTwinsv2.Things.Models
+namespace OpenTwinsV2.Things.Models
 {
     public interface IThingActor : IActor
     {

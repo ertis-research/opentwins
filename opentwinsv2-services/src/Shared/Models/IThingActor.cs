@@ -11,7 +11,7 @@ namespace OpenTwinsV2.Things.Models
     public interface IThingActor : IActor
     {
         Task<string> SetThingDescriptionAsync(string data);
-        Task<string> GetThingDescriptionAsync();
+        Task<string?> GetThingDescriptionAsync();
         Task<string> GetCurrentStateAsync();
         Task OnEventReceived(MyCloudEvent<string> eventRecv);
         Task InvokeAction(string actionName, string parameters);

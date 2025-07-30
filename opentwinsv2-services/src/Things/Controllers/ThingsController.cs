@@ -35,7 +35,8 @@ public class ThingsController : ControllerBase
     public async Task<IActionResult> GetThingDescription(string thingId)
     {
         IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
-        string td = await actor.GetThingDescriptionAsync();
+        string? td = await actor.GetThingDescriptionAsync();
+        if (td == null) return NotFound();
         return Content(td, "application/td+json");
     }
 

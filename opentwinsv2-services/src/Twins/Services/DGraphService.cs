@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Api;
 using Dgraph4Net;
 using Google.Protobuf;
@@ -8,7 +9,7 @@ namespace OpenTwinsV2.Twins.Services
 {
     public class DGraphService : IDisposable
     {
-        private readonly Dgraph4NetClient client;
+        private readonly Dgraph4NetClient _client;
         private readonly Channel _channel;
 
         public DGraphService(IConfiguration configuration)
@@ -16,7 +17,7 @@ namespace OpenTwinsV2.Twins.Services
             var dgraphUrl = configuration["DGraph:Url"] ?? throw new Exception("[ERROR] DGraph URL is not defined");
             // Vamos a usar este cliente porque el oficial no esta actualizado: https://github.com/schivei/dgraph4net
             _channel = new Channel(dgraphUrl, ChannelCredentials.Insecure);
-            client = new Dgraph4NetClient(_channel);
+            _client = new Dgraph4NetClient(_channel);
         }
 
         public void Dispose()
@@ -24,11 +25,149 @@ namespace OpenTwinsV2.Twins.Services
             _channel?.ShutdownAsync().Wait();
         }
 
-        public Dgraph4NetClient GetClient() => client;
+        public Dgraph4NetClient GetClient() => _client;
 
-        public async Task<string> AddThingAsync<ThingNode>(ThingNode entity)
+        public async Task<Payload> DropAllAsync()
         {
-            var txn = client.NewTransaction();
+            return await _client.Alter(new Operation { DropAll = true });
+        }
+
+        public async Task<string> GetEverythingAsync()
+        {
+            string query = @"
+            {
+                all(func: has(thingId), first: 1000) {
+                    uid
+                    dgraph.type
+                    expand(_all_) {
+                        uid
+                        dgraph.type
+                        expand(_all_)
+                    }
+                }
+            }";
+
+            var response = await _client.NewTransaction().Query(query);
+            return response.Json.ToStringUtf8();
+        }
+
+        public async Task<Payload> InitSchemaAsync()
+        {
+            string schema = @"
+                thingId: string @index(exact) .
+                name: string @index(term) .
+                createdAt: datetime .
+
+                hasType: [uid] @reverse .
+                hasAttribute: [uid] @reverse .
+                hasAction: [uid] @reverse .
+                hasEvent: [uid] @reverse .
+
+                twins: [uid] @reverse .
+                domains: [uid] @reverse .
+
+                Attribute.key: string @index(term) .
+                Attribute.type: string @index(term) .
+                Attribute.value: string .
+
+                Action.name: string @index(term) .
+                Action.payload: string .
+
+                Event.name: string @index(term) .
+                Event.data: string .
+
+                Relation.name: string @index(term) .
+                Relation.createdAt: datetime .
+                Relation.attributes: string .
+
+                hasPart: [uid] @reverse .
+                hasChild: [uid] @reverse .
+                relatedTo: [uid] @reverse .
+
+                domainId: string @index(exact) .
+                Domain.name: string @index(term) .
+
+                type Thing {
+                    thingId
+                    name
+                    createdAt
+                    hasType
+                    hasAttribute
+                    hasAction
+                    hasEvent
+                    twins
+                    domains
+                }
+
+                type Twin {
+                    thingId
+                    name
+                    createdAt
+                    hasType
+                    hasAttribute
+                    hasAction
+                    hasEvent
+                    twins
+                    domains
+                }
+
+                type RealObject {
+                    thingId
+                    name
+                    createdAt
+                    hasType
+                    hasAttribute
+                    hasAction
+                    hasEvent
+                    twins
+                    domains
+                }
+
+                type Resource {
+                    thingId
+                    name
+                    createdAt
+                    hasType
+                    hasAttribute
+                    hasAction
+                    hasEvent
+                    twins
+                    domains
+                }
+
+                type Attribute {
+                    Attribute.key
+                    Attribute.type
+                    Attribute.value
+                }
+
+                type Action {
+                    Action.name
+                    Action.payload
+                }
+
+                type Event {
+                    Event.name
+                    Event.data
+                }
+
+                type Relation {
+                    Relation.name
+                    Relation.createdAt
+                    Relation.attributes
+                    relatedTo
+                    hasPart
+                    hasChild
+                }
+            ";
+
+            var op = new Operation { Schema = schema };
+            return await _client.Alter(op);
+        }
+
+        public async Task<Response> AddThingAsync(JsonObject entity)
+        {
+            var txn = _client.NewTransaction();
             try
             {
                 Console.WriteLine(JsonSerializer.Serialize(entity));
@@ -38,7 +177,7 @@ namespace OpenTwinsV2.Twins.Services
                 };
                 var response = await txn.Mutate(mutation);
                 await txn.Commit();
-                return response.ToString();
+                return response;
             }
             catch
             {
@@ -47,27 +186,27 @@ namespace OpenTwinsV2.Twins.Services
             }
         }
 
-        public async Task<string> LinkNodesAsync(string fromUid, string predicate, string toUid)
+        public async Task<string?> GetUidByThingIdAsync(string thingId)
         {
-            var txn = client.NewTransaction();
-            try
-            {
-                var nquad = $"<{fromUid}> <{predicate}> <{toUid}> .";
+            var query = $@"
+            {{
+                node(func: eq(thingId, ""{thingId}"")) {{
+                    uid
+                }}
+            }}";
 
-                var mutation = new Mutation
-                {
-                    CommitNow = true,
-                    SetNquads = ByteString.CopyFromUtf8(nquad)
-                };
+            var response = await _client.NewTransaction().Query(query);
+            var json = response.Json.ToStringUtf8();
 
-                var response = await txn.Mutate(mutation);
-                return response.ToString();
-            }
-            catch
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("node", out var nodeArray) && nodeArray.ValueKind == JsonValueKind.Array && nodeArray.GetArrayLength() > 0)
             {
-                await txn.DisposeAsync();
-                throw;
+                return nodeArray[0].GetProperty("uid").GetString();
             }
+
+            return null;
         }
 
         public async Task<bool> ExistsThingByIdAsync(string thingId)
@@ -79,7 +218,7 @@ namespace OpenTwinsV2.Twins.Services
                 }}
             }}";
 
-            var response = await client.NewTransaction().Query(query);
+            var response = await _client.NewTransaction().Query(query);
             var json = response.Json.ToStringUtf8();
 
             using var doc = JsonDocument.Parse(json);
@@ -93,20 +232,7 @@ namespace OpenTwinsV2.Twins.Services
             return false;
         }
 
-        public async Task<string> QueryByPropertyAsync(string prop, string value)
-        {
-            var query = $@"
-            {{
-                nodes(func: eq({prop}, ""{value}"")) {{
-                    uid
-                    expand(_all_)
-                }}
-            }}";
-
-            var response = await client.NewTransaction().Query(query);
-            return response.Json.ToStringUtf8();
-        }
-
+        /*
         public async Task<string?> GetThingInTwinAsync(string twinId, string thingId)
         {
             var query = $@"
@@ -119,7 +245,7 @@ namespace OpenTwinsV2.Twins.Services
                 }}
             }}";
 
-            var response = await client.NewTransaction().Query(query);
+            var response = await _client.NewTransaction().Query(query);
             var json = response.Json.ToStringUtf8();
 
             using var doc = JsonDocument.Parse(json);
@@ -141,186 +267,145 @@ namespace OpenTwinsV2.Twins.Services
 
             return null; // No encontrado o no pertenece a ese twin
         }
-
-        public async Task<List<string>> GetThingsInTwinAsync(string thingId)
+*/
+        public async Task<List<JsonElement>> GetThingsInTwinAsync(string twinId)
         {
+            using var txn = _client.NewTransaction();
+
             var query = $@"
             {{
-                twin(func: eq(thingId, ""{thingId}"")) @filter(eq(isTwin, true)) {{
-                    contains {{
+                things(func: eq(thingId, ""{twinId}"")) {{
+                    ~twins {{
+                        uid
                         thingId
+                        name
                     }}
                 }}
             }}";
 
-            var response = await client.NewTransaction().Query(query);
-            var json = response.Json.ToStringUtf8();
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8(); ;
 
-            var result = new List<string>();
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            if (root.TryGetProperty("twin", out var twinArray) && twinArray.ValueKind == JsonValueKind.Array && twinArray.GetArrayLength() > 0)
+            // Acceder a things[0]["~twins"]
+            if (!root.TryGetProperty("things", out JsonElement thingsArray) || thingsArray.GetArrayLength() == 0)
+                return [];
+
+            var twinsProp = thingsArray[0].GetProperty("~twins");
+            var twins = JsonSerializer.Deserialize<List<JsonElement>>(twinsProp.GetRawText());
+
+            return twins ?? [];
+        }
+
+        public async Task<Response> AddThingToTwinAsync(string thingId, string twinId)
+        {
+            var twinUid = await GetUidByThingIdAsync(twinId);
+            var thingUid = await GetUidByThingIdAsync(thingId);
+
+            if (twinUid == null || thingUid == null)
+                throw new Exception("Twin or Thing not found");
+
+            var mutation = new
             {
-                if (twinArray[0].TryGetProperty("contains", out var contains) && contains.ValueKind == JsonValueKind.Array)
+                uid = thingUid,
+                twins = new[]
                 {
-                    foreach (var thing in contains.EnumerateArray())
-                    {
-                        if (thing.TryGetProperty("thingId", out var id))
-                        {
-                            var strId = id.GetString();
-                            if (strId != null) result.Add(strId);
-                        }
-                    }
-                }
+                new { uid = twinUid }
             }
+            };
 
-            return result;
+            var mu = new Mutation
+            {
+                SetJson = ByteString.CopyFromUtf8(JsonSerializer.Serialize(mutation))
+            };
+
+            using var txn = _client.NewTransaction();
+            var response = await txn.Mutate(mu);
+            await txn.Commit();
+
+            return response;
         }
 
-        public async Task<string> AddThingToTwinAsync(string twinId, string thingId)
+        public async Task<Response> RemoveThingFromTwinAsync(string thingId, string twinId)
         {
             var twinUid = await GetUidByThingIdAsync(twinId);
             var thingUid = await GetUidByThingIdAsync(thingId);
 
             if (twinUid == null || thingUid == null)
-                throw new Exception("Twin or Thing not found");
-
-            return await LinkNodesAsync(twinUid, "contains", thingUid);
-        }
-
-
-        // Esto hay que rafactorizarlo que lo ha hecho la chatty
-        public async Task<string> RemoveThingFromTwinAsync(string twinId, string thingId)
-        {
-            var twinUid = await GetUidByThingIdAsync(twinId);
-            var thingUid = await GetUidByThingIdAsync(thingId);
-
-            if (twinUid == null || thingUid == null)
-                throw new Exception("Twin or Thing not found");
+                throw new KeyNotFoundException("Twin or Thing not found");
 
             // 1. Eliminar la relación contains entre Twin y Thing
-            var txn = client.NewTransaction();
+            var txn = _client.NewTransaction();
+
+            var deleteJson = $@"
+            [
+                {{
+                    ""uid"": ""{thingUid}"",
+                    ""twins"": [ {{ ""uid"": ""{twinUid}"" }} ]
+                }},
+                {{
+                    ""uid"": ""{twinUid}"",
+                    ""twins"": [ {{ ""uid"": ""{thingUid}"" }} ]
+                }}
+            ]";
+
+            var mutation = new Mutation
+            {
+                DeleteJson = ByteString.CopyFromUtf8(deleteJson)
+            };
+
             try
             {
-                var deleteJson = new Dictionary<string, object>
-                {
-                    ["uid"] = twinUid,
-                    ["contains"] = new[] { new Dictionary<string, object> { ["uid"] = thingUid } }
-                };
-
-                var mutation = new Mutation
-                {
-                    CommitNow = true,
-                    DeleteJson = ByteString.CopyFromUtf8(JsonSerializer.Serialize(deleteJson))
-                };
-
-                await txn.Mutate(mutation);
-            }
-            catch
-            {
-                await txn.DisposeAsync();
-                throw;
-            }
-
-            // 2. Consultar si el thing sigue vinculado a otro twin
-            var checkQuery = $@"
-            {{
-                thing(func: uid({thingUid})) {{
-                    ~contains @filter(eq(isTwin, true)) {{
-                        uid
-                    }}
-                }}
-            }}";
-
-            var checkResp = await client.NewTransaction().Query(checkQuery);
-            var json = checkResp.Json.ToStringUtf8();
-
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            bool isStillContained = false;
-
-            if (root.TryGetProperty("thing", out var thingArray) &&
-                thingArray.ValueKind == JsonValueKind.Array &&
-                thingArray.GetArrayLength() > 0)
-            {
-                var thing = thingArray[0];
-                if (thing.TryGetProperty("~contains", out var parents) &&
-                    parents.ValueKind == JsonValueKind.Array &&
-                    parents.GetArrayLength() > 0)
-                {
-                    isStillContained = true;
-                }
-            }
-
-            // 3. Si ya no pertenece a ningún Twin, borrar el nodo
-            if (!isStillContained)
-            {
-                await DeleteNodeAsync(thingUid);
-                return $"Thing {thingId} was removed from Twin and deleted because it was not linked to any other Twin.";
-            }
-
-            return $"Thing {thingId} was removed from Twin {twinId}, but remains linked to other Twin(s).";
-        }
-
-        private async Task<string?> GetUidByThingIdAsync(string thingId)
-        {
-            var query = $@"
-            {{
-                node(func: eq(thingId, ""{thingId}"")) {{
-                    uid
-                }}
-            }}";
-
-            var response = await client.NewTransaction().Query(query);
-            var json = response.Json.ToStringUtf8();
-
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            if (root.TryGetProperty("node", out var nodeArray) && nodeArray.ValueKind == JsonValueKind.Array && nodeArray.GetArrayLength() > 0)
-            {
-                return nodeArray[0].GetProperty("uid").GetString();
-            }
-
-            return null;
-        }
-
-        public async Task<string> GetNodeByUidAsync(string uid)
-        {
-            var query = $@"
-            {{
-                node(func: uid({uid})) {{
-                    uid
-                    expand(_all_)
-                }}
-            }}";
-
-            var response = await client.NewTransaction().Query(query);
-            return response.Json.ToStringUtf8();
-        }
-
-        public async Task DeleteNodeAsync(string uid)
-        {
-            await using var txn = client.NewTransaction();
-            try
-            {
-                var json = JsonSerializer.Serialize(new { uid });
-                var mutation = new Mutation
-                {
-                    DeleteJson = ByteString.CopyFromUtf8(json)
-                };
-
                 var response = await txn.Mutate(mutation);
                 await txn.Commit();
+                return response;
             }
-            catch
+            catch (Exception ex)
             {
                 await txn.DisposeAsync();
-                throw;
+                throw new Exception("Error removing thing: " + ex.Message);
             }
         }
+
+
+        /*
+                public async Task<string> GetNodeByUidAsync(string uid)
+                {
+                    var query = $@"
+                    {{
+                        node(func: uid({uid})) {{
+                            uid
+                            expand(_all_)
+                        }}
+                    }}";
+
+                    var response = await _client.NewTransaction().Query(query);
+                    return response.Json.ToStringUtf8();
+                }
+
+                public async Task DeleteNodeAsync(string uid)
+                {
+                    await using var txn = _client.NewTransaction();
+                    try
+                    {
+                        var json = JsonSerializer.Serialize(new { uid });
+                        var mutation = new Mutation
+                        {
+                            DeleteJson = ByteString.CopyFromUtf8(json)
+                        };
+
+                        var response = await txn.Mutate(mutation);
+                        await txn.Commit();
+                    }
+                    catch
+                    {
+                        await txn.DisposeAsync();
+                        throw;
+                    }
+                }
+        */
     }
 }
 

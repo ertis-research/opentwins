@@ -111,13 +111,13 @@ namespace OpenTwinsV2.Things.Services
             return subscriptions;
         }
 
-        public async Task<string> GetThingDescriptionAsync()
+        public async Task<string?> GetThingDescriptionAsync()
         {
             // Gets state from the state store.
             return await Task.FromResult(thingDescription != null ? JsonSerializer.Serialize(thingDescription, new JsonSerializerOptions
             {
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-            }) : "Thing description is not available.");
+            }) : null);
         }
 
         public Task<string> GetCurrentStateAsync()

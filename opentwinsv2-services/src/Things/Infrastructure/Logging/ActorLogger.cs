@@ -1,6 +1,6 @@
 using System;
 
-namespace OpenTwinsV2.Things.Utilities
+namespace OpenTwinsV2.Things.Logging
 {
     public static class ActorLogger
     {
@@ -22,7 +22,7 @@ namespace OpenTwinsV2.Things.Utilities
         private static void WriteLog(string level, string actorId, string message)
         {
             var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            Console.WriteLine($"[{level.PadRight(5)}] [{timestamp}] [Actor: {actorId}] {message}");
+            Console.WriteLine($"[{level.PadRight(5)}] [{timestamp}] [Thing: {actorId}] {message}");
         }
     }
 }

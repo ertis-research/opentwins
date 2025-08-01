@@ -3,12 +3,17 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Dapr.Actors.Runtime;
 using Dapr.Client;
-using Dapr.Client.Autogen.Grpc.v1;
 using Json.Logic;
 using Json.More;
+using System.Data;
 using OpenTwinsV2.Things.Models;
 using OpenTwinsV2.Shared.Models;
 using OpenTwinsV2.Shared.Utilities;
+using OpenTwinsV2.Things.Infrastructure.Database;
+using Npgsql;
+using Dapper;
+using NpgsqlTypes;
+using OpenTwinsV2.Things.Utilities;
 
 namespace OpenTwinsV2.Things.Services
 {
@@ -20,17 +25,12 @@ namespace OpenTwinsV2.Things.Services
         private ThingDescription? thingDescription;
         private const string StateStoreName = "actorstatestore";
         private static readonly DaprClient _daprClient = new DaprClientBuilder().Build();
+        private readonly IDbConnectionFactory _connectionFactory;
 
-        // The constructor must accept ActorHost as a parameter, and can also accept additional
-        // parameters that will be retrieved from the dependency injection container
-        //
-        /// <summary>
-        /// Initializes a new instance of MyActor
-        /// </summary>
-        /// <param name="host">The Dapr.Actors.Runtime.ActorHost that will host this actor instance.</param>
-        public ThingActor(ActorHost host)
-            : base(host)
+        public ThingActor(ActorHost host, IDbConnectionFactory connectionFactory)
+        : base(host)
         {
+            _connectionFactory = connectionFactory;
         }
 
         /// <summary>
@@ -39,7 +39,7 @@ namespace OpenTwinsV2.Things.Services
         /// </summary>
         protected override async Task OnActivateAsync()
         {
-            Console.WriteLine($"[INFO] Activating actor id: {this.Id}");
+            ActorLogger.Info(Id.GetId(), "Activating actor");
             try
             {
                 await LoadThingDescriptionAsync();
@@ -47,7 +47,7 @@ namespace OpenTwinsV2.Things.Services
             }
             catch (Exception exc)
             {
-                Console.WriteLine("[INFO] There is no data about the thing: its new." + exc.Message);
+                ActorLogger.Info(Id.GetId(), "There is no data about the thing: its new. " + exc.Message);
             }
         }
 
@@ -57,25 +57,18 @@ namespace OpenTwinsV2.Things.Services
         protected override async Task OnDeactivateAsync()
         {
             // Provides Opporunity to perform optional cleanup.
-            Console.WriteLine($"[INFO] Deactivating actor id: {this.Id}");
-            await SaveThingDescriptionAsync(thingDescription);
-            await SaveStateAsync(currentState);
+            ActorLogger.Info(Id.GetId(), "Deactivating actor");
+            await Task.CompletedTask;
+            //if(thingDescription != null) await SaveThingDescriptionAsync(thingDescription);
+            //await SaveStateAsync(currentState);
 
-        }
-
-        /// <summary>
-        /// Set MyData into actor's private state store
-        /// </summary>
-        /// <param name="newThingDescription">the user-defined MyData which will be stored into state store as "my_data" state</param>
-        private static ThingDescription? CloneJsonElement(ThingDescription newThingDescription)
-        {
-            var json = JsonSerializer.Serialize(newThingDescription);
-            return JsonSerializer.Deserialize<ThingDescription>(json);
         }
 
         public async Task<string> SetThingDescriptionAsync(string newThingDescription)
         {
             thingDescription = JsonSerializer.Deserialize<ThingDescription>(newThingDescription);
+            if (thingDescription == null) throw new InvalidOperationException("Deserialization failed: ThingDescription is empty or not in the correct format.");
+
             await SaveThingDescriptionAsync(thingDescription);
             if (thingDescription?.Links != null)
             {
@@ -114,10 +107,21 @@ namespace OpenTwinsV2.Things.Services
         public async Task<string?> GetThingDescriptionAsync()
         {
             // Gets state from the state store.
-            return await Task.FromResult(thingDescription != null ? JsonSerializer.Serialize(thingDescription, new JsonSerializerOptions
+            if (thingDescription == null)
             {
-                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-            }) : null);
+                await LoadThingDescriptionAsync();
+            }
+
+            if (thingDescription == null) return null;
+
+            try
+            {
+                return thingDescription.ToString();
+            }
+            catch (NotSupportedException ex)
+            {
+                throw new InvalidOperationException("Failed to serialize ThingDescription to JSON.", ex);
+            }
         }
 
         public Task<string> GetCurrentStateAsync()
@@ -133,10 +137,21 @@ namespace OpenTwinsV2.Things.Services
             if (bulkStateItems.Count > 0 && !string.IsNullOrEmpty(bulkStateItems[0].Value))
             {
                 thingDescription = JsonSerializer.Deserialize<ThingDescription>(bulkStateItems[0].Value);
+                ActorLogger.Info(Id.GetId(), "Thing Description loaded from redis");
             }
             else
             {
-                Console.WriteLine("[INFO] No ThingDescription found in statestore.");
+                ActorLogger.Info(Id.GetId(), "No ThingDescription found in statestore.");
+                var td = await LoadThingDescriptionFromPostgresqlAsync(this.Id.ToString());
+                if (td == null)
+                {
+                    ActorLogger.Info(Id.GetId(), "No ThingDescription found in Postgresql.");
+                }
+                else
+                {
+                    thingDescription = td;
+                    ActorLogger.Info(Id.GetId(), "Thing Description loaded from Postgresql.");
+                }
             }
         }
 
@@ -155,17 +170,90 @@ namespace OpenTwinsV2.Things.Services
             }
         }
 
-        private async Task SaveThingDescriptionAsync(ThingDescription? newThingDescription)
+        private async Task<ThingDescription?> LoadThingDescriptionFromPostgresqlAsync(string thingId)
+        {
+            using var connection = _connectionFactory.CreateConnection();
+            if (connection is NpgsqlConnection npgsqlConnection)
+                await npgsqlConnection.OpenAsync();
+            else
+                connection.Open();
+
+            var command = new NpgsqlCommand
+            {
+                Connection = (NpgsqlConnection)connection,
+                CommandText = @"
+                    SELECT td
+                    FROM thing_descriptions
+                    WHERE thingId = @ThingId;"
+            };
+
+            var idParam = new NpgsqlParameter("@ThingId", DbType.String)
+            {
+                Value = thingId
+            };
+            command.Parameters.Add(idParam);
+
+            using var reader = await command.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                var json = reader.GetString(0);
+                var thingDescription = JsonSerializer.Deserialize<ThingDescription>(json);
+                return thingDescription;
+            }
+
+            ActorLogger.Info(Id.GetId(), $"No ThingDescription found with ThingId {thingId}");
+            return null;
+        }
+
+        private async Task SaveThingDescriptionAsync(ThingDescription newThingDescription)
         {
             thingDescription = newThingDescription;
-            await _daprClient.SaveStateAsync(StateStoreName, ThingDescriptionKey + Id.ToString(), JsonSerializer.Serialize(thingDescription));
-            await LoadThingDescriptionAsync();
+            await _daprClient.SaveStateAsync(StateStoreName, ThingDescriptionKey + Id.ToString(), thingDescription.ToString());
+            await UpdateThingDescriptionInPostgresqlAsync(newThingDescription);
+        }
+
+        private async Task UpdateThingDescriptionInPostgresqlAsync(ThingDescription newThingDescription)
+        {
+            using var connection = _connectionFactory.CreateConnection();
+            if (connection is NpgsqlConnection npgsqlConnection)
+                await npgsqlConnection.OpenAsync();
+            else
+                connection.Open();
+
+            var command = new NpgsqlCommand
+            {
+                Connection = (NpgsqlConnection)connection,
+                CommandText = @"
+                    INSERT INTO thing_descriptions (thingId, td)
+                    VALUES (@ThingId, @NewTd)
+                    ON CONFLICT (thingId)
+                    DO UPDATE SET td = @NewTd;"
+            };
+
+            var tdParam = new NpgsqlParameter("@NewTd", NpgsqlDbType.Jsonb)
+            {
+                Value = newThingDescription.ToString()
+            };
+            command.Parameters.Add(tdParam);
+
+            var idParam = new NpgsqlParameter("@ThingId", DbType.String)
+            {
+                Value = newThingDescription.Id
+            };
+            command.Parameters.Add(idParam);
+
+            int rowsAffected = await command.ExecuteNonQueryAsync();
+
+            if (rowsAffected == 0) ActorLogger.Warn(Id.GetId(), $"No row found with ThingId {newThingDescription.Id}");
+
+            ActorLogger.Info(Id.GetId(), "Thing Description successfully saved in PostgreSQL");
         }
 
         private async Task SaveStateAsync(Dictionary<string, PropertyState> newState)
         {
             currentState = newState;
             await _daprClient.SaveStateAsync(StateStoreName, CurrentStateKey + Id.ToString(), newState);
+            ActorLogger.Info(Id.GetId(), "Thing Description successfully saved in Redis");
         }
 
         private async Task InitializeOrUpdateThingState(Dictionary<string, PropertyAffordance>? properties)
@@ -198,13 +286,13 @@ namespace OpenTwinsV2.Things.Services
 
                 if (!thingDescription.Properties.TryGetValue(propName, out var affordance))
                 {
-                    Console.WriteLine($"[WARN] Property '{propName}' does not exist in the ThingDescription.");
+                    ActorLogger.Warn(Id.GetId(), $"Property '{propName}' does not exist in the ThingDescription");
                     continue;
                 }
 
                 if (!SchemaValidator.IsTypeCompatible(affordance.DataType, newValue.Value))
                 {
-                    Console.WriteLine($"[WARN] Value for '{propName}' is not of the expected type: '{affordance.DataType}'.");
+                    ActorLogger.Warn(Id.GetId(), $"Value for '{propName}' is not of the expected type: '{affordance.DataType}'");
                     continue;
                 }
 
@@ -225,8 +313,6 @@ namespace OpenTwinsV2.Things.Services
 
         public async Task OnEventReceived(MyCloudEvent<string> eventRecv)
         {
-            //Console.WriteLine($"[INFO: {Id}] Received new event");
-
             if (eventRecv.Type != null)
             {
                 JsonObject info = [];
@@ -353,6 +439,7 @@ namespace OpenTwinsV2.Things.Services
         private async Task HandleInvokeActionAsync(ThenInvokeAction invokeAction, JsonNode data)
         {
             Console.WriteLine($"[WARNING: {Id}] INVOKE ACTION. NOT IMPLEMENTED");
+            ActorLogger.Warn(Id.GetId(), "INVOKE ACTION. NOT IMPLEMENTED");
             await Task.CompletedTask;
         }
 

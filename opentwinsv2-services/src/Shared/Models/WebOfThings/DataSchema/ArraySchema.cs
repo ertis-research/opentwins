@@ -5,6 +5,8 @@ namespace OpenTwinsV2.Things.Models
 {
     public class ArraySchema : DataSchema
     {
+        public ArraySchema() { }
+
         [JsonPropertyName("items")]
         [JsonConverter(typeof(SingleOrArrayConverter<DataSchema>))]
         public List<DataSchema>? Items { get; set; } // Puede ser un DataSchema o una lista de DataSchema

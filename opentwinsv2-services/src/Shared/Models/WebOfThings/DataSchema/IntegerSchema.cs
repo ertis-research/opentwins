@@ -4,6 +4,8 @@ namespace OpenTwinsV2.Things.Models
 {
     public class IntegerSchema : DataSchema
     {
+        public IntegerSchema() { }
+
         [JsonPropertyName("minimum")]
         public int? Minimum { get; set; }
 

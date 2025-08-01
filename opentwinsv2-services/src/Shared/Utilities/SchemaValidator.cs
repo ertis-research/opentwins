@@ -10,6 +10,19 @@ namespace OpenTwinsV2.Shared.Utilities
             "string", "number", "integer", "boolean", "object", "array", "null"
         };
 
+        public static string ExtractIdFromJson(string rawJson)
+        {
+            using var doc = JsonDocument.Parse(rawJson);
+            if (!doc.RootElement.TryGetProperty("id", out var idElement) || idElement.ValueKind != JsonValueKind.String)
+                throw new ArgumentException("Missing or invalid 'id' in ThingDescription.");
+
+            string? id = idElement.GetString();
+            if (string.IsNullOrWhiteSpace(id))
+                throw new ArgumentException("'id' in ThingDescription cannot be null or empty.");
+
+            return id;
+        }
+
         public static JsonElement? StringToJsonElement(string str)
         {
             if (string.IsNullOrWhiteSpace(str))

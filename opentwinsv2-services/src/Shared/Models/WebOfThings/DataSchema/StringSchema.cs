@@ -4,6 +4,8 @@ namespace OpenTwinsV2.Things.Models
 {
     public class StringSchema : DataSchema
     {
+        public StringSchema() { }
+
         [JsonPropertyName("minLength")]
         public uint? MinLength { get; set; }
 

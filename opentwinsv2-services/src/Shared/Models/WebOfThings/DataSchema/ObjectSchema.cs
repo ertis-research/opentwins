@@ -4,6 +4,8 @@ namespace OpenTwinsV2.Things.Models
 {
     public class ObjectSchema : DataSchema
     {
+        public ObjectSchema() { }
+
         [JsonPropertyName("properties")]
         public Dictionary<string, DataSchema>? Properties { get; set; }
 

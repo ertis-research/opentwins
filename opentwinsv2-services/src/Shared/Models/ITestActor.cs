@@ -1,8 +1,7 @@
 using Dapr.Actors;
 using Dapr.Actors.Runtime;
-using System.Threading.Tasks;
 
-namespace OpenTwinsV2.Things.Models
+namespace OpenTwinsV2.Shared.Models
 {
     public interface ITestActor : IActor
     {       

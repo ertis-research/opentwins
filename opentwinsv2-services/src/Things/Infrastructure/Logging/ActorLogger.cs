@@ -21,8 +21,7 @@ namespace OpenTwinsV2.Things.Logging
 
         private static void WriteLog(string level, string actorId, string message)
         {
-            var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            Console.WriteLine($"[{level.PadRight(5)}] [{timestamp}] [Thing: {actorId}] {message}");
+            Console.WriteLine($"[{level.PadRight(5)}] [{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}] [Thing: {actorId.PadRight(20)}] {message}");
         }
     }
 }

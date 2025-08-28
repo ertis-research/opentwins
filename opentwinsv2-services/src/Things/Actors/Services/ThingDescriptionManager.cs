@@ -3,7 +3,7 @@ using System.Text.Json;
 using Dapr.Client;
 using Npgsql;
 using NpgsqlTypes;
-using OpenTwinsV2.Things.Models;
+using OpenTwinsV2.Shared.Models;
 using OpenTwinsV2.Things.Logging;
 using OpenTwinsV2.Things.Infrastructure.Database;
 using Dapr.Actors;

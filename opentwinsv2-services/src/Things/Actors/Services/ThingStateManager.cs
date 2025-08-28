@@ -1,9 +1,9 @@
 using Dapr.Client;
 using System.Text.Json;
-using OpenTwinsV2.Things.Models;
-using OpenTwinsV2.Things.Logging;
 using OpenTwinsV2.Shared.Models;
+using OpenTwinsV2.Things.Logging;
 using OpenTwinsV2.Shared.Utilities;
+using OpenTwinsV2.Things.Models;
 
 namespace OpenTwinsV2.Things.Actors.Services
 {

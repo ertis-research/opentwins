@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 using OpenTwinsV2.Shared.Converters;
 using OpenTwinsV2.Shared.Models;
 
-namespace OpenTwinsV2.Things.Models
+namespace OpenTwinsV2.Shared.Models
 {
     public class ThingDescription
     {

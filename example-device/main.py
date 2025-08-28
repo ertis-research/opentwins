@@ -10,7 +10,7 @@ load_dotenv()
 
 broker = os.getenv("MQTT_BROKER", "localhost")
 port = int(os.getenv("MQTT_PORT", 1883))
-topic = "example-device"
+topic = "telemetry/example-device-rules"
 
 mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
@@ -26,4 +26,4 @@ while True:
     payload = json.dumps(generate_data())
     mqttc.publish(topic, payload)
     print(f"Publicado: {payload}")
-    time.sleep(5)
+    time.sleep(15)

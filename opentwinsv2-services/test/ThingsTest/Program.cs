@@ -4,7 +4,7 @@
 
 using Dapr.Actors;
 using Dapr.Actors.Client;
-using OpenTwinsV2.Things.Models;
+using OpenTwinsV2.Shared.Models;
 
 namespace MyActorClient
 {

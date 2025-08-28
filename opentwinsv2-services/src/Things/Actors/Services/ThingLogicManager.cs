@@ -1,11 +1,11 @@
 using System.Text.Json;
-using OpenTwinsV2.Things.Models;
 using OpenTwinsV2.Shared.Models;
 using Json.Logic;
 using Json.More;
 using System.Text.Json.Nodes;
 using Dapr.Client;
 using OpenTwinsV2.Things.Logging;
+using OpenTwinsV2.Things.Models;
 
 namespace OpenTwinsV2.Things.Actors.Services
 {
@@ -68,7 +68,14 @@ namespace OpenTwinsV2.Things.Actors.Services
             var client = DaprClient.CreateInvokeHttpClient();
             var cts = new CancellationTokenSource();
             var response = await client.PostAsJsonAsync($"http://events-service/events/things/{_thingId}", events, cts.Token);
-            Console.WriteLine(response.ToString());
+            if (response.IsSuccessStatusCode)
+            {
+                ActorLogger.Info(_thingId, $"Successfully subscribed to events.");
+            }
+            else
+            {
+                ActorLogger.Error(_thingId, $"Failed to subscribe to events. StatusCode: {(int)response.StatusCode}, Reason: {response.ReasonPhrase}");
+            }
         }
 
         public async Task<string?> GetThingDescriptionAsync()
@@ -86,6 +93,15 @@ namespace OpenTwinsV2.Things.Actors.Services
 
         public async Task ApplyEventAsync(MyCloudEvent<string> evt)
         {
+            var eventType = evt.Type ?? "UNKNOWN";
+            ActorLogger.Info(_thingId, $"Applying event with type '{eventType}'");
+
+            if (_descManager.ThingDescription?.Rules is null)
+            {
+                ActorLogger.Warn(_thingId, $"No rules defined. Event ignored. Type: {eventType}");
+                return;
+            }
+
             if (_descManager.ThingDescription?.Rules is null) return;
 
             JsonObject info = [];
@@ -99,13 +115,19 @@ namespace OpenTwinsV2.Things.Actors.Services
 
             foreach (var (name, logic) in _descManager.ThingDescription.Rules)
             {
+                ActorLogger.Info(_thingId, $"Evaluating rule '{name}'. EventType: {eventType}");
                 if (logic.If?.AsNode() is JsonNode cond)
                 {
                     bool match = JsonLogic.Apply(cond, context)?.GetValue<bool>() == true;
                     if (match && logic.Then != null)
+                    {
+                        ActorLogger.Info(_thingId, $"Rule '{name}' matched. Applying 'then' logic. EventType: {eventType}");
                         await ApplyThenAsync(logic.Then, context);
+                    }
                 }
             }
+
+            ActorLogger.Info(_thingId, $"Event processing completed. EventType: {eventType}");
         }
 
         private JsonNode ComposeState(JsonObject info, JsonNode? payload)
@@ -123,15 +145,26 @@ namespace OpenTwinsV2.Things.Actors.Services
         private async Task ApplyThenAsync(Then then, JsonNode context)
         {
             if (then.UpdateState != null)
+            {
+                ActorLogger.Info(_thingId, $"Executing UpdateState action.");
                 await HandleUpdateState(then.UpdateState, context);
+            }
             if (then.InvokeAction != null)
             {
-                foreach (ThenInvokeAction action in then.InvokeAction) await HandleInvokeActionAsync(action, context);
+                foreach (ThenInvokeAction action in then.InvokeAction)
+                {
+                    ActorLogger.Info(_thingId, $"Invoking action: {action.Action ?? "(no name)"}");
+                    await HandleInvokeActionAsync(action, context);
+                }
             }
 
             if (then.EmitEvent != null)
             {
-                foreach (ThenEmitEvent evnt in then.EmitEvent) await HandleEmitEventAsync(evnt, context);
+                foreach (ThenEmitEvent evnt in then.EmitEvent)
+                {
+                    ActorLogger.Info(_thingId, $"Emitting event: {evnt.Event ?? "(no type)"}");
+                    await HandleEmitEventAsync(evnt, context);
+                }
             }
         }
 

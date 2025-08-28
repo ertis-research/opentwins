@@ -6,6 +6,7 @@
 # app config
 #**/appsettings.json
 **/appsettings.Development.json
+scalability-tests/*.pdf
 
 #secrets
 /kubernetes/benthos/benthos-secret.yaml

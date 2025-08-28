@@ -1,9 +1,7 @@
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
-using OpenTwinsV2.Shared.Converters;
 
-namespace OpenTwinsV2.Shared.Models
+namespace OpenTwinsV2.Things.Models
 {
     public class PropertyState
     {
@@ -47,7 +45,7 @@ namespace OpenTwinsV2.Shared.Models
                 {
                     WriteIndented = false,
                     // Opcional: Ignorar valores nulos para más limpieza
-                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
                 });
             }
             catch

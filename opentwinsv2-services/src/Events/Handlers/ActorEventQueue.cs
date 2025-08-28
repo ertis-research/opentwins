@@ -5,7 +5,6 @@ using Dapr.Actors;
 using Dapr.Actors.Client;
 using Dapr.Client;
 using Events.Services;
-using OpenTwinsV2.Things.Models;
 using OpenTwinsV2.Shared.Models;
 
 namespace Events.Handlers
@@ -37,10 +36,11 @@ namespace Events.Handlers
         {
             await foreach (var cloudEvent in _channel.Reader.ReadAllAsync())
             {
+                var eventType = cloudEvent.Type ?? "UNKNOWN";
                 //Console.WriteLine("[DEBUG] ProcessQueueAsync: " + cloudEvent.Data ?? "NO DATA");
                 try
                 {
-                    if (_fastEventConfig.IsFastEvent(_actorId, cloudEvent.Type))
+                    if (_fastEventConfig.IsFastEvent(_actorId, eventType))
                     {
                         var transformed = TransformFastEvent(cloudEvent);
                         await _daprClient.PublishEventAsync(
@@ -52,12 +52,13 @@ namespace Events.Handlers
                     }
                     else
                     {
+                        Console.WriteLine($"[{"INFO".PadRight(5)}] [{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}] Event is NOT fast. Passing to actor proxy. ActorId: {_actorId}, Event: {eventType}");
                         await _actorProxy.OnEventReceived(cloudEvent);
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Actor {_actorId} fails: {ex.Message}");
+                    Console.WriteLine($"[ERROR] [{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}] Failed to process event. ActorId: {_actorId}, Event: {eventType}, Error: {ex.Message}");
                     // Opcional: retry/backoff o dead-letter
                 }
             }

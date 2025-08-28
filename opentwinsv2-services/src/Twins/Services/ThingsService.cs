@@ -1,11 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Api;
+using System.Text.Json.Serialization;
 using Dapr.Actors;
 using Dapr.Actors.Client;
 using Dapr.Client;
 using OpenTwinsV2.Shared.Constants;
-using OpenTwinsV2.Things.Models;
+using OpenTwinsV2.Shared.Models;
 
 namespace OpenTwinsV2.Twins.Services
 {
@@ -35,10 +35,24 @@ namespace OpenTwinsV2.Twins.Services
             var proxy = ActorProxy.Create<IThingActor>(new ActorId(thingId), ActorType);
             var thingDescriptionJson = await proxy.GetThingDescriptionAsync() ?? throw new KeyNotFoundException($"Thing with ID '{thingId}' was not found.");
 
-            ThingDescription? td = JsonSerializer.Deserialize<ThingDescription>(thingDescriptionJson);
+            ThingDescription? td = JsonSerializer.Deserialize<ThingDescription>(thingDescriptionJson, new JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+                });
             if (td == null || string.IsNullOrEmpty(td.Id)) throw new InvalidDataException("ThingDescription is invalid or missing ID.");
 
             return td;
         }
+
+        public async Task<JsonElement> GetThingState(string thingId)
+        {
+            var proxy = ActorProxy.Create<IThingActor>(new ActorId(thingId), ActorType);
+            var stateJson = await proxy.GetCurrentStateAsync() ?? throw new KeyNotFoundException($"Thing with ID '{thingId}' was not found.");
+
+            using var doc = JsonDocument.Parse(stateJson);
+            return doc.RootElement.Clone();
+        }
+
     }
 }

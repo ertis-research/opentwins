@@ -1,6 +1,5 @@
 using Dapr.Actors.Runtime;
 using Dapr.Client;
-using OpenTwinsV2.Things.Models;
 using OpenTwinsV2.Shared.Models;
 using OpenTwinsV2.Things.Infrastructure.Database;
 using OpenTwinsV2.Things.Logging;

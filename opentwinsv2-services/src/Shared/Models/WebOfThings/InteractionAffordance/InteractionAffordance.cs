@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
 using OpenTwinsV2.Shared.Converters;
 
-namespace OpenTwinsV2.Things.Models
+namespace OpenTwinsV2.Shared.Models
 {
     public abstract class InteractionAffordance
     {

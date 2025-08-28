@@ -1,5 +1,5 @@
 using Dapr.Actors.Runtime;
-using OpenTwinsV2.Things.Models;
+using OpenTwinsV2.Shared.Models;
 
 namespace OpenTwinsV2.Things.Services
 {

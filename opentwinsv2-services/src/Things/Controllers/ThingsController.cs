@@ -2,7 +2,7 @@ using System.Text.Json;
 using Dapr.Actors;
 using Dapr.Actors.Client;
 using Microsoft.AspNetCore.Mvc;
-using OpenTwinsV2.Things.Models;
+using OpenTwinsV2.Shared.Models;
 using OpenTwinsV2.Shared.Constants;
 using OpenTwinsV2.Shared.Utilities;
 

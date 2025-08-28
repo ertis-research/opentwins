@@ -5,17 +5,17 @@ using Api;
 namespace OpenTwinsV2.Twins.Controllers
 {
     [ApiController]
-    [Route("all")]
-    public class AllController : ControllerBase
+    [Route("graphdb")]
+    public class GraphDBController : ControllerBase
     {
         private readonly DGraphService _dgraphService;
 
-        public AllController(DGraphService dgraphService)
+        public GraphDBController(DGraphService dgraphService)
         {
             _dgraphService = dgraphService;
         }
 
-        [HttpGet("")]
+        [HttpGet("all")]
         public async Task<IActionResult> GetEverything()
         {
             try
@@ -43,7 +43,7 @@ namespace OpenTwinsV2.Twins.Controllers
             }
         }
 
-        [HttpDelete("")]
+        [HttpDelete("all")]
         public async Task<IActionResult> DeleteAll()
         {
             try

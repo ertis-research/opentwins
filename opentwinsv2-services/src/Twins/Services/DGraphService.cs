@@ -186,6 +186,31 @@ namespace OpenTwinsV2.Twins.Services
             }
         }
 
+        public async Task<bool> ThingBelongsToTwinAsync(string twinId, string thingId)
+        {
+            using var txn = _client.NewTransaction();
+
+            var query = $@"
+            {{
+                twin as var(func: eq(thingId, ""{twinId}""))
+
+                thing(func: eq(thingId, ""{thingId}"")) @filter(uid_in(twins, uid(twin))) {{
+                    uid
+                }}
+            }}";
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("thing", out JsonElement thingArray))
+                return false;
+
+            return thingArray.GetArrayLength() > 0;
+        }
+
         public async Task<string?> GetUidByThingIdAsync(string thingId)
         {
             var query = $@"
@@ -232,42 +257,6 @@ namespace OpenTwinsV2.Twins.Services
             return false;
         }
 
-        /*
-        public async Task<string?> GetThingInTwinAsync(string twinId, string thingId)
-        {
-            var query = $@"
-            {{
-                twin(func: eq(thingId, ""{twinId}"")) @filter(eq(isTwin, true)) {{
-                    contains @filter(eq(thingId, ""{thingId}"")) {{
-                        uid
-                        expand(_all_)
-                    }}
-                }}
-            }}";
-
-            var response = await _client.NewTransaction().Query(query);
-            var json = response.Json.ToStringUtf8();
-
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            if (root.TryGetProperty("twin", out var twinArray) &&
-                twinArray.ValueKind == JsonValueKind.Array &&
-                twinArray.GetArrayLength() > 0)
-            {
-                var twin = twinArray[0];
-                if (twin.TryGetProperty("contains", out var contains) &&
-                    contains.ValueKind == JsonValueKind.Array &&
-                    contains.GetArrayLength() > 0)
-                {
-                    var thingJson = contains[0].ToString(); // Devuelve el primer (único) thing completo
-                    return thingJson;
-                }
-            }
-
-            return null; // No encontrado o no pertenece a ese twin
-        }
-*/
         public async Task<List<JsonElement>> GetThingsInTwinAsync(string twinId)
         {
             using var txn = _client.NewTransaction();
@@ -297,6 +286,57 @@ namespace OpenTwinsV2.Twins.Services
             var twins = JsonSerializer.Deserialize<List<JsonElement>>(twinsProp.GetRawText());
 
             return twins ?? [];
+        }
+
+        public async Task<JsonElement?> GetThingInTwinByIdAsync(string twinId, string thingId)
+        {
+            using var txn = _client.NewTransaction();
+
+            var query = $@"
+            {{
+                twin as var(func: eq(thingId, ""{twinId}""))
+
+                thing(func: eq(thingId, ""{thingId}"")) @filter(uid_in(twins, uid(twin))) {{
+                    uid
+                    thingId
+                    name
+                    createdAt
+
+                    hasType {{
+                        uid
+                        name
+                    }}
+                    hasAttribute {{
+                        Attribute.key
+                        Attribute.type
+                        Attribute.value
+                    }}
+                    hasAction {{
+                        Action.name
+                        Action.payload
+                    }}
+                    hasEvent {{
+                        Event.name
+                        Event.data
+                    }}
+                    domains {{
+                        uid
+                        domainId
+                        Domain.name
+                    }}
+                }}
+            }}";
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("thing", out JsonElement thingArray) || thingArray.GetArrayLength() == 0)
+                return null;
+
+            return JsonSerializer.Deserialize<JsonElement>(thingArray[0].GetRawText());
         }
 
         public async Task<Response> AddThingToTwinAsync(string thingId, string twinId)
@@ -369,43 +409,6 @@ namespace OpenTwinsV2.Twins.Services
             }
         }
 
-
-        /*
-                public async Task<string> GetNodeByUidAsync(string uid)
-                {
-                    var query = $@"
-                    {{
-                        node(func: uid({uid})) {{
-                            uid
-                            expand(_all_)
-                        }}
-                    }}";
-
-                    var response = await _client.NewTransaction().Query(query);
-                    return response.Json.ToStringUtf8();
-                }
-
-                public async Task DeleteNodeAsync(string uid)
-                {
-                    await using var txn = _client.NewTransaction();
-                    try
-                    {
-                        var json = JsonSerializer.Serialize(new { uid });
-                        var mutation = new Mutation
-                        {
-                            DeleteJson = ByteString.CopyFromUtf8(json)
-                        };
-
-                        var response = await txn.Mutate(mutation);
-                        await txn.Commit();
-                    }
-                    catch
-                    {
-                        await txn.DisposeAsync();
-                        throw;
-                    }
-                }
-        */
     }
 }
 

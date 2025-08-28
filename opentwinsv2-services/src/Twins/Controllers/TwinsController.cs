@@ -1,6 +1,6 @@
 using OpenTwinsV2.Twins.Services;
 using Microsoft.AspNetCore.Mvc;
-using OpenTwinsV2.Things.Models;
+using OpenTwinsV2.Shared.Models;
 using System.Text.Json.Nodes;
 using OpenTwinsV2.Twins.Builders;
 
@@ -47,10 +47,54 @@ namespace OpenTwinsV2.Twins.Controllers
         }
 
         [HttpGet("{twinId}/things")]
-        public async Task<IActionResult> GetTwin(string twinId)
+        public async Task<IActionResult> GetThingsInTwin(string twinId)
         {
             var response = await _dgraphService.GetThingsInTwinAsync(twinId);
             return Ok(response);
+        }
+
+        [HttpGet("{twinId}/things/{thingId}")]
+        public async Task<IActionResult> GetThingDescriptionInTwinById(string twinId, string thingId)
+        {
+            var check = await _dgraphService.ThingBelongsToTwinAsync(twinId, thingId);
+            if (!check)
+                return NotFound(new { message = $"Thing '{thingId}' does not belong to Twin '{twinId}' or not exists" });
+
+            try
+            {
+                var thingDescription = await _thingsService.GetThingAsync(thingId);
+                return Ok(thingDescription);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("{twinId}/things/{thingId}/node")]
+        public async Task<IActionResult> GetThingNodeInTwinById(string twinId, string thingId)
+        {
+            var response = await _dgraphService.GetThingInTwinByIdAsync(twinId, thingId);
+
+            return (response == null) ? NotFound() : Ok(response);
+        }
+
+        [HttpGet("{twinId}/things/{thingId}/state")]
+        public async Task<IActionResult> GetThingStateInTwinById(string twinId, string thingId)
+        {
+            var check = await _dgraphService.ThingBelongsToTwinAsync(twinId, thingId);
+            if (!check)
+                return NotFound(new { message = $"Thing '{thingId}' does not belong to Twin '{twinId}' or not exists" });
+
+            try
+            {
+                var currentState = await _thingsService.GetThingState(thingId);
+                return Ok(currentState);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
         }
 
 
@@ -108,20 +152,5 @@ namespace OpenTwinsV2.Twins.Controllers
                 return StatusCode(500, $"Unexpected error: {ex.Message}");
             }
         }
-/*
-                        [HttpGet("{twinId}/things/{thingId}")]
-                        public async Task<IActionResult> GetThingInTwin(string twinId, string thingId)
-                        {
-                            var response = await _dgraphService.GetThingInTwinAsync(twinId, thingId);
-                            return Ok(response);
-                        }
-
-                        [HttpPost("edge")]
-                        public async Task<IActionResult> CreateEdge([FromQuery] string fromUid, [FromQuery] string toUid, [FromQuery] string predicate)
-                        {
-                            var response = await _dgraphService.LinkNodesAsync(fromUid, predicate, toUid);
-                            return Ok(response);
-                        }
-                */
     }
 }

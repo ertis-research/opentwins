@@ -54,7 +54,7 @@ def get_ntp_offset():
     except Exception as e:
         print(f"[WARNING] Failed to get NTP offset: {e}")
 
-async def run_scenario(num_devices, interval, duration, wait_time, runs: int = 5):
+async def run_scenario(num_devices, interval, duration, wait_time, runs: int = 1):
     """
     Runs the same test scenario `runs` times and returns the average results.
 

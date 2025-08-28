@@ -1,5 +1,5 @@
 using System.Text.Json;
-using OpenTwinsV2.Things.Models;
+using OpenTwinsV2.Shared.Models;
 
 namespace OpenTwinsV2.Shared.Utilities
 {

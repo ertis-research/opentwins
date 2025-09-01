@@ -1,16 +1,28 @@
-// Execute with: dapr run --app-id events-service --app-port 5012 --resources-path ./DaprComponentsLocal --config ./daprConfig.yaml -- dotnet run --urls=http://localhost:5012/
+// Execute with: dapr run --app-id events-service --app-port 5012 --resources-path ./Infrastructure/DaprComponentsLocal --config ./daprConfig.yaml -- dotnet run --urls=http://localhost:5012/
 
 using Dapr.Messaging.PublishSubscribe.Extensions;
 using Events.Handlers;
 using Events.Services;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+Log.Logger = new LoggerConfiguration()
+    .ReadFrom.Configuration(builder.Configuration)
+    .Enrich.FromLogContext()
+    .WriteTo.Console(
+        outputTemplate: "[{Level:u5}] [{Timestamp:yyyy-MM-dd HH:mm:ss}] {Message:lj}{NewLine}{Exception}"
+    )
+    .CreateLogger();
+
+builder.Host.UseSerilog();
 
 // === Servicios Dapr y de aplicación ===
 builder.Services.AddDaprClient();                    // Recomendado para llamadas Dapr
 builder.Services.AddDaprPubSubClient();              // Cliente Pub/Sub
 
 builder.Services.AddSingleton<FastEventConfig>();
+builder.Services.AddSingleton<RoutingRepository>();
 builder.Services.AddSingleton<RoutingService>();     // Enrutador de actores
 builder.Services.AddSingleton<ActorEventRouter>();
 builder.Services.AddSingleton<EventProcessor>();     // Cola + procesamiento paralelo

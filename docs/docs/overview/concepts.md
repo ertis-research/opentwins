@@ -47,3 +47,36 @@ For example, consider a DHT22 temperature and humidity sensor. Its digital twin,
 
 ### Digital twins composition
 
+### Relative concepts to Eclipse Ditto
+
+#### Ditto Protocol
+Eclipse Ditto needs the data in a specific format called Ditto Protocol. The Ditto Protocol defines a JSON based text protocol for communicating with digital twins and the actual physical devices they mirror.
+It defines several commands both the actual device and the digital twin are able to understand.
+
+An example of this is a simple temperature sensor reading:
+
+```json
+{
+    "topic": "RBPI/DHT22/things/twin/commands/merge",
+        "headers": {
+            "content-type": "application/merge-patch+json"
+        },
+        "path": "/features",
+        "value": {
+            "temperature": {
+                "properties": {
+                "value": 22,
+                }
+            },
+            "humidity": {
+                "properties": {
+                    "value": 44,
+                }
+            }
+        }
+   }
+```
+
+For more information about Ditto Protocol and all its available features, please refer to the [Eclipse Ditto documentation](https://eclipse.dev/ditto/3.3/protocol-specification.html).
+
+

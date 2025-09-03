@@ -1,0 +1,156 @@
+---
+sidebar_position: 2
+---
+
+# From Grafana to Unity
+
+:::danger
+Before proceeding, make sure you meet the [**requirements**](base-config.mdx#requirements) and have completed the [**base configuration**](base-config.mdx).
+:::
+
+This page explains how to configure and implement the communication pipeline for sending data **from Grafana queries into Unity**.
+The Unity Grafana plugin offers flexible options for mapping query results to GameObjects. Depending on your use case, you can:
+- Send all query results to a single GameObject.
+- Distribute values dynamically across multiple GameObjects.
+
+On the Unity side, you must implement a function that receives the incoming data string, parses it as JSON, and applies the logic needed to update your objects or scene.
+
+## In Unity
+
+To receive and process data from Grafana, you must implement a **public function** in a Unity script and attach it to the GameObjects that will handle the data.
+
+The simplest implementation is a function that prints the received data to the Unity Debug Console:
+
+```csharp
+using UnityEngine;
+
+public class ChangeInfo : MonoBehaviour
+{
+    public void SetValues(string values)
+    {
+        Debug.Log(values);
+    }
+}
+```
+
+- The function name (`SetValues` in this example) must match the name configured in the plugin.
+- The function parameter type must be `string`.
+
+You can attach this script to a single GameObject (which then distributes the data to other objects) or directly to multiple GameObjects.
+
+## In Grafana
+
+In Grafana, configure the **Send data to Unity** section by specifying:
+
+-   The query identifier that retrieves the data.
+-   The function name to be invoked in Unity.
+-   The data transfer mode.
+-   The relevant field (`ID column` or `Id game object`).
+-   The columns used for grouping (if any).
+
+:::tip
+Use the **Table view** to inspect incoming data and confirm its structure. 
+You can also open **Query Inspector \> JSON \> Select Source \> Panel data** to review the exact JSON sent to the plugin.
+:::
+
+For more details on available modes and configuration fields, see the [Unity plugin options documentation](plugin-docs.mdx).
+
+## How data is sent
+
+When Grafana queries return results, the plugin transforms the table into a JSON structure that Unity can consume.
+The exact format depends on the plugin mode and whether you enable grouping by one or more fields.
+
+The result is always delivered as a string. Unity functions can parse the received string (e.g., using **Json.NET**) and apply logic to update object properties.
+
+:::tip
+For smaller Unity projects, you can implement the minimal function above (which only prints to the console), connect it to Grafana, and **verify the incoming data directly in the browser developer tools**.
+:::
+
+For example, if a query returns the following table:
+
+| time                    | sensorId | temperature | humidity |
+|-------------------------|----------|-------------|----------|
+| 2024-11-05 12:00:00.000 | A        | 22.1        | 45       |
+| 2024-11-05 12:00:00.000 | B        | 23.4        | 50       |
+| 2024-11-10 17:00:00.000 | A        | 22.3        | 44       |
+| 2024-11-10 17:00:00.000 | B        | 23.6        | 49       |
+
+:::info
+Timestamps are converted to **Epoch UNIX time in milliseconds**.   
+For example, `2024-11-05 12:00:00.000` → `1730808000000`.
+:::
+
+#### Mode: Send All Data to a Single GameObject
+
+All query results are bundled into one JSON string and sent to the configured GameObject:
+
+```json
+[
+    { "time": "1730808000000 ", "sensorId": "A", "temperature": 22.1, "humidity": 45 },
+    { "time": "1730808000000 ", "sensorId": "B", "temperature": 23.4, "humidity": 50 },
+    { "time": "1731258000000", "sensorId": "A", "temperature": 22.3, "humidity": 44 },
+    { "time": "1731258000000", "sensorId": "B", "temperature": 23.6, "humidity": 49 }
+]
+```
+
+#### Mode: Send Data to GameObjects by ID Column
+
+:::danger
+Ensure that the IDs in the column **exactly match** the identifiers of the GameObjects, including **case sensitivity**.
+:::
+
+If `sensorId` is set as the **ID column**, each GameObject receives only its corresponding data.
+
+- For GameObject **A**:  
+    ```json
+    [
+        { "time": "1730808000000", "temperature": 22.1, "humidity": 45 },
+        { "time": "1731258000000", "temperature": 22.3, "humidity": 44 }
+    ]
+    ```
+
+- For GameObject **B**:  
+    ```json
+    [
+    { "time": "1730808000000", "temperature": 23.4, "humidity": 50 },
+    { "time": "1731258000000", "temperature": 23.6, "humidity": 49 }
+    ]
+    ```
+
+#### Grouping Data
+
+It is often useful to group data by one or more fields before sending it to Unity. This reduces redundancy and produces a more structured JSON.
+
+- Grouped by `sensorId`:
+
+```json
+{
+  "A": [
+    { "time": "1730808000000", "temperature": 22.1, "humidity": 45 },
+    { "time": "1731258000000", "temperature": 22.3, "humidity": 44 }
+  ],
+  "B": [
+    { "time": "1730808000000", "temperature": 23.4, "humidity": 50 },
+    { "time": "1731258000000", "temperature": 23.6, "humidity": 49 }
+  ]
+}
+```
+
+- Grouped by `sensorId` and then by `time`: 
+
+```json
+{
+  "A": {
+    "1730808000000": { "temperature": 22.1, "humidity": 45 },
+    "1731258000000": { "temperature": 22.3, "humidity": 44 }
+  },
+  "B": {
+    "1730808000000": { "temperature": 23.4, "humidity": 50 },
+    "1731258000000": { "temperature": 23.6, "humidity": 49 }
+  }
+}
+```
+
+Without grouping, Unity receives a **flat list** of rows (simpler but repetitive).
+With grouping, Unity receives **nested JSON**, organized by the chosen fields (cleaner and easier to query by ID or timestamp).
+The choice depends on how you plan to process data in your Unity scripts.

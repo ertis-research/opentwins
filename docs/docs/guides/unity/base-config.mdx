@@ -1,0 +1,110 @@
+---
+sidebar_position: 1
+---
+
+# Base configuration
+
+This section describes the requirements, configuration, and build process necessary to embed a Unity project into Grafana.
+
+These steps are **mandatory for all Unity projects** intended for integration, regardless of whether bidirectional communication between Grafana and Unity is implemented.
+
+Refer to the remaining documentation for details on sending data [**from Grafana to Unity**](grafana-to-unity.mdx) and [**from Unity to Grafana**](unity-to-grafana.mdx).
+
+## Requirements
+
+Before beginning, ensure you have the following:
+- [Unity](https://unity.com/es/download): **Version 2020.1.0 or newer** is required. Compatibility has been **verified up to Unity 2021.x**, and later versions may not be fully supported. Older Unity releases (pre-2020) are no longer supported ([see compatibility notes](https://react-unity-webgl.dev/docs/getting-started/installation#unity-version-compatibility)).
+- [WebGL Build Support](https://learn.unity.com/tutorial/install-the-webgl-module): Must be installed via Unity Hub.
+- [Grafana](https://grafana.com/grafana/download): Preinstalled in OpenTwins by default.
+- [Unity panel plugin for Grafana](https://github.com/ertis-research/grafana-panel-unity): Preinstalled in OpenTwins by default.
+
+## In Unity
+
+### Creating a project
+
+Any Unity project capable of exporting to [WebGL](https://get.webgl.org/) should be compatible with our plugin. is compatible with the plugin. For detailed guidance, see the [Unity documentation](https://docs.unity3d.com/Manual/create-first-project.html).
+
+:::tip
+If you're new to 3D modeling, we highly recommend starting with [Blender](https://www.blender.org/), a free, open-source tool that works seamlessly with Unity. Simply add your `.blend` file to the Assets folder of your Unity project, and updates in Blender will automatically sync in Unity.
+:::
+
+### Preventing keyboard input capture
+
+Within your Unity project, create and attach the following script to a persistent GameObject (e.g., the main camera). This prevents Unity from capturing all keyboard inputs, ensuring Grafana input fields remain usable when a WebGL model is loaded.
+
+```csharp title="essential.cs"
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class DisableKeyboardInput : MonoBehaviour
+{
+    void Start()
+    {
+        #if !UNITY_EDITOR && UNITY_WEBGL
+            UnityEngine.WebGLInput.captureAllKeyboardInput = false;
+        #endif
+    }
+}
+```
+
+:::danger
+If this script is not included, Grafana input fields will not accept keyboard input while a WebGL model is loaded. The dashboard will become unusable until the page is refreshed.
+:::
+
+### Exporting to WebGL
+
+Follow these steps to build your Unity project:
+
+1. Navigate to `File > Build Settings…`
+2. In the **Platform** section, select **WebGL** and click `Switch Platform`.
+3. Disable build compression by going to:
+    - Navigate to `File > Build Settings… > Player Settings… > Publishing Settings`
+    - Set `Compression Format` to **Disabled**
+4. Click `Build` and specify the output folder.
+
+The build will generate the following required files:
+
+- `<project>.data`
+- `<project>.wasm`
+- `<project>.framework.js`
+- `<project>.loader.js`
+
+These files must be uploaded or referenced in Grafana to display the Unity model.
+
+## In Grafana
+
+### Adding the plugin to a dashboard
+
+1. Open an existing Grafana dashboard or create a new one.
+2. Add a new panel by clicking `Add > Visualization`.
+3. From the visualization types menu, select **Unity**. 
+
+See the [Grafana documentation](https://grafana.com/docs/grafana/latest/dashboards/build-dashboards/create-dashboard/) for more details.
+
+:::info
+If the Unity option does not appear:
+- Verify the plugin installation under `Administration > Plugins and data > Plugins`.
+- Search for **Unity**.
+- If missing, reinstall or troubleshoot using the [installation documentation](../../installation/manual/unity.md).
+:::
+
+### Configuring the panel
+
+To load your 3D model, you must provide the four exported WebGL files. Refer to the [plugin’s options documentation](plugin-docs.mdx) for details on how these files are mapped. 
+
+The plugin supports three methods:
+
+- **External links (recommended)**: Provide direct file URLs. Por ejemplo, puedes utilizar un Minio para subir los archivos.
+- **Grafana public folder**: Place files in Grafana’s /public directory and reference relative paths. Por ejemplo, el directorio de Windows para Grafana suele ser C:\Program Files\GrafanaLabs\grafana\public. En contenedores, habria que añadir un initContainer que añada los archivos... (explicalo tu chatgpt).
+- **Drag and drop (not recommended for production)**: Upload files directly into the panel configuration.
+
+Once the four files are provided, click `Apply` (blue button) to return to the dashboard.
+
+If configured correctly, the **Unity 3D model will automatically load** in the panel.
+
+
+
+
+
+

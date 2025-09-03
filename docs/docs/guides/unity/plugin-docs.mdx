@@ -1,0 +1,107 @@
+---
+sidebar_position: 4
+---
+
+# Plugin options
+
+This document describes the configuration options available for the **Unity Grafana Panel Plugin**, which allows embedding and interacting with Unity WebGL 3D models directly within Grafana dashboards.
+
+The plugin is developed and maintained at [GitHub](https://github.com/ertis-research/grafana-panel-unity) and relies on the [`react-unity-webgl`](https://www.npmjs.com/package/react-unity-webgl) library to render the models.
+
+When installing OpenTwins via [Helm](../../installation/using-helm.mdx), the plugin is included by default. If you are using a self-managed Grafana instance or the plugin is not available, please follow the [manual installation guide](../../installation/manual/unity.md).
+
+## Query section
+
+This is **Grafana’s standard query section**, located in the lower-left corner of the configuration panel.
+
+- You can define one or more queries to retrieve data from datasources.
+- Queries can be transformed using the `Transform data` options.
+- It is recommended to use `Table view` to validate that data is correctly retrieved and formatted.
+- We also recommend renaming the query identifiers for clarity and maintainability.
+
+Refer to [Grafana’s official query documentation](https://grafana.com/docs/grafana/latest/panels-visualizations/query-transform-data/) for further details.
+
+## Unity Model section
+
+Unity WebGL exports consist of four essential files, all of which should share the same project name:
+
+- `<project>.data`
+- `<project>.wasm`
+- `<project>.framework.js`
+- `<project>.loader.js`
+
+The **Mode** setting defines how these files are provided. Three options are available:
+ 
+1. **External links (recommended)**
+    - Provide direct URLs to each file.
+    - Files must be accessible via the provided link without authentication or restrictions.
+    - This approach avoids increasing Grafana’s storage footprint and ensures faster loading through optimized hosting.
+    - Example: You can upload the files to an object storage service such as MinIO, Amazon S3, or any web server, and use their direct download links.
+2. **Grafana public folder**
+    - Provide file paths relative to Grafana’s `/public` folder.
+    - Example: If you create a `models` directory inside `/public` and place the files there, the absolute path will look like this on Windows `C:\Program Files\GrafanaLabs\grafana\public\models\<project>.wasm`
+    and like this on Linux `/usr/share/grafana/public/models/<project>.wasm`. However, in the fields you must provide the path relative to `/public`, in this case: `models/<project>.wasm`.
+    :::tip
+    Since containers often run as immutable images, the `/public` folder will not persist by default. To handle this, you can use an **initContainer** (in Helm) or a volume mount that copies the WebGL files into `/public` at startup.
+    This ensures the assets are available inside the container without modifying the Grafana base image.
+    :::
+
+3. **Drag and drop (not recommended for production)**
+    - Upload the files directly into the panel configuration using the plugin’s drag-and-drop inputs.
+    - This method embeds the files into the Grafana dashboard JSON.
+    - Large files may significantly impact dashboard load times, as they are embedded in the panel configuration.
+    - Suitable only for prototyping, testing or small-scale projects.
+
+## Send data to Unity section
+
+:::info
+For a more detailed understanding of this interaction, please refer to the [corresponding section](./grafana-to-unity.md)
+:::
+
+This section allows sending data **from Grafana queries into one or more Unity GameObjects**.
+
+Configuration fields:
+
+- **Grafana query (required)**  
+    Dropdown to select the query identifier providing the data.
+- **Mode**  
+    Two modes determine how data is mapped to Unity objects:
+    - **Send data to GameObject by ID column**  
+        - The query results must contain a column specifying the GameObject identifier.
+        - The `ID column` field defines the name of that column.
+    - **Send all data to a single GameObject**
+        - All data is sent to one specified GameObject.
+        - The target GameObject ID must be provided in the `Id game object` field.
+- **Unity function**  
+    Name of the Unity function that will receive the incoming data. The target GameObjects must implement this function to process the data.
+- **Field group by**  
+    Field(s) by which query data should be grouped before being sent to Unity.
+    - Multiple fields may be specified using semicolons (;) with no spaces.
+
+## Receive data from Unity section
+
+:::info
+For a more detailed understanding of this interaction, please refer to the [corresponding section](./unity-to-grafana.md)
+:::
+
+This section defines how data is received from Unity and integrated into Grafana dashboards. Data exchange is event-based.
+- Click `Add new event` (blue button) to configure a new event.
+- Events can be removed using `Delete event` (red button).
+
+Each event has the following configuration fields:
+
+- **Unity event name**  
+    Name of the event defined in Unity.
+- **Type**  
+    Specifies the data type received. Options are number and text.
+- **Mode**  
+    Currently, only one mode is available:
+    - **Store value in Grafana variable**
+        - Updates a Grafana dashboard variable with the value received from Unity.
+        Example: A user clicks a 3D sensor in the Unity model; its ID is stored in a Grafana variable, dynamically filtering other panels.
+        - The target Grafana variable must be created manually and specified in the `Grafana variable name` field.
+
+Multiple events can be created and there are no unique name restrictions:
+- Different events can update different variables.
+- The same event can update multiple variables.
+- Multiple events can update the same variable.

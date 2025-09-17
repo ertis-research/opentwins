@@ -91,6 +91,55 @@ namespace OpenTwinsV2.Things.Actors.Services
             return JsonSerializer.Serialize(_stateManager.CurrentState);
         }
 
+        private async Task ApplyLogicToDerivedProperties()
+        {
+            if (_descManager.ThingDescription?.Properties is null)
+            {
+                ActorLogger.Info(_thingId, "ThingDescription has no derived properties, skipping derived logic.");
+                return;
+            }
+
+            var updated = new Dictionary<string, PropertyState>();
+
+            foreach (var (propName, propDesc) in _descManager.ThingDescription.Properties)
+            {
+                if (propDesc is null || propDesc.JsonLogic is null) continue;
+
+                try
+                {
+                    JsonNode? logic = propDesc.JsonLogic?.AsNode();
+                    ActorLogger.Info(_thingId, $"Applying JsonLogic to property '{propName}' with logic: {JsonSerializer.Serialize(logic)}");
+
+                    var context = new JsonObject();
+                    foreach (var (key, state) in _stateManager.CurrentState)
+                    {
+                        if (state?.Value is JsonElement je)
+                            context[key] = je.AsNode();
+                    }
+
+                    ActorLogger.Info(_thingId, $"Context for '{propName}': {context.ToJsonString()}");
+
+                    var result = JsonLogic.Apply(logic, context);
+
+                    if (result is JsonValue)
+                    {
+                        JsonElement jeResult = JsonDocument.Parse(result.ToJsonString()).RootElement;
+                        updated[propName] = new PropertyState(jeResult, DateTime.UtcNow);
+                        ActorLogger.Info(_thingId, $"Property '{propName}' updated with value: {jeResult}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ActorLogger.Error(_thingId, $"Error applying JsonLogic for property '{propName}': {ex.Message}");
+                }
+            }
+
+            if (updated.Count > 0)
+            {
+                await _stateManager.UpdateAsync(updated, _descManager.ThingDescription?.Properties);
+            }
+        }
+
         public async Task ApplyEventAsync(MyCloudEvent<string> evt)
         {
             var eventType = evt.Type ?? "UNKNOWN";
@@ -203,6 +252,7 @@ namespace OpenTwinsV2.Things.Actors.Services
             }
 
             await _stateManager.UpdateAsync(updated, _descManager.ThingDescription?.Properties);
+            await ApplyLogicToDerivedProperties();
         }
 
         private async Task HandleInvokeActionAsync(ThenInvokeAction invokeAction, JsonNode data)
@@ -235,7 +285,9 @@ namespace OpenTwinsV2.Things.Actors.Services
         public async Task ApplyInvokeAction(string action, string parameters)
         {
             Console.WriteLine("ACCION INVOCADA: " + action);
+            await Task.CompletedTask;
             // Falta comprobacion de si la accion es mia jeje
+            /*
             if (IsMyAction(action, parameters) is null) return;
             switch (action)
             {
@@ -254,6 +306,7 @@ namespace OpenTwinsV2.Things.Actors.Services
                 default:
                     throw new ArgumentException($"Unsupported action: {action}");
             }
+            */
         }
 
         private async Task HandleEmitEventAsync(ThenEmitEvent emitEvent, JsonNode data)

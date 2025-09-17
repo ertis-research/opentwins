@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace OpenTwinsV2.Shared.Models
@@ -19,5 +20,8 @@ namespace OpenTwinsV2.Shared.Models
 
         [JsonPropertyName("writeOnly")]
         public bool? WriteOnly { get; set; }
+
+        [JsonPropertyName("otv2:jsonLogic")]
+        public JsonElement? JsonLogic { get; set; }
     }
 }

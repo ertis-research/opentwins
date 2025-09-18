@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Dapr.Client;
 using OpenTwinsV2.Things.Logging;
 using OpenTwinsV2.Things.Models;
+using Dapr;
 
 namespace OpenTwinsV2.Things.Actors.Services
 {
@@ -51,7 +52,7 @@ namespace OpenTwinsV2.Things.Actors.Services
                     link.Rel.Equals("subscribeEvent", StringComparison.OrdinalIgnoreCase))
                 {
                     var segments = link.Href.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-                    if (segments.Length >= 4 && segments[0] == "things" && segments[2] == "events")
+                    if (segments.Length >= 4 && segments[0] == "things" && segments[2] == "events") // MODIFICAR
                     {
                         string thingName = segments[1];
                         string eventName = segments[3];
@@ -220,21 +221,31 @@ namespace OpenTwinsV2.Things.Actors.Services
         private async Task HandleUpdateState(Dictionary<string, UpdatePropertyState> updates, JsonNode context)
         {
             var updated = new Dictionary<string, PropertyState>();
+            //ActorLogger.Info(_thingId, "HandleUpdateState started");
 
             foreach (var (key, schema) in updates)
             {
                 JsonElement? newVal = null;
                 DateTime? ts = null;
 
+                //ActorLogger.Info(_thingId, $"Processing property: {key}");
+
+                Console.WriteLine(JsonSerializer.Serialize(schema));
+
                 if (schema.NewValue.HasValue)
                 {
+                    //ActorLogger.Info(_thingId, $"Applying JsonLogic to NewValue for property: {key}");
                     var res = JsonLogic.Apply(schema.NewValue.Value.AsNode(), context);
                     if (res is JsonValue jv && jv.TryGetValue(out JsonElement je))
+                    {
                         newVal = je;
+                        ActorLogger.Info(_thingId, $"NewValue resolved for property: {key} - {newVal}");
+                    }
                 }
 
                 if (newVal != null && schema.Timestamp.HasValue)
                 {
+                    //ActorLogger.Info(_thingId, $"Applying JsonLogic to Timestamp for property: {key}");
                     var res = JsonLogic.Apply(schema.Timestamp.Value.AsNode(), context);
                     if (res is JsonValue jv && jv.TryGetValue(out JsonElement tsJson))
                     {
@@ -244,11 +255,15 @@ namespace OpenTwinsV2.Things.Actors.Services
                             JsonValueKind.Number => tsJson.TryGetInt64(out var unix) ? DateTimeOffset.FromUnixTimeSeconds(unix).UtcDateTime : null,
                             _ => null
                         };
+                        //ActorLogger.Info(_thingId, $"Timestamp resolved for property: {key} - {ts}");
                     }
                 }
 
                 if (newVal != null)
+                {
                     updated[key] = new PropertyState(newVal.Value, ts);
+                    //ActorLogger.Info(_thingId, $"Property state updated: {key} - Value: {newVal}, Timestamp: {ts}");
+                }
             }
 
             await _stateManager.UpdateAsync(updated, _descManager.ThingDescription?.Properties);
@@ -309,24 +324,21 @@ namespace OpenTwinsV2.Things.Actors.Services
             */
         }
 
-        private async Task HandleEmitEventAsync(ThenEmitEvent emitEvent, JsonNode data)
+        private async Task HandleEmitEventAsync(ThenEmitEvent emitEvent, JsonNode data) // MODIFICAR
         {
             //Console.WriteLine($"[INFO: {Id}] EMIT EVENT. NOT FULLY IMPLEMENTED");
-            JsonNode payload;
-            //Console.WriteLine(emitEvent.Data);
-            if (emitEvent.Data.HasValue &&
-                emitEvent.Data.Value.ValueKind == JsonValueKind.String &&
-                emitEvent.Data.Value.GetString()?.Trim().ToLowerInvariant() == "state")
+            JsonNode payload = JsonSerializer.SerializeToNode(_stateManager.CurrentState) ?? new JsonObject();
+
+            payload["thingId"] = _thingId;
+            payload["payload"] = data["payload"]?.DeepClone();
+
+            var cloudEvent = new CloudEvent<JsonNode>(payload)
             {
-                payload = data["payload"] ?? new JsonObject(); // !!CAMBIAR Esto lo cambio en un futuro para que tenga en cuenta un formato, ahora mismo lo envio en el que tiene que ser
-                payload["thingId"] = _thingId;
-            }
-            else
-            {
-                payload = new JsonObject();
-            }
+                Source = new Uri(_thingId),
+                Type = emitEvent.Event
+            };
             //Console.WriteLine(JsonSerializer.Serialize(payload));
-            await _daprClient.PublishEventAsync("kafka-pubsub", emitEvent.Event, payload);
+            await _daprClient.PublishEventAsync("kafka-pubsub", "opentwinsv2.events", cloudEvent);
         }
     }
 }

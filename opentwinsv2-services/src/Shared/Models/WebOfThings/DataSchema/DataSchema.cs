@@ -11,6 +11,7 @@ namespace OpenTwinsV2.Shared.Models
     [KnownType(typeof(NullSchema))]
     [KnownType(typeof(ObjectSchema))]
     [KnownType(typeof(StringSchema))]
+    [KnownType(typeof(NumberSchema))]
     [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
     [JsonDerivedType(typeof(ArraySchema), typeDiscriminator: "array")]
     [JsonDerivedType(typeof(BooleanSchema), typeDiscriminator: "boolean")]
@@ -18,6 +19,7 @@ namespace OpenTwinsV2.Shared.Models
     [JsonDerivedType(typeof(NullSchema), typeDiscriminator: "null")]
     [JsonDerivedType(typeof(ObjectSchema), typeDiscriminator: "object")]
     [JsonDerivedType(typeof(StringSchema), typeDiscriminator: "string")]
+    [JsonDerivedType(typeof(NumberSchema), typeDiscriminator: "number")]
     public abstract class DataSchema
     {
         [JsonPropertyName("@type")]

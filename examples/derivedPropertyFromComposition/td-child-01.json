@@ -1,0 +1,64 @@
+{
+    "@context": [
+        "https://www.w3.org/2019/wot/td/v1"
+    ],
+    "title": "PowerDevice1",
+    "id": "urn:dev:ops:power-device-001",
+    "links": [
+        {
+            "rel": "subscribeEvent",
+            "href": "https://example.com/things/mqtt/events/changes_powerdevice1",
+            "type": "application/json"
+        }
+    ],
+    "properties": {
+        "power": {
+            "type": "number",
+            "description": "Power of device in watts"
+        }
+    },
+    "otv2:rules": {
+        "updatePower": {
+            "otv2:description": "Update device1Power from MQTT events",
+            "otv2:if": {
+                "==": [
+                    {
+                        "var": "eventName"
+                    },
+                    "mqtt:changes_powerdevice1"
+                ]
+            },
+            "otv2:then": {
+                "otv2:updateState": {
+                    "power": {
+                        "value": {
+                            "var": "payload.power"
+                        },
+                        "timestamp": {
+                            "var": "payload.timestamp"
+                        }
+                    }
+                },
+                "otv2:emitEvent": [
+                    {"event" : "thing:power01.changed"}
+                ]
+            }
+        }
+    },
+    "events": {
+        "power01.changed": {
+            "description": "Triggers when power changes",
+            "data": {
+                "type": "object",
+                "properties": {
+                    "power": {
+                        "type": "number"
+                    },
+                    "timestamp": {
+                        "type": "number"
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,72 @@
+{
+    "@context": [
+        "https://www.w3.org/2019/wot/td/v1"
+    ],
+    "title": "PowerMeterThing",
+    "id": "urn:dev:ops:power-meter-001",
+    "links": [
+        {
+            "rel": "subscribeEvent",
+            "href": "https://example.com/things/mqtt/events/changes_devices_power",
+            "type": "application/json"
+        }
+    ],
+    "otv2:rules": {
+        "updatePower": {
+            "otv2:description": "Update device1Power and device2Power from MQTT events",
+            "otv2:if": {
+                "==": [
+                    {
+                        "var": "eventName"
+                    },
+                    "mqtt:changes_devices_power"
+                ]
+            },
+            "otv2:then": {
+                "otv2:updateState": {
+                    "device1Power": {
+                        "value": {
+                            "var": "payload.device1Power"
+                        },
+                        "timestamp": {
+                            "var": "payload.timestamp"
+                        }
+                    },
+                    "device2Power": {
+                        "value": {
+                            "var": "payload.device2Power"
+                        },
+                        "timestamp": {
+                            "var": "payload.timestamp"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "properties": {
+        "device1Power": {
+            "type": "number",
+            "description": "Power of device 1 in watts"
+        },
+        "device2Power": {
+            "type": "number",
+            "description": "Power of device 2 in watts"
+        },
+        "totalPower": {
+            "type": "number",
+            "description": "Sum of the powers of both devices",
+            "readOnly": true,
+            "otv2:jsonLogic": {
+                "+": [
+                    {
+                        "var": "device1Power"
+                    },
+                    {
+                        "var": "device2Power"
+                    }
+                ]
+            }
+        }
+    }
+}

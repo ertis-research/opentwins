@@ -1,0 +1,98 @@
+{
+    "@context": [
+        "https://www.w3.org/2019/wot/td/v1"
+    ],
+    "title": "PowerMeterThing",
+    "id": "urn:dev:ops:power-meter-002",
+    "otv2:relations": [
+        {
+            "rel": "parentOf",
+            "href": "urn:dev:ops:power-device-001",
+            "type": "application/td+json"
+        },
+        {
+            "rel": "parentOf",
+            "href": "urn:dev:ops:power-device-002",
+            "type": "application/td+json"
+        }
+    ],
+    "properties": {
+        "device1Power": {
+            "type": "number"
+        },
+        "device2Power": {
+            "type": "number"
+        },
+        "totalPower": {
+            "type": "number",
+            "readOnly": true,
+            "otv2:jsonLogic": {
+                "+": [
+                    {
+                        "var": "device1Power"
+                    },
+                    {
+                        "var": "device2Power"
+                    }
+                ]
+            }
+        }
+    },
+    "links": [
+        {
+            "rel": "subscribeEvent",
+            "href": "https://example.com/things/thing/events/power01.changed",
+            "type": "application/json",
+            "description": "Suscripcion al evento de PowerDevice1"
+        },
+        {
+            "rel": "subscribeEvent",
+            "href": "https://example.com/things/thing/events/power02.changed",
+            "type": "application/json",
+            "description": "Suscripcion al evento de PowerDevice2"
+        }
+    ],
+    "otv2:rules": {
+        "onDevice1Event": {
+            "otv2:if": {
+                "==": [
+                    {
+                        "var": "eventName"
+                    },
+                    "thing:power01.changed"
+                ]
+            },
+            "otv2:then": {
+                "otv2:updateState": {
+                    "device1Power": {
+                        "value": {
+                            "var": "payload.power.value"
+                        }
+                    }
+                }
+            }
+        },
+        "onDevice2Event": {
+            "otv2:if": {
+                "==": [
+                    {
+                        "var": "eventName"
+                    },
+                    "thing:power02.changed"
+                ]
+            },
+            "otv2:then": {
+                "otv2:updateState": {
+                    "device2Power": {
+                        "value": {
+                            "var": "payload.power.value"
+                        },
+                        "timestamp": {
+                            "var": "payload.power.lastUpdate"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

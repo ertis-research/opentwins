@@ -1,9 +1,11 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Api;
 using Dgraph4Net;
 using Google.Protobuf;
 using Grpc.Core;
+using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace OpenTwinsV2.Twins.Services
 {
@@ -177,6 +179,43 @@ namespace OpenTwinsV2.Twins.Services
                 };
                 var response = await txn.Mutate(mutation);
                 await txn.Commit();
+                return response;
+            }
+            catch
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
+        private string ListNQuadsToMutationFormat(List<string> nquads)
+        {
+            StringBuilder res = new StringBuilder();
+            foreach(var triple in nquads)
+            {
+                res.Append(triple);
+                res.Append('\n');
+            }
+            return res.ToString();
+        }
+
+        public async Task<Response> AddNQuadTripleAsync(List<string> nquads)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var triples = ListNQuadsToMutationFormat(nquads);
+
+                var mutation = new Mutation
+                {
+                    SetNquads = ByteString.CopyFromUtf8(triples)
+                };
+                var response = await txn.Mutate(mutation);
+                await txn.Commit();
+                foreach (var kv in response.Uids)
+                {
+                    Console.WriteLine($"{kv.Key} => {kv.Value}");
+                }
                 return response;
             }
             catch
@@ -408,7 +447,6 @@ namespace OpenTwinsV2.Twins.Services
                 throw new Exception("Error removing thing: " + ex.Message);
             }
         }
-
     }
 }
 

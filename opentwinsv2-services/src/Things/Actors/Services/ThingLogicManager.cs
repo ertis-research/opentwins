@@ -33,11 +33,16 @@ namespace OpenTwinsV2.Things.Actors.Services
             await _descManager.SaveAsync(td);
             await _stateManager.InitializeFromDescription(td.Properties);
 
-            var events = GetSubscribedEvents(td.Links);
+            var events = GetSubscribedEvents(td.SubscribedEvents);
             if (events.Count > 0)
                 await SubscribeToEventsAsync(events);
 
             return "Success";
+        }
+
+        private List<EventSubscription> GetSubscribedEvents(List<SubscribedEvent>? subscribedEvents)
+        {
+            return subscribedEvents?.Select(ev => new EventSubscription(ev.Event, ev.AutoEmitState)).ToList() ?? [];
         }
 
         private List<EventSubscription> GetSubscribedEvents(List<Link>? links)
@@ -109,7 +114,7 @@ namespace OpenTwinsV2.Things.Actors.Services
                 try
                 {
                     JsonNode? logic = propDesc.JsonLogic?.AsNode();
-                    ActorLogger.Info(_thingId, $"Applying JsonLogic to property '{propName}' with logic: {JsonSerializer.Serialize(logic)}");
+                    //ActorLogger.Info(_thingId, $"Applying JsonLogic to property '{propName}' with logic: {JsonSerializer.Serialize(logic)}");
 
                     var context = new JsonObject();
                     foreach (var (key, state) in _stateManager.CurrentState)
@@ -118,7 +123,7 @@ namespace OpenTwinsV2.Things.Actors.Services
                             context[key] = je.AsNode();
                     }
 
-                    ActorLogger.Info(_thingId, $"Context for '{propName}': {context.ToJsonString()}");
+                    //ActorLogger.Info(_thingId, $"Context for '{propName}': {context.ToJsonString()}");
 
                     var result = JsonLogic.Apply(logic, context);
 
@@ -165,6 +170,9 @@ namespace OpenTwinsV2.Things.Actors.Services
 
             foreach (var (name, logic) in _descManager.ThingDescription.Rules)
             {
+                var subscribed = _descManager.ThingDescription.SubscribedEvents?.FirstOrDefault(e => e.Event == eventType);
+                if (subscribed?.Source != null && subscribed.Source.Count > 0 && !subscribed.Source.Contains(evt.Source)) continue;
+
                 ActorLogger.Info(_thingId, $"Evaluating rule '{name}'. EventType: {eventType}");
                 if (logic.If?.AsNode() is JsonNode cond)
                 {
@@ -229,8 +237,6 @@ namespace OpenTwinsV2.Things.Actors.Services
                 DateTime? ts = null;
 
                 //ActorLogger.Info(_thingId, $"Processing property: {key}");
-
-                Console.WriteLine(JsonSerializer.Serialize(schema));
 
                 if (schema.NewValue.HasValue)
                 {

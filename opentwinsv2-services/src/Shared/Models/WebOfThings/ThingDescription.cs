@@ -80,6 +80,9 @@ namespace OpenTwinsV2.Shared.Models
         [JsonPropertyName("otv2:rules")]
         public Dictionary<string, ThingLogic>? Rules { get; set; }
 
+        [JsonPropertyName("otv2:subscribedEvents")]
+        public List<SubscribedEvent>? SubscribedEvents { get; set; }
+
         public override string ToString()
         {
             return JsonSerializer.Serialize(this, new JsonSerializerOptions

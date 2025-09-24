@@ -6,7 +6,7 @@
 # app config
 #**/appsettings.json
 **/appsettings.Development.json
-scalability-tests/*.pdf
+RQ1.scalability/*.pdf
 
 #secrets
 /kubernetes/benthos/benthos-secret.yaml
@@ -500,3 +500,4 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+RQ1.scalability/medium_load_loss_rate_comparison.pdf

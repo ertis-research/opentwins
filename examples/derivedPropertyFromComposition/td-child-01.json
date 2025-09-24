@@ -4,11 +4,9 @@
     ],
     "title": "PowerDevice1",
     "id": "urn:dev:ops:power-device-001",
-    "links": [
+    "otv2:subscribedEvents": [
         {
-            "rel": "subscribeEvent",
-            "href": "https://example.com/things/mqtt/events/changes_powerdevice1",
-            "type": "application/json"
+            "otv2:event": "mqtt:changes_powerdevice1"
         }
     ],
     "properties": {

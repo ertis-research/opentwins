@@ -4,18 +4,6 @@
     ],
     "title": "PowerMeterThing",
     "id": "urn:dev:ops:power-meter-002",
-    "otv2:relations": [
-        {
-            "rel": "parentOf",
-            "href": "urn:dev:ops:power-device-001",
-            "type": "application/td+json"
-        },
-        {
-            "rel": "parentOf",
-            "href": "urn:dev:ops:power-device-002",
-            "type": "application/td+json"
-        }
-    ],
     "properties": {
         "device1Power": {
             "type": "number"
@@ -40,16 +28,28 @@
     },
     "links": [
         {
-            "rel": "subscribeEvent",
-            "href": "https://example.com/things/thing/events/power01.changed",
-            "type": "application/json",
-            "description": "Suscripcion al evento de PowerDevice1"
+            "rel": "otv2:hasPart",
+            "href": "https://example.com/things/urn:dev:ops:power-device-001",
+            "type": "application/td+json"
         },
         {
-            "rel": "subscribeEvent",
-            "href": "https://example.com/things/thing/events/power02.changed",
-            "type": "application/json",
-            "description": "Suscripcion al evento de PowerDevice2"
+            "rel": "otv2:hasPart",
+            "rel.name": "",
+            "href": "https://example.com/things/urn:dev:ops:power-device-002",
+            "type": "application/td+json"
+        }
+    ],
+    "otv2:subscribedEvents": [
+        {
+            "otv2:event": "power01.changed",
+            "otv2:type": "application/json"
+        },
+        {
+            "otv2:event": "power02.changed",
+            "otv2:source": [
+                "urn:dev:ops:power-device-002"
+            ],
+            "otv2:autoEmitState": true
         }
     ],
     "otv2:rules": {

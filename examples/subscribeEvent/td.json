@@ -3,11 +3,9 @@
     "id": "test:test_rules",
     "title": "MyLampThing",
     "security": "basic_sc",
-    "links": [
+    "otv2:subscribedEvents": [
         {
-            "rel": "subscribeEvent",
-            "href": "https://example.com/things/mqtt/events/changes_example-device-rules",
-            "type": "application/json"
+            "otv2:event": "mqtt:changes_example-device-rules"
         }
     ],
     "otv2:rules": {
@@ -33,7 +31,9 @@
                     }
                 },
                 "otv2:emitEvent": [
-                    {"event" : "overheating"}
+                    {
+                        "event": "overheating"
+                    }
                 ]
             }
         }
@@ -41,19 +41,7 @@
     "properties": {
         "temperature": {
             "type": "number",
-            "readOnly": false,
-            "writeOnly": false,
-            "observable": false,
-            "forms": [
-                {
-                    "op": [
-                        "readproperty",
-                        "writeproperty"
-                    ],
-                    "href": "https://mylamp.example.com/status",
-                    "contentType": "application/json"
-                }
-            ]
+            "readOnly": false
         }
     },
     "actions": {
@@ -75,30 +63,14 @@
                 "type": "string",
                 "readOnly": false,
                 "writeOnly": false
-            },
-            "forms": [
-                {
-                    "op": "subscribeevent",
-                    "href": "https://mylamp.example.com/oh",
-                    "contentType": "application/json",
-                    "subprotocol": "longpoll"
-                }
-            ]
+            }
         },
         "com.example.mqtt.message": {
             "data": {
                 "type": "string",
                 "readOnly": false,
                 "writeOnly": false
-            },
-            "forms": [
-                {
-                    "op": "subscribeevent",
-                    "href": "https://mylamp.example.com/oh",
-                    "contentType": "application/json",
-                    "subprotocol": "longpoll"
-                }
-            ]
+            }
         }
     }
 }

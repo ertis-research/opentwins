@@ -47,34 +47,19 @@ def get_default_TD(num):
         "properties": {
             "humidity": {
                 "title": "Humidity",
-                "type": "number",
-                "forms": [
-                    {
-                    "href": f"https://example.com/things/test:device{num}/humidity",
-                    "contentType": "application/json",
-                    "op": ["readproperty"]
-                    }
-                ]
+                "type": "number"
             },
             "temperature": {
                 "title": "Temperature",
-                "type": "number",
-                "forms": [
-                    {
-                    "href": f"https://example.com/things/test:device{num}/temperature",
-                    "contentType": "application/json",
-                    "op": ["readproperty"]
-                    }
-                ]
+                "type": "number"
             }
         },
-        "links": [
-        {
-            "rel": "subscribeEvent",
-            "href": f"https://example.com/things/mqtt/events/changes_device{num}",
-            "type": "application/json",
-            "otv2:emitStateOnReceive": True
-        }]
+        "otv2:subscribedEvents": [
+            {
+                "otv2:event": "mqtt:changes_device{num}",
+                "otv2:autoEmitState": True
+            }
+        ]
     }
 
 _sent_map_v2 = {}

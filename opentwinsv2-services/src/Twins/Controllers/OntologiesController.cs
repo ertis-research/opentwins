@@ -3,6 +3,8 @@ using VDS.RDF.Parsing;
 using Microsoft.AspNetCore.Mvc;
 using OpenTwinsV2.Shared.Constants;
 using OpenTwinsV2.Twins.Services;
+using System;
+using System.IO;
 using System.Text;
 using static Api.Dgraph;
 using System.Threading.Channels;
@@ -56,6 +58,20 @@ namespace OpenTwinsV2.Twins.Controllers
             //get the uid omiting all prefixes
             string local = GetLocalName(node, graph);
             return $"_:{local}";
+        }
+
+        private string SanitizeAttributeValue(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return value;
+
+            return value
+                .Replace("\\", "\\\\")   // omit \
+                .Replace("\"", "\\\"")   // omit "
+                //.Replace("'", "\\\'")    // omit '
+                .Replace("\n", "\\n")    // omit \n
+                .Replace("\r", "\\r")    // omit \r
+                .Replace("\t", "\\t");   // omit \t
         }
 
         [HttpPost("{ontologieUpload}")]
@@ -120,6 +136,7 @@ namespace OpenTwinsV2.Twins.Controllers
                     return !types.Any(t => ignoredTypes.Contains(t));
                 })
                 .Distinct();
+                string createdAt = DateTime.UtcNow.ToString("O");
 
                 foreach (var node in allNodes)
                 {
@@ -131,10 +148,10 @@ namespace OpenTwinsV2.Twins.Controllers
 
                     string uid = $"_:{GetLocalName(node, graph)}";
                     string thingId = GetLocalName(node, graph);
-                    string createdAt = DateTime.UtcNow.ToString("O");
+                    
 
                     nquads.Add($"{uid} <dgraph.type> \"Thing\" .");
-                    nquads.Add($"{uid} <dgraph.type> \"Antology\" .");
+                    nquads.Add($"{uid} <dgraph.type> \"Ontology\" .");
                     nquads.Add($"{uid} <thingId> \"{thingId}\" .");
                     nquads.Add($"{uid} <name> \"{thingId}\" .");
                     nquads.Add($"{uid} <createdAt> \"{createdAt}\" .");
@@ -147,21 +164,70 @@ namespace OpenTwinsV2.Twins.Controllers
                     //Get the subject, predicate and object of the triple
                     string subject = GetUid(triple.Subject, graph); //_:uid
                     string predicate = GetLocalName(triple.Predicate, graph); //uri
-                    string obj;
 
                     //as this includes the original type and uid of the antology, we exclude them so as not to duplicate the existing ones
                     if (!ignoredPredicates.Contains(predicate))
                     {
+                        //TODO Create a Relation object which representates each relation of every node
+
+                        string obj;
+
                         //Rest of attributes: TODO: WOT
                         //Check if the object is a literal or the uid to another node
                         if (triple.Object.NodeType == NodeType.Literal)
                         {
-                            //Adapt to Relation type
+                            //Attribute of a node
+
+                            /*
+                             type Attribute {
+                                Attribute.key =============> Generated key (it will overrided when uploaded to DGraph)
+                                Attribute.type ============> Type of the attribute value (DGraph format)
+                                Attribute.value ===========> Value of the attribute casted to string
+                            }
+                             */
+
+                            var literal = (ILiteralNode) triple.Object;
+
+                            string value = SanitizeAttributeValue(literal.Value);
+                            //There's the possibility of the value containing " characters
+
+                            //string type by default
+                            string dataType = literal.DataType?.ToString() ?? "xsd:string";
+
+                            string attribute_uid = $"{predicate}";
+                            nquads.Add($"{attribute_uid} <dgraph.type> \"Attribute\" .");
+                            nquads.Add($"{attribute_uid} <Attribute.key> \"{attribute_uid}\" .");
+                            nquads.Add($"{attribute_uid} <Attribute.type> \"{dataType}\" .");
+                            nquads.Add($"{attribute_uid} <Attribute.value> \"{value}\" .");
+
+                            //Link the node to the attribute
+                            nquads.Add($"{subject} <hasAttribute> {attribute_uid} .");
+
                         }
                         else
                         {
+                            //Relation between 2 nodes
+
+                            //Relation node
+                            string relation_uid = $"_:rel_{predicate}_{Guid.NewGuid()}";
+                            nquads.Add($"{relation_uid} <dgraph.type> \"Relation\" .");
+                            nquads.Add($"{relation_uid} <Relation.name> \"{predicate}\" .");
+                            nquads.Add($"{relation_uid} <Relation.createdAt> \"{createdAt}\" .");
+                            nquads.Add($"{relation_uid} <relatedTo> {subject} .");
+                            /*
+                             type Relation {
+                                Relation.name =============> Name of the original predicate
+                                Relation.createdAt ========> timestamp
+                                Relation.attributes =======> any additional info of the relation (thre's no example in the sample antology provided)
+                                relatedTo =================> each Realtion object has 2 relatedTo attribute (subject and object)
+                                hasPart ===================> ignore as of now
+                                hasChild ==================> ignore as of now
+                            }
+                             */
+
                             obj = GetUid(triple.Object, graph);
-                            nquads.Add($"{subject} <{predicate}> {obj} ."); //provisional
+                            nquads.Add($"{relation_uid} <relatedTo> {obj} .");
+                            //nquads.Add($"{subject} <{predicate}> {obj} ."); //provisional
                         }
 
                         //it should be here, but because the literals are not added as of now, it'll be part of the else statement
@@ -173,13 +239,21 @@ namespace OpenTwinsV2.Twins.Controllers
                 //---------------------------------------------------------------------------------
                 //Upload the triples as a mutation to DGraph
 
+                //Console.WriteLine("Mandar nquads");
+                System.IO.File.WriteAllText("nquads.txt", "");
+                foreach(String str in nquads)
+                {
+                    System.IO.File.AppendAllText("nquads.txt", str+"\n");
+                }
+
                 var response = await _dgraphService.AddNQuadTripleAsync(nquads);
 
+                Console.WriteLine("Procesados nquads");
                 return Ok($"{response} {nquads.ToArray().Length} triples added to DGraph successfully");
             }
-            catch
+            catch(Exception ex)
             {
-                return StatusCode(500, "Something wrong happened while importing the Antology to DGraph");
+                return StatusCode(500, $"Something wrong happened while importing the Antology to DGraph:\n{ex.GetType}: {ex.Message}");
             }
               
 

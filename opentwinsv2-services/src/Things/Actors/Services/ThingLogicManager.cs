@@ -44,7 +44,7 @@ namespace OpenTwinsV2.Things.Actors.Services
         {
             return subscribedEvents?.Select(ev => new EventSubscription(ev.Event, ev.AutoEmitState)).ToList() ?? [];
         }
-
+/*
         private List<EventSubscription> GetSubscribedEvents(List<Link>? links)
         {
             if (links is null) return [];
@@ -67,7 +67,7 @@ namespace OpenTwinsV2.Things.Actors.Services
             }
             //Console.WriteLine($"[INFO] Thing with ID {Id} is subscribed to: {string.Join(", ", subscriptions)}");
             return subscriptions;
-        }
+        }*/
 
         private async Task SubscribeToEventsAsync(List<EventSubscription> events)
         {

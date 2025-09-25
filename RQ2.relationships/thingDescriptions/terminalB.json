@@ -1,0 +1,23 @@
+{
+    "@context": "https://www.w3.org/2019/wot/td/v1",
+    "id": "urn:test:rq2:TerminalB",
+    "title": "Terminal B",
+    "properties": {
+        "collapsed": {
+            "type": "boolean",
+            "description": "Operational state of the terminal"
+        }
+    },
+    "links": [
+        {
+            "href": "urn:test:rq2:GateB1",
+            "rel": "hasChild",
+            "type": "application/td+json"
+        },
+        {
+            "href": "urn:test:rq2:GateB2",
+            "rel": "hasChild",
+            "type": "application/td+json"
+        }
+    ]
+}

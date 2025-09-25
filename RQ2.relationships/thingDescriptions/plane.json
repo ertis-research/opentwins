@@ -1,0 +1,22 @@
+{
+    "@context": "https://www.w3.org/2019/wot/td/v1",
+    "id": "urn:test:rq2:Plane",
+    "title": "Plane",
+    "properties": {
+        "flying": {
+            "type": "boolean",
+            "description": "Current status of the plane"
+        }
+    },
+    "actions": {
+        "dock": {
+            "description": "Dock the plane at a specified gate",
+            "input": {
+                "type": "string"
+            }
+        },
+        "depart": {
+            "description": "Depart the plane from the current gate"
+        }
+    }
+}

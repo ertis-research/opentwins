@@ -1,0 +1,23 @@
+{
+    "@context": "https://www.w3.org/2019/wot/td/v1",
+    "id": "urn:test:rq2:TerminalA",
+    "title": "Terminal A",
+    "properties": {
+        "collapsed": {
+            "type": "boolean",
+            "description": "Operational state of the terminal"
+        }
+    },
+    "links": [
+        {
+            "href": "urn:test:rq2:GateA1",
+            "rel": "otv2:hasChild",
+            "type": "application/td+json"
+        },
+        {
+            "href": "urn:test:rq2:GateA2",
+            "rel": "otv2:hasChild",
+            "type": "application/td+json"
+        }
+    ]
+}

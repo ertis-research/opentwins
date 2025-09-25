@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using OpenTwinsV2.Shared.Models;
 using System.Text.Json.Nodes;
 using OpenTwinsV2.Twins.Builders;
+using System.Text;
 
 namespace OpenTwinsV2.Twins.Controllers
 {
@@ -44,6 +45,25 @@ namespace OpenTwinsV2.Twins.Controllers
                 return Ok(new { message = "Twin created successfully" });
             }
             return Conflict("There is already a twin with this id");
+        }
+
+        [HttpGet("{twinId}")]
+        public async Task<IActionResult> GetTwin(string twinId)
+        {
+            try
+            {
+                var nquads = await _dgraphService.GetThingsInTwinNQUADSAsync(twinId);
+
+                if (string.IsNullOrWhiteSpace(nquads))
+                    return NotFound($"No things found for twin {twinId}");
+
+                // Return as NQUADS (plain text)
+                return Content(nquads, "application/n-quads", Encoding.UTF8);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error retrieving twin {twinId}: {ex.Message}");
+            }
         }
 
         [HttpGet("{twinId}/things")]
@@ -98,29 +118,37 @@ namespace OpenTwinsV2.Twins.Controllers
         }
 
 
-        [HttpPut("{twinId}/things/{thingId}")]
-        public async Task<IActionResult> AddThingToTwin(string twinId, string thingId)
+        [HttpPut("{twinId}/things/{thingIds}")]
+        public async Task<IActionResult> AddThingToTwin(string twinId, string thingIds)
         {
             try
             {
-                if (!await _dgraphService.ExistsThingByIdAsync(thingId))
+                var thingIdList = thingIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                var twinUid = await _dgraphService.GetUidByThingIdAsync(twinId);
+                if (twinUid == null) return NotFound("TwinId not found");
+
+                var responses = new List<object>();
+
+                foreach (var thingId in thingIdList)
                 {
-                    ThingDescription td = await _thingsService.GetThingAsync(thingId);
+                    if (!await _dgraphService.ExistsThingByIdAsync(thingId))
+                    {
+                        ThingDescription td = await _thingsService.GetThingAsync(thingId);
+                        var thing = ThingBuilder.MapToThing(td);
+                        thing = ThingBuilder.AddTwinToThing(thing, twinUid);
 
-                    var thing = ThingBuilder.MapToThing(td);
-
-                    var twinUid = await _dgraphService.GetUidByThingIdAsync(twinId);
-                    if (twinUid == null) return NotFound("TwinId not found");
-                    thing = ThingBuilder.AddTwinToThing(thing, twinUid);
-
-                    var response = await _dgraphService.AddThingAsync(thing);
-                    return Ok(response);
+                        var response = await _dgraphService.AddThingAsync(thing);
+                        responses.Add(response);
+                    }
+                    else
+                    {
+                        var response = await _dgraphService.AddThingToTwinAsync(thingId, twinId);
+                        responses.Add(response);
+                    }
                 }
-                else
-                {
-                    var response = await _dgraphService.AddThingToTwinAsync(thingId, twinId);
-                    return Ok(response);
-                }
+
+                return Ok(responses.Count == 1 ? responses.First() : responses);
             }
             catch (KeyNotFoundException ex)
             {

@@ -23,8 +23,5 @@ namespace OpenTwinsV2.Shared.Models
         [JsonPropertyName("hreflang")]
         [JsonConverter(typeof(SingleOrArrayConverter<string>))]
         public List<string>? Hreflang { get; set; }
-
-        [JsonPropertyName("otv2:emitStateOnReceive")]
-        public bool EmitStateOnReceive { get; set; } = false;
     }
 }

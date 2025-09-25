@@ -65,6 +65,10 @@ namespace OpenTwinsV2.Twins.Services
                 hasAction: [uid] @reverse .
                 hasEvent: [uid] @reverse .
 
+                ontologyId: string @index(exact) .
+                Ontology.name: string @index(term) . 
+                hasThing: [uid] @reverse .
+
                 twins: [uid] @reverse .
                 domains: [uid] @reverse .
 
@@ -100,6 +104,13 @@ namespace OpenTwinsV2.Twins.Services
                     twins
                     domains
                 }
+
+                type Ontology {
+                    ontologyId
+                    Ontology.name
+                    createdAt
+                    hasThing
+                } 
 
                 type Twin {
                     thingId

@@ -13,14 +13,18 @@ namespace OpenTwinsV2.Twins.Services
         private readonly Dgraph4NetClient _client;
         private readonly Channel _channel;
         private readonly ILogger<DGraphService> _logger;
+        private readonly IJsonNquadsConverter _converter;
+        private readonly string _dgraphUrl;
 
-        public DGraphService(IConfiguration configuration, ILogger<DGraphService> logger)
+        public DGraphService(IConfiguration configuration, ILogger<DGraphService> logger, IJsonNquadsConverter converter)
         {
-            var dgraphUrl = configuration["DGraph:Url"] ?? throw new Exception("[ERROR] DGraph URL is not defined");
+            _dgraphUrl = configuration["DGraph:URL_HTTP"] ?? throw new Exception("[ERROR] DGraph URL is not defined");
+            var dgraphUrl_gRPC = configuration["DGraph:URL_gRPC"] ?? throw new Exception("[ERROR] DGraph URL is not defined");
             // Vamos a usar este cliente porque el oficial no esta actualizado: https://github.com/schivei/dgraph4net
-            _channel = new Channel(dgraphUrl, ChannelCredentials.Insecure);
+            _channel = new Channel(dgraphUrl_gRPC, ChannelCredentials.Insecure);
             _client = new Dgraph4NetClient(_channel);
             _logger = logger;
+            _converter = converter;
         }
 
         public void Dispose()
@@ -343,108 +347,51 @@ namespace OpenTwinsV2.Twins.Services
         {
             _logger.LogInformation("Starting GetThingsInTwinNQUADSAsync for twinId={TwinId}", twinId);
 
-            using var txn = _client.NewTransaction();
-
             string query = $@"
-    {{
-        twin as var(func: eq(thingId, ""{twinId}""))
+            {{
+                twin as var(func: eq(thingId, ""{twinId}""))
 
-        things(func: uid(twin)) {{
-            ~twins {{
-                uid
-                thingId
-                name
-                createdAt
+                things(func: uid(twin)) {{
+                    ~twins {{
+                        uid
+                        thingId
+                        name
+                        createdAt
 
-                hasType {{ uid expand(_all_) }}
-                hasAttribute {{ uid expand(_all_) }}
-                hasAction {{ uid expand(_all_) }}
-                hasEvent {{ uid expand(_all_) }}
-                domains {{ uid expand(_all_) }}
+                        hasType {{ uid expand(_all_) }}
+                        hasAttribute {{ uid expand(_all_) }}
+                        hasAction {{ uid expand(_all_) }}
+                        hasEvent {{ uid expand(_all_) }}
+                        domains {{ uid expand(_all_) }}
 
-                relatedTo {{ uid expand(_all_) }}
-                hasPart {{ uid expand(_all_) }}
-                hasChild {{ uid expand(_all_) }}
-            }}
-        }}
-    }}";
+                        relatedTo {{ uid expand(_all_) }}
+                        hasPart {{ uid expand(_all_) }}
+                        hasChild {{ uid expand(_all_) }}
+                    }}
+                }}
+            }}";
 
             _logger.LogDebug("Executing Dgraph query for twinId={TwinId}", twinId);
 
-            Console.WriteLine(query);
+            using var txn = _client.NewTransaction();
 
-            var response = await txn.Query(query);
-            var rawNquads = response.Rdf.ToStringUtf8();
+            var res = await txn.Query(query);
+            var rawJson = res.Json.ToStringUtf8();
 
-            _logger.LogInformation("Query completed. Received {Length} characters of NQUADS for twinId={TwinId}", rawNquads.Length, twinId);
+            _logger.LogDebug(
+                "Query completed. Received {Length} characters of JSON for twinId={TwinId}",
+                rawJson.Length, twinId
+            );
 
-            var lines = rawNquads.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-            _logger.LogDebug("Split RDF into {Count} lines", lines.Length);
+            var rdf = _converter.JsonToNquads(rawJson);
 
-            var relations = new Dictionary<string, (string from, string? to, string? name)>();
-            var result = new List<string>();
+            _logger.LogInformation(
+                "Transformation completed. Returning {TripleCount} triples for twinId={TwinId}",
+                rdf.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length,
+                twinId
+            );
 
-            foreach (var line in lines)
-            {
-                if (line.Contains("Relation.name"))
-                {
-                    var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                    var relUid = parts[0];
-                    var relName = parts[2].Trim('"');
-
-                    if (!relations.ContainsKey(relUid))
-                        relations[relUid] = (from: "", to: null, name: relName);
-                    else
-                        relations[relUid] = (relations[relUid].from, relations[relUid].to, relName);
-
-                    _logger.LogDebug("Detected relation {RelationUid} with name {RelationName}", relUid, relName);
-                    continue;
-                }
-
-                if (line.Contains("relatedTo") || line.Contains("hasPart") || line.Contains("hasChild"))
-                {
-                    var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                    var subj = parts[0];
-                    var obj = parts[2];
-
-                    if (obj.StartsWith("_:rel"))
-                    {
-                        if (!relations.ContainsKey(obj))
-                            relations[obj] = (from: subj, to: null, name: null);
-                        else
-                            relations[obj] = (subj, relations[obj].to, relations[obj].name);
-
-                        _logger.LogDebug("Relation node {RelationUid} linked from {Subject}", obj, subj);
-                    }
-                    else if (subj.StartsWith("_:rel"))
-                    {
-                        if (!relations.ContainsKey(subj))
-                            relations[subj] = (from: "", to: obj, name: null);
-                        else
-                            relations[subj] = (relations[subj].from, obj, relations[subj].name);
-
-                        _logger.LogDebug("Relation node {RelationUid} linked to {Object}", subj, obj);
-                    }
-                    continue;
-                }
-
-                result.Add(line);
-            }
-
-            foreach (var kv in relations)
-            {
-                var (from, to, name) = kv.Value;
-                if (!string.IsNullOrEmpty(from) && !string.IsNullOrEmpty(to) && !string.IsNullOrEmpty(name))
-                {
-                    result.Add($"{from} <{name}> {to} .");
-                    _logger.LogInformation("Flattened relation into triple: {From} <{Name}> {To}", from, name, to);
-                }
-            }
-
-            var finalOutput = string.Join("\n", result);
-            _logger.LogInformation("Transformation completed. Returning {TripleCount} triples for twinId={TwinId}", result.Count, twinId);
-
-            return finalOutput;
+            return rdf;
         }
 
         public async Task<JsonElement?> GetThingInTwinByIdAsync(string twinId, string thingId)

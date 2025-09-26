@@ -1,0 +1,38 @@
+@prefix ns1: <http://example.org/> .
+
+<urn:test:rq2:Airport1> ns1:createdAt "2025-09-25T11:46:34.3231052Z" ;
+    ns1:name "Airport" .
+
+<urn:test:rq2:GateA1> ns1:createdAt "2025-09-25T11:46:34.6449009Z" ;
+    ns1:name "GateA1" .
+
+<urn:test:rq2:GateA2> ns1:createdAt "2025-09-25T11:46:34.6805096Z" ;
+    ns1:name "GateA2" .
+
+<urn:test:rq2:GateB1> ns1:createdAt "2025-09-25T11:46:34.7167972Z" ;
+    ns1:name "GateB1" .
+
+<urn:test:rq2:GateB2> ns1:createdAt "2025-09-25T11:46:34.7498642Z" ;
+    ns1:name "GateB2" .
+
+<urn:test:rq2:Plane1> ns1:createdAt "2025-09-25T11:46:34.8067361Z" ;
+    ns1:name "Plane1" .
+
+<urn:test:rq2:Plane2> ns1:createdAt "2025-09-25T11:46:34.8832388Z" ;
+    ns1:name "Plane2" .
+
+<urn:test:rq2:Plane3> ns1:createdAt "2025-09-25T11:46:34.9478883Z" ;
+    ns1:name "Plane3" .
+
+<urn:test:rq2:Plane4> ns1:createdAt "2025-09-25T11:46:34.9761733Z" ;
+    ns1:name "Plane4" .
+
+<urn:test:rq2:Plane5> ns1:createdAt "2025-09-25T11:46:35.0085027Z" ;
+    ns1:name "Plane5" .
+
+<urn:test:rq2:TerminalA> ns1:createdAt "2025-09-25T11:46:34.3772642Z" ;
+    ns1:name "Terminal A" .
+
+<urn:test:rq2:TerminalB> ns1:createdAt "2025-09-25T11:46:34.5962063Z" ;
+    ns1:name "Terminal B" .
+

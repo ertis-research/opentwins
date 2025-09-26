@@ -7,8 +7,10 @@ var builder = WebApplication.CreateBuilder(args);
 //builder.Services.AddDaprPubSubClient();
 builder.Services.AddDaprClient();                    // Recomendado para llamadas Dapr
 
-builder.Services.AddSingleton<DGraphService>();
-builder.Services.AddSingleton<ThingsService>();
+builder.Services.AddScoped<IJsonNquadsConverter, JsonNquadsConverter>();
+
+builder.Services.AddScoped<DGraphService>();
+builder.Services.AddScoped<ThingsService>();
 builder.Services.AddControllers().AddDapr();
 
 builder.Services.AddEndpointsApiExplorer();

@@ -25,11 +25,12 @@ RDF_FORMAT = "nquads"
 
 def load_graph_from_api():
     headers = {"Accept": "application/n-quads"}
-    resp = requests.get(TWINS_ENDPOINT, headers=headers)
+    resp = requests.get(TWINS_ENDPOINT + "/twins/urn:test:rq2", headers=headers)
     resp.raise_for_status()
 
     g = Graph()
     g.parse(data=resp.text, format=RDF_FORMAT)
+    g.serialize("graph.ttl", format="turtle")
     return g
 
 def check_airport_collapse(g):
@@ -58,8 +59,8 @@ def main():
     init.prepare_base()
     
     print("Loading graph from API…")
-    #g = load_graph_from_api()
-    #print(f"Graph loaded with {len(g)} triples")
+    g = load_graph_from_api()
+    print(f"Graph loaded with {len(g)} triples")
 
     #results = check_airport_collapse(g)
 

@@ -18,5 +18,26 @@
         "depart": {
             "description": "Depart the plane from the current gate"
         }
+    },
+    "otv2:rules": {
+        "update": {
+            "otv2:if": {
+                "==": [
+                    {
+                        "var": "eventName"
+                    },
+                    "api:update"
+                ]
+            },
+            "otv2:then": {
+                "otv2:updateState": {
+                    "flying": {
+                        "value": {
+                            "var": "payload.flying"
+                        }
+                    }
+                }
+            }
+        }
     }
 }

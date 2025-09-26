@@ -12,10 +12,12 @@ public class ThingsController : ControllerBase
 {
     private const string ActorType = Actors.ThingActor;
     private readonly IActorProxyFactory _actorProxyFactory;
+    private readonly ILogger<ThingsController> _logger;
 
-    public ThingsController(IActorProxyFactory actorProxyFactory)
+    public ThingsController(IActorProxyFactory actorProxyFactory, ILogger<ThingsController> logger)
     {
         _actorProxyFactory = actorProxyFactory;
+        _logger = logger;
     }
 
     // Tendria que cambiarlo para que no actualice??
@@ -151,6 +153,37 @@ public class ThingsController : ControllerBase
         string state = await actor.GetCurrentStateAsync();
         if (state is null) return NotFound();
         return Content(state, "application/td+json");
+    }
+
+    [HttpPut("{thingId}/state")]
+    public async Task<IActionResult> PutCurrentState(string thingId, [FromBody] JsonElement newState)
+    {
+        if (newState.ValueKind == JsonValueKind.Undefined || newState.ValueKind == JsonValueKind.Null)
+            return BadRequest("State cannot be null or undefined.");
+
+        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+
+        var cloudEvent = new MyCloudEvent<string>(
+            id: Guid.NewGuid().ToString(),
+            source: $"http",
+            type: "api:update",
+            specVersion: "1.0",
+            time: DateTime.UtcNow,
+            dataContentType: "application/json",
+            data: newState.GetRawText()
+        );
+
+        try
+        {
+            await actor.OnEventReceived(cloudEvent);
+            _logger.LogInformation("Sent api.update event to thing {ThingId}", thingId);
+            return NoContent(); // 204 cuando la actualización es correcta
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send api.update event for {ThingId}", thingId);
+            return StatusCode(500, "Internal server error");
+        }
     }
 
     [HttpPost("{thingId}/action/{actionName}/execute")]

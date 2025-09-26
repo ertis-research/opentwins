@@ -4,6 +4,7 @@ using OpenTwinsV2.Shared.Models;
 using System.Text.Json.Nodes;
 using OpenTwinsV2.Twins.Builders;
 using System.Text;
+using System.Text.Json;
 
 namespace OpenTwinsV2.Twins.Controllers
 {
@@ -13,11 +14,13 @@ namespace OpenTwinsV2.Twins.Controllers
     {
         private readonly DGraphService _dgraphService;
         private readonly ThingsService _thingsService;
+        private readonly IJsonNquadsConverter _converter;
 
-        public TwinsController(DGraphService dgraphService, ThingsService thingsService)
+        public TwinsController(DGraphService dgraphService, ThingsService thingsService, IJsonNquadsConverter converter)
         {
             _dgraphService = dgraphService;
             _thingsService = thingsService;
+            _converter = converter;
         }
 
         [HttpPost("{twinId}")]
@@ -52,10 +55,27 @@ namespace OpenTwinsV2.Twins.Controllers
         {
             try
             {
-                var nquads = await _dgraphService.GetThingsInTwinNQUADSAsync(twinId);
+                var rawJson = await _dgraphService.GetThingsInTwinNQUADSAsync(twinId);
 
-                if (string.IsNullOrWhiteSpace(nquads))
+                if (string.IsNullOrWhiteSpace(rawJson))
                     return NotFound($"No things found for twin {twinId}");
+
+                Console.WriteLine(rawJson);
+
+                using var doc = JsonDocument.Parse(rawJson);
+                var json = doc.RootElement;
+
+                var thingIds = json.GetProperty("things").EnumerateArray().SelectMany(t => t.GetProperty("~twins").EnumerateArray())
+                    .Where(t => t.TryGetProperty("thingId", out var id) && id.ValueKind == JsonValueKind.String)
+                    .Select(t => t.GetProperty("thingId").GetString()!).Distinct().ToList();
+
+                if (thingIds is null)
+                    return NotFound($"No things found for twin {twinId}");
+
+                var states = await _thingsService.GetThingsStatesAsync(thingIds);
+                Console.WriteLine(JsonSerializer.Serialize(states));
+
+                var nquads = _converter.JsonToNquads(rawJson, states);
 
                 // Return as NQUADS (plain text)
                 return Content(nquads, "application/n-quads", Encoding.UTF8);

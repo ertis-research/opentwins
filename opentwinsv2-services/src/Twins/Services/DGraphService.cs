@@ -13,18 +13,14 @@ namespace OpenTwinsV2.Twins.Services
         private readonly Dgraph4NetClient _client;
         private readonly Channel _channel;
         private readonly ILogger<DGraphService> _logger;
-        private readonly IJsonNquadsConverter _converter;
-        private readonly string _dgraphUrl;
 
-        public DGraphService(IConfiguration configuration, ILogger<DGraphService> logger, IJsonNquadsConverter converter)
+        public DGraphService(IConfiguration configuration, ILogger<DGraphService> logger)
         {
-            _dgraphUrl = configuration["DGraph:URL_HTTP"] ?? throw new Exception("[ERROR] DGraph URL is not defined");
             var dgraphUrl_gRPC = configuration["DGraph:URL_gRPC"] ?? throw new Exception("[ERROR] DGraph URL is not defined");
             // Vamos a usar este cliente porque el oficial no esta actualizado: https://github.com/schivei/dgraph4net
             _channel = new Channel(dgraphUrl_gRPC, ChannelCredentials.Insecure);
             _client = new Dgraph4NetClient(_channel);
             _logger = logger;
-            _converter = converter;
         }
 
         public void Dispose()
@@ -343,7 +339,8 @@ namespace OpenTwinsV2.Twins.Services
             return twins ?? [];
         }
 
-        public async Task<string> GetThingsInTwinNQUADSAsync(string twinId)
+        // Este metodo y el anterior se repiten, hay que refactorizar!!!!!! que pereza (es que el converter va con este metodo)
+        public async Task<string?> GetThingsInTwinNQUADSAsync(string twinId)
         {
             _logger.LogInformation("Starting GetThingsInTwinNQUADSAsync for twinId={TwinId}", twinId);
 
@@ -383,15 +380,7 @@ namespace OpenTwinsV2.Twins.Services
                 rawJson.Length, twinId
             );
 
-            var rdf = _converter.JsonToNquads(rawJson);
-
-            _logger.LogInformation(
-                "Transformation completed. Returning {TripleCount} triples for twinId={TwinId}",
-                rdf.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length,
-                twinId
-            );
-
-            return rdf;
+            return rawJson;
         }
 
         public async Task<JsonElement?> GetThingInTwinByIdAsync(string twinId, string thingId)

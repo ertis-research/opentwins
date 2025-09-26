@@ -1,4 +1,5 @@
 @prefix ns1: <http://example.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 <urn:test:rq2:Airport1> ns1:createdAt "2025-09-25T11:46:34.3231052Z" ;
     ns1:name "Airport" .
@@ -28,6 +29,8 @@
     ns1:name "Plane4" .
 
 <urn:test:rq2:Plane5> ns1:createdAt "2025-09-25T11:46:35.0085027Z" ;
+    ns1:flying.lastUpdate "2025-09-26T12:11:22.9691764Z" ;
+    ns1:flying.value true ;
     ns1:name "Plane5" .
 
 <urn:test:rq2:TerminalA> ns1:createdAt "2025-09-25T11:46:34.3772642Z" ;

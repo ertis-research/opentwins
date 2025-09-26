@@ -36,10 +36,10 @@ namespace OpenTwinsV2.Twins.Services
             var thingDescriptionJson = await proxy.GetThingDescriptionAsync() ?? throw new KeyNotFoundException($"Thing with ID '{thingId}' was not found.");
 
             ThingDescription? td = JsonSerializer.Deserialize<ThingDescription>(thingDescriptionJson, new JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-                });
+            {
+                WriteIndented = true,
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+            });
             if (td == null || string.IsNullOrEmpty(td.Id)) throw new InvalidDataException("ThingDescription is invalid or missing ID.");
 
             return td;
@@ -52,6 +52,26 @@ namespace OpenTwinsV2.Twins.Services
 
             using var doc = JsonDocument.Parse(stateJson);
             return doc.RootElement.Clone();
+        }
+
+        public async Task<Dictionary<string, JsonElement>> GetThingsStatesAsync(List<string> thingIds)
+        {
+            var result = new Dictionary<string, JsonElement>();
+
+            foreach (var id in thingIds)
+            {
+                try
+                {
+                    var state = await GetThingState(id);
+                    result[id] = state;
+                }
+                catch (KeyNotFoundException)
+                {
+                    Console.WriteLine($"ThingId '{id}' state not found.");
+                }
+            }
+
+            return result;
         }
 
     }

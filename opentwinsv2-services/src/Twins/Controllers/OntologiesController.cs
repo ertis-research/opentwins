@@ -101,7 +101,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
             string attribute_uid = $"_:att_{predicate}_{Guid.NewGuid()}";
             nquads.Add($"{attribute_uid} <dgraph.type> \"Attribute\" .");
-            nquads.Add($"{attribute_uid} <Attribute.key> \"{attribute_uid}\" .");
+            nquads.Add($"{attribute_uid} <Attribute.key> \"{predicate}\" .");
             nquads.Add($"{attribute_uid} <Attribute.type> \"{dataType}\" .");
             nquads.Add($"{attribute_uid} <Attribute.value> \"{value}\" .");
 
@@ -232,15 +232,15 @@ namespace OpenTwinsV2.Twins.Controllers
 
                     var allNodes = graph.Triples
                     .Select(t => t.Subject)
-                    .Where(s => s.NodeType == NodeType.Uri || s.NodeType == NodeType.Blank)
-                    .Where(s =>
+                    .Where(s => s.NodeType == NodeType.Uri)
+                    /*.Where(s =>
                     {
                         // Obtain the node type
                         var types = graph.GetTriplesWithSubjectPredicate(s, graph.CreateUriNode("rdf:type"))
                                          .Select(tr => tr.Object.ToString());
                         // Exclude the ones with any excluded type
                         return !types.Any(t => ignoredTypes.Contains(t));
-                    })
+                    })*/
                     .Distinct();
                     string createdAt = DateTime.UtcNow.ToString("O");
 
@@ -303,6 +303,73 @@ namespace OpenTwinsV2.Twins.Controllers
                 }
             }
             return Conflict("There is already an ontology with this id");
+        }
+
+        [HttpGet("{ontologyId}")]
+        public async Task<IActionResult> GetThingsByOntologyId(string ontologyId)
+        {
+            var response = await _dgraphService.GetThingsInOntologyAsync(ontologyId);
+            return Ok(response);
+        }
+
+        [HttpGet("{ontologyId}/things/{thingId}")]
+        public async Task<IActionResult> GetThingByOntologyAndThingId(string ontologyId, string thingId)
+        {
+            var check = await _dgraphService.ThingBelongsToOntologyAsync(ontologyId, thingId);
+            if (!check)
+            {
+                return NotFound(new { message = $"Thing '{thingId}' does not belong to Ontology '{ontologyId}' or not exists" });
+            }
+            try
+            {
+                var result = await _dgraphService.GetThingInOntologyByIdAsync(ontologyId, thingId);
+                return Ok(result);
+
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            
+        }
+
+        [HttpGet("{ontologyId}/relations/{relationName}")]
+        public async Task<IActionResult> GetThingsByRelationName(string ontologyId, string relationName)
+        {
+            var check = await _dgraphService.ExistsOntologyByIdAsync(ontologyId);
+            if (!check)
+            {
+                return NotFound(new { message = $"Ontology '{ontologyId}' does not exist" });
+            }
+            try
+            {
+                var result = await _dgraphService.GetRelationByName(ontologyId, relationName);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            
+        }
+
+        [HttpGet("{ontologyId}/attributes/{attributeName}")]
+        public async Task<IActionResult> GetThingsByAttributeName(string ontologyId, string attributeName)
+        {
+            var check = await _dgraphService.ExistsOntologyByIdAsync(ontologyId);
+            if (!check)
+            {
+                return NotFound(new { message = $"Ontology '{ontologyId}' does not exist" });
+            }
+            try
+            {
+                var result = await _dgraphService.GetAttributeByName(ontologyId, attributeName);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
         }
     }
 }

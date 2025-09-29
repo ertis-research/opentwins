@@ -262,6 +262,35 @@ namespace OpenTwinsV2.Twins.Services
             return thingArray.GetArrayLength() > 0;
         }
 
+        public async Task<bool> ThingBelongsToOntologyAsync(string ontologyId, string thingId)
+        {
+            using var txn = _client.NewTransaction();
+
+            var query = $@"
+            {{
+                ontologies(func: eq(ontologyId, ""{ontologyId}"")) {{
+                    uid
+                    hasThing @filter(eq(thingId, ""{thingId}"")) {{
+                      uid
+                    }}
+                }}
+            }}";
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("ontologies", out JsonElement ontologiesArray))
+                return false;
+
+            if (!ontologiesArray[0].TryGetProperty("hasThing", out JsonElement thingArray))
+                return false;
+
+            return thingArray.GetArrayLength() > 0;
+        }
+
         public async Task<string?> GetUidByThingIdAsync(string thingId)
         {
             var query = $@"
@@ -283,6 +312,28 @@ namespace OpenTwinsV2.Twins.Services
             }
 
             return null;
+        }
+
+        public async Task<bool> ExistsOntologyByIdAsync(string ontologyId)
+        {
+            var query = $@"{{
+                exists(func: eq(ontologyId, ""{ontologyId}"")){{
+                    uid
+                }}
+            }}";
+
+            var response = await _client.NewTransaction().Query(query);
+            var json = response.Json.ToStringUtf8();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("exists", out var existsArray) && existsArray.ValueKind == JsonValueKind.Array)
+            {
+                return existsArray.GetArrayLength() > 0;
+            }
+
+            return false;
         }
 
         public async Task<bool> ExistsThingByIdAsync(string thingId)
@@ -337,6 +388,38 @@ namespace OpenTwinsV2.Twins.Services
             var twins = JsonSerializer.Deserialize<List<JsonElement>>(twinsProp.GetRawText());
 
             return twins ?? [];
+        }
+
+        public async Task<List<JsonElement>> GetThingsInOntologyAsync(string ontologyId)
+        {
+            using var txn = _client.NewTransaction();
+
+            var query = $@"
+            {{
+                ontologies(func: eq(ontologyId, ""{ontologyId}"")) {{
+                    hasThing{{
+                        uid
+                        name
+                    }}
+                }}
+            }}";
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8(); ;
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            // Acceder a things[0]["~twins"]
+            if (!root.TryGetProperty("ontologies", out JsonElement thingsArray) || thingsArray.GetArrayLength() == 0)
+            {
+                return [];
+            }
+                
+
+            var ontologyProp = thingsArray[0].GetProperty("hasThing");
+            var things = JsonSerializer.Deserialize<List<JsonElement>>(ontologyProp.GetRawText());
+            return things ?? [];
         }
 
         // Este metodo y el anterior se repiten, hay que refactorizar!!!!!! que pereza (es que el converter va con este metodo)
@@ -432,6 +515,119 @@ namespace OpenTwinsV2.Twins.Services
                 return null;
 
             return JsonSerializer.Deserialize<JsonElement>(thingArray[0].GetRawText());
+        }
+
+        public async Task<JsonElement?> GetThingInOntologyByIdAsync(string ontologyId, string thingId)
+        {
+            using var txn = _client.NewTransaction();
+
+            var query = $@"
+            {{
+              ontology(func: eq(ontologyId, ""{ontologyId}"")) {{
+                uid
+                hasThing @filter(eq(thingId, ""{thingId}"")) {{
+                  uid
+                  thingId
+                  name
+                  createdAt
+                  hasAttribute {{
+                    Attribute.key
+                    Attribute.value
+                  }}
+                  ~relatedTo {{
+                    Relation.name
+                    uid
+                    relatedTo{{
+                      name
+                        uid
+                    }}
+                  }}
+                }}
+              }}
+            }}";
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("ontology", out JsonElement ontologyArray) || ontologyArray.GetArrayLength() == 0)
+                return null;
+
+            if (!ontologyArray[0].TryGetProperty("hasThing", out JsonElement thingArray) || thingArray.GetArrayLength() == 0)
+                return null;
+            return JsonSerializer.Deserialize<JsonElement>(thingArray[0].GetRawText());
+        }
+
+        public async Task<JsonElement?> GetRelationByName(string ontologyId, string relationName)
+        {
+            var txn = _client.NewTransaction();
+
+            var query = $@"
+            {{
+              relations(func: eq(Relation.name, ""{relationName}"")) {{
+                
+               things: relatedTo @filter(uid_in(~hasThing, uid(ontology))) {{
+                  uid
+                  thingId
+                }}
+            }}
+
+              ontology as var(func: eq(ontologyId, ""{ontologyId}""))
+            }}";
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            Console.WriteLine(json);
+
+            if (!root.TryGetProperty("relations", out JsonElement relationArray) || relationArray.GetArrayLength() == 0)
+                return null;
+
+            return JsonSerializer.Deserialize<JsonElement>(relationArray.GetRawText()); ;
+        }
+
+        
+
+        public async Task<JsonElement?> GetAttributeByName(string ontologyId, string attributeName)
+        {
+            var txn = _client.NewTransaction();
+
+            
+            var query = $@"
+            {{
+                ontology as var(func: eq(ontologyId, ""{ontologyId}""))
+
+                attributes(func: eq(Attribute.key, ""{attributeName}"")) {{
+
+                Attribute.key
+                Attribute.type
+                Attribute.value
+
+                thing: ~hasAttribute @filter(uid_in(~hasThing, uid(ontology))) {{
+                  uid
+                  thingId
+                }}
+            }}
+
+              
+            }}";
+            
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            Console.WriteLine(json);
+
+            if (!root.TryGetProperty("attributes", out JsonElement attributeArray) || attributeArray.GetArrayLength() == 0)
+                return null;
+
+            return JsonSerializer.Deserialize<JsonElement>(attributeArray.GetRawText()); ;
         }
 
         public async Task<Response> AddThingToTwinAsync(string thingId, string twinId)

@@ -262,27 +262,33 @@ namespace OpenTwinsV2.Twins.Services
             return thingArray.GetArrayLength() > 0;
         }
 
-        public async Task<string?> GetUidByThingIdAsync(string thingId)
+        public async Task<Dictionary<string, string>> GetUidsByThingIdsAsync(IEnumerable<string> thingIds)
         {
+            var ids = thingIds?.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList();
+            if (ids == null || ids.Count == 0) return [];
+
+            var joinedIds = string.Join("\", \"", ids);
+
             var query = $@"
             {{
-                node(func: eq(thingId, ""{thingId}"")) {{
+                node(func: eq(thingId, [""{joinedIds}""])) {{
                     uid
+                    thingId
                 }}
             }}";
 
-            var response = await _client.NewTransaction().Query(query);
-            var json = response.Json.ToStringUtf8();
+            using var txn = _client.NewTransaction();
+            var response = await txn.Query(query);
+            using var doc = JsonDocument.Parse(response.Json.ToStringUtf8());
 
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            if (root.TryGetProperty("node", out var nodeArray) && nodeArray.ValueKind == JsonValueKind.Array && nodeArray.GetArrayLength() > 0)
-            {
-                return nodeArray[0].GetProperty("uid").GetString();
-            }
-
-            return null;
+            return doc.RootElement
+                    .GetProperty("node")
+                    .EnumerateArray()
+                    .Where(e => e.TryGetProperty("thingId", out _) && e.TryGetProperty("uid", out _))
+                    .ToDictionary(
+                        e => e.GetProperty("thingId").GetString()!,
+                        e => e.GetProperty("uid").GetString()!
+                    );
         }
 
         public async Task<bool> ExistsThingByIdAsync(string thingId)
@@ -361,9 +367,11 @@ namespace OpenTwinsV2.Twins.Services
                         hasEvent {{ uid expand(_all_) }}
                         domains {{ uid expand(_all_) }}
 
-                        relatedTo {{ uid expand(_all_) }}
-                        hasPart {{ uid expand(_all_) }}
-                        hasChild {{ uid expand(_all_) }}
+                        ~relatedTo {{  
+                            uid dgraph.type Relation.name Relation.attributes
+                            hasChild {{ uid thingId name }}
+                            hasPart {{ uid thingId name }}
+                        }}
                     }}
                 }}
             }}";
@@ -436,8 +444,8 @@ namespace OpenTwinsV2.Twins.Services
 
         public async Task<Response> AddThingToTwinAsync(string thingId, string twinId)
         {
-            var twinUid = await GetUidByThingIdAsync(twinId);
-            var thingUid = await GetUidByThingIdAsync(thingId);
+            var twinUid = await GetUidsByThingIdsAsync([twinId]);
+            var thingUid = await GetUidsByThingIdsAsync([thingId]);
 
             if (twinUid == null || thingUid == null)
                 throw new Exception("Twin or Thing not found");
@@ -465,8 +473,8 @@ namespace OpenTwinsV2.Twins.Services
 
         public async Task<Response> RemoveThingFromTwinAsync(string thingId, string twinId)
         {
-            var twinUid = await GetUidByThingIdAsync(twinId);
-            var thingUid = await GetUidByThingIdAsync(thingId);
+            var twinUid = await GetUidsByThingIdsAsync([twinId]);
+            var thingUid = await GetUidsByThingIdsAsync([thingId]);
 
             if (twinUid == null || thingUid == null)
                 throw new KeyNotFoundException("Twin or Thing not found");
@@ -501,6 +509,29 @@ namespace OpenTwinsV2.Twins.Services
             {
                 await txn.DisposeAsync();
                 throw new Exception("Error removing thing: " + ex.Message);
+            }
+        }
+
+        public async Task<Response> AddEntitiesAsync(JsonArray entities)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var json = JsonSerializer.Serialize(entities);
+                _logger.LogInformation("DGraph mutation JSON: {Json}", json);
+
+                var mutation = new Mutation
+                {
+                    SetJson = ByteString.CopyFromUtf8(json)
+                };
+                var response = await txn.Mutate(mutation);
+                await txn.Commit();
+                return response;
+            }
+            catch
+            {
+                await txn.DisposeAsync();
+                throw;
             }
         }
     }

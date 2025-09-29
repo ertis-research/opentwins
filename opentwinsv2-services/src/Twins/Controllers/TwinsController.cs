@@ -15,12 +15,14 @@ namespace OpenTwinsV2.Twins.Controllers
         private readonly DGraphService _dgraphService;
         private readonly ThingsService _thingsService;
         private readonly IJsonNquadsConverter _converter;
+        private readonly ILogger<TwinsController> _logger;
 
-        public TwinsController(DGraphService dgraphService, ThingsService thingsService, IJsonNquadsConverter converter)
+        public TwinsController(DGraphService dgraphService, ThingsService thingsService, IJsonNquadsConverter converter, ILogger<TwinsController> logger)
         {
             _dgraphService = dgraphService;
             _thingsService = thingsService;
             _converter = converter;
+            _logger = logger;
         }
 
         [HttpPost("{twinId}")]
@@ -145,8 +147,8 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 var thingIdList = thingIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-                var twinUid = await _dgraphService.GetUidByThingIdAsync(twinId);
-                if (twinUid == null) return NotFound("TwinId not found");
+                var twinUid = await _dgraphService.GetUidsByThingIdsAsync([twinId]);
+                if (twinUid == null || twinUid.Count < 1) return NotFound("TwinId not found");
 
                 var responses = new List<object>();
 
@@ -155,14 +157,21 @@ namespace OpenTwinsV2.Twins.Controllers
                     if (!await _dgraphService.ExistsThingByIdAsync(thingId))
                     {
                         ThingDescription td = await _thingsService.GetThingAsync(thingId);
-                        var thing = ThingBuilder.MapToThing(td);
-                        thing = ThingBuilder.AddTwinToThing(thing, twinUid);
+                        //var thing = ThingBuilder.MapToThing(td);
+                        //thing = ThingBuilder.AddTwinToThing(thing, twinUid[twinId]);
 
-                        var response = await _dgraphService.AddThingAsync(thing);
+                        var hrefs = td.Links?.Select(l => l.Href.ToString()).Distinct();
+                        var uidTargets = await _dgraphService.GetUidsByThingIdsAsync(hrefs ?? []);
+
+                        var payload = ThingBuilder.BuildPayloadWithLinks(td, twinUid[twinId], uidTargets);
+                        Console.WriteLine(JsonSerializer.Serialize(payload));
+
+                        var response = await _dgraphService.AddEntitiesAsync(payload);
                         responses.Add(response);
                     }
                     else
                     {
+                        _logger.LogDebug("Thing {ThingId} already exists -> add twin relation only", thingId);
                         var response = await _dgraphService.AddThingToTwinAsync(thingId, twinId);
                         responses.Add(response);
                     }

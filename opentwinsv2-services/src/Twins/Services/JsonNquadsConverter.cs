@@ -85,42 +85,71 @@ namespace OpenTwinsV2.Twins.Services
                 ? $"<{value}>"
                 : $"<{uid}>";
 
-        private static void ProcessProperty(
-            string subj,
-            KeyValuePair<string, JsonNode?> prop,
-            Dictionary<string, string> uidToThingId,
-            List<string> triples,
-            Dictionary<string, (string from, string? to, string? name)> relations)
+        private static void ProcessProperty(string subj, KeyValuePair<string, JsonNode?> prop, Dictionary<string, string> uidToThingId, List<string> triples, Dictionary<string, (string from, string? to, string? name)> relations)
         {
             if (prop.Value is JsonValue literalVal)
             {
+                // Propiedad literal directa
                 triples.Add($"{subj} {Predicate(prop.Key)} \"{literalVal.ToString()}\" .");
             }
             else if (prop.Value is JsonArray arr)
             {
                 foreach (var child in arr)
                 {
-                    var objUid = child?["uid"]?.ToString();
-                    var obj = ResolveId(objUid, uidToThingId);
-
-                    if (objUid is not null)
-                        triples.Add($"{subj} {Predicate(prop.Key)} {obj} .");
-
-                    foreach (var childProp in child!.AsObject())
+                    if (prop.Key == "~relatedTo" && child is JsonObject relNode)
                     {
-                        if (childProp.Key is "uid" or "thingId") continue;
+                        var relUid = relNode?["uid"]?.ToString();
+                        if (string.IsNullOrEmpty(relUid)) continue;
 
-                        if (childProp.Value is JsonValue cv)
+                        var relName = relNode?["Relation.name"]?.ToString();
+
+                        // hasChild
+                        var hasChildArr = relNode?["hasChild"]?.AsArray();
+                        if (hasChildArr is not null)
                         {
-                            triples.Add($"{obj} {Predicate(childProp.Key)} \"{cv.ToString()}\" .");
-
-                            if (childProp.Key == "Relation.name")
+                            foreach (var ch in hasChildArr)
                             {
-                                relations[objUid!] = (
-                                    relations.ContainsKey(objUid!) ? relations[objUid!].from : "",
-                                    relations.ContainsKey(objUid!) ? relations[objUid!].to : null,
-                                    cv.ToString()
-                                );
+                                var toUid = ch?["uid"]?.ToString();
+                                if (string.IsNullOrEmpty(toUid)) continue;
+                                relations[$"{relUid!}-{toUid}"] = (subj, toUid, relName);
+                            }
+                        }
+
+                        // hasPart
+                        var hasPartArr = relNode?["hasPart"]?.AsArray();
+                        if (hasPartArr is not null)
+                        {
+                            foreach (var ch in hasPartArr)
+                            {
+                                var toUid = ch?["uid"]?.ToString();
+                                if (string.IsNullOrEmpty(toUid)) continue;
+                                relations[$"{relUid!}-{toUid}"] = (subj, toUid, relName);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // 🔹 Propiedades normales dentro de array
+                        var objUid = child?["uid"]?.ToString();
+                        var obj = ResolveId(objUid, uidToThingId);
+
+                        if (!string.IsNullOrEmpty(objUid))
+                            triples.Add($"{subj} {Predicate(prop.Key)} {obj} .");
+
+                        if (child is JsonObject childObj)
+                        {
+                            foreach (var childProp in childObj)
+                            {
+                                if (childProp.Key is "uid" or "thingId") continue;
+
+                                if (childProp.Value is JsonValue cv)
+                                {
+                                    triples.Add($"{obj} {Predicate(childProp.Key)} \"{cv.ToString()}\" .");
+
+                                    // Guardar relación temporal si aparece Relation.name
+                                    if (childProp.Key == "Relation.name")
+                                        relations[objUid!] = (subj, null, cv.ToString());
+                                }
                             }
                         }
                     }
@@ -189,7 +218,7 @@ namespace OpenTwinsV2.Twins.Services
                 var uid = kv.Key;
                 var (from, to, name) = kv.Value;
 
-                var fromId = ResolveId(from, uidToThingId);
+                var fromId = from;
                 var toId = ResolveId(to, uidToThingId);
 
                 if (!string.IsNullOrEmpty(from) && !string.IsNullOrEmpty(to) && !string.IsNullOrEmpty(name))

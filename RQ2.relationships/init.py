@@ -56,13 +56,13 @@ def prepare_base():
     
     listId = []
     # Web of things
-    listId.append(post_thing("thingDescriptions/airport.json"))
-    listId.append(post_thing("thingDescriptions/terminalA.json"))
-    listId.append(post_thing("thingDescriptions/terminalB.json"))
     listId.append(post_thing("thingDescriptions/gate.json", "A1"))
     listId.append(post_thing("thingDescriptions/gate.json", "A2"))
     listId.append(post_thing("thingDescriptions/gate.json", "B1"))
     listId.append(post_thing("thingDescriptions/gate.json", "B2"))
+    listId.append(post_thing("thingDescriptions/terminalA.json"))
+    listId.append(post_thing("thingDescriptions/terminalB.json"))
+    listId.append(post_thing("thingDescriptions/airport.json"))
     for i in range(1, 6):
         listId.append(post_thing("thingDescriptions/plane.json", str(i)))
         

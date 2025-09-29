@@ -1,41 +1,48 @@
 @prefix ns1: <http://example.org/> .
+@prefix ns2: <http://example.org/otv2:> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-<urn:test:rq2:Airport1> ns1:createdAt "2025-09-25T11:46:34.3231052Z" ;
-    ns1:name "Airport" .
+<urn:test:rq2:Airport1> ns1:createdAt "2025-09-29T12:09:48.2788462Z" ;
+    ns1:name "Airport" ;
+    ns2:hasChild <urn:test:rq2:TerminalA>,
+        <urn:test:rq2:TerminalB> .
 
-<urn:test:rq2:GateA1> ns1:createdAt "2025-09-25T11:46:34.6449009Z" ;
-    ns1:name "GateA1" .
-
-<urn:test:rq2:GateA2> ns1:createdAt "2025-09-25T11:46:34.6805096Z" ;
-    ns1:name "GateA2" .
-
-<urn:test:rq2:GateB1> ns1:createdAt "2025-09-25T11:46:34.7167972Z" ;
-    ns1:name "GateB1" .
-
-<urn:test:rq2:GateB2> ns1:createdAt "2025-09-25T11:46:34.7498642Z" ;
-    ns1:name "GateB2" .
-
-<urn:test:rq2:Plane1> ns1:createdAt "2025-09-25T11:46:34.8067361Z" ;
+<urn:test:rq2:Plane1> ns1:createdAt "2025-09-29T12:09:48.3127711Z" ;
     ns1:name "Plane1" .
 
-<urn:test:rq2:Plane2> ns1:createdAt "2025-09-25T11:46:34.8832388Z" ;
+<urn:test:rq2:Plane2> ns1:createdAt "2025-09-29T12:09:48.3373901Z" ;
     ns1:name "Plane2" .
 
-<urn:test:rq2:Plane3> ns1:createdAt "2025-09-25T11:46:34.9478883Z" ;
+<urn:test:rq2:Plane3> ns1:createdAt "2025-09-29T12:09:48.3610684Z" ;
     ns1:name "Plane3" .
 
-<urn:test:rq2:Plane4> ns1:createdAt "2025-09-25T11:46:34.9761733Z" ;
+<urn:test:rq2:Plane4> ns1:createdAt "2025-09-29T12:09:48.3843782Z" ;
     ns1:name "Plane4" .
 
-<urn:test:rq2:Plane5> ns1:createdAt "2025-09-25T11:46:35.0085027Z" ;
+<urn:test:rq2:Plane5> ns1:createdAt "2025-09-29T12:09:48.4073345Z" ;
     ns1:flying.lastUpdate "2025-09-26T12:11:22.9691764Z" ;
     ns1:flying.value true ;
     ns1:name "Plane5" .
 
-<urn:test:rq2:TerminalA> ns1:createdAt "2025-09-25T11:46:34.3772642Z" ;
-    ns1:name "Terminal A" .
+<urn:test:rq2:GateA1> ns1:createdAt "2025-09-29T12:09:48.0864864Z" ;
+    ns1:name "GateA1" .
 
-<urn:test:rq2:TerminalB> ns1:createdAt "2025-09-25T11:46:34.5962063Z" ;
-    ns1:name "Terminal B" .
+<urn:test:rq2:GateA2> ns1:createdAt "2025-09-29T12:09:48.1208983Z" ;
+    ns1:name "GateA2" .
+
+<urn:test:rq2:GateB1> ns1:createdAt "2025-09-29T12:09:48.1506261Z" ;
+    ns1:name "GateB1" .
+
+<urn:test:rq2:GateB2> ns1:createdAt "2025-09-29T12:09:48.1775121Z" ;
+    ns1:name "GateB2" .
+
+<urn:test:rq2:TerminalA> ns1:createdAt "2025-09-29T12:09:48.2138046Z" ;
+    ns1:name "Terminal A" ;
+    ns2:hasChild <urn:test:rq2:GateA1>,
+        <urn:test:rq2:GateA2> .
+
+<urn:test:rq2:TerminalB> ns1:createdAt "2025-09-29T12:09:48.2468302Z" ;
+    ns1:name "Terminal B" ;
+    ns2:hasChild <urn:test:rq2:GateB1>,
+        <urn:test:rq2:GateB2> .
 

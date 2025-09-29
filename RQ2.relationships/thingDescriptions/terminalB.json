@@ -11,12 +11,12 @@
     "links": [
         {
             "href": "urn:test:rq2:GateB1",
-            "rel": "hasChild",
+            "rel": "otv2:hasChild",
             "type": "application/td+json"
         },
         {
             "href": "urn:test:rq2:GateB2",
-            "rel": "hasChild",
+            "rel": "otv2:hasChild",
             "type": "application/td+json"
         }
     ]

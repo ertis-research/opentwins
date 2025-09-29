@@ -48,13 +48,20 @@ namespace OpenTwinsV2.Twins.Controllers
                     //Get the last part of the URI
                     var uri = uriNode.Uri.ToString();
 
-                    //Check which character is last: # or /
-                    var indx1 = uri.LastIndexOf('#');
-                    var indx2 = uri.LastIndexOf('/');
-                    var indx = Math.Max(indx1, indx2);
+                    //Check which character is last
+                    char[] separators = { '#', '/', '&' };
+
+                    // Remove trailing separator if present at the end
+                    if (separators.Contains(uri.Last()))
+                    {
+                        uri = uri.Substring(0, uri.Length - 1);
+                    }
+
+                    // Find last separator after removing trailing char
+                    int indx = uri.LastIndexOfAny(separators);
 
                     //return the substring or the whole uri in case none of the characters are present
-                    return indx >= 0 ? uri.Substring(indx + 1) : uri;
+                    return (indx >= 0 && indx < uri.Length - 1) ? uri.Substring(indx + 1) : uri;
                 }
             }
             return node.ToString();
@@ -209,7 +216,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
                 //Parse to JSON
                 //The parsed node will be stored in a list of dictionaries
-
+                
                 var res = new List<Dictionary<string, object>>();
 
                 //Iterate over each Subject

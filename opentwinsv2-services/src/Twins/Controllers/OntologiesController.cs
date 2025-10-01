@@ -17,6 +17,14 @@ using VDS.RDF.Query.Algebra;
 using Microsoft.AspNetCore.Http.HttpResults;
 using System.Security.Cryptography;
 using VDS.RDF.Ontology;
+using OpenTwinsV2.Twins.Builders;
+using System.Text.Json.Nodes;
+using AngleSharp.Dom;
+using System.Text.Json;
+using static Lucene.Net.Queries.Function.ValueSources.MultiFunction;
+using System.Globalization;
+using VDS.RDF.Query.Expressions.Functions.XPath.Cast;
+using System.Reflection.Metadata;
 
 
 namespace OpenTwinsV2.Twins.Controllers
@@ -26,14 +34,41 @@ namespace OpenTwinsV2.Twins.Controllers
     public class OntologiesController : ControllerBase
     {
         private readonly DGraphService _dgraphService;
+        private readonly ThingsService _thingsService;
         private const string ActorType = Actors.ThingActor;
 
-        public OntologiesController(DGraphService dgraphService)
+        public OntologiesController(DGraphService dgraphService, ThingsService thingsService)
         {
             _dgraphService = dgraphService;
+            _thingsService = thingsService;
         }
 
-        private string GetLocalName(INode node, IGraph graph)
+        private string SanitizeTypeAndUIDValues(string uri)
+        {
+            //Check which character is last
+            char[] separators = { '#', '/', '&' };
+
+            // Remove trailing separator if present at the end
+            while (uri.Length > 0 && separators.Contains(uri.Last()))
+            {
+                //Delete illegal characters at the end
+                uri = uri.Substring(0, uri.Length - 1);
+            }
+
+            //in case the whole uri were illegal characters (unlikely but possible)
+            if (uri.Length == 0)
+            {
+                return null;
+            }
+
+            // Find last separator after removing trailing char
+            int indx = uri.LastIndexOfAny(separators);
+
+            //return the substring or the whole uri in case none of the characters are present
+            return (indx >= 0 && indx < uri.Length - 1) ? uri.Substring(indx + 1) : uri;
+        }
+
+        private string GetLocalName(VDS.RDF.INode node, IGraph graph)
         {
             if(node is UriNode uriNode)
             {
@@ -48,29 +83,16 @@ namespace OpenTwinsV2.Twins.Controllers
                     //Get the last part of the URI
                     var uri = uriNode.Uri.ToString();
 
-                    //Check which character is last
-                    char[] separators = { '#', '/', '&' };
-
-                    // Remove trailing separator if present at the end
-                    if (separators.Contains(uri.Last()))
-                    {
-                        uri = uri.Substring(0, uri.Length - 1);
-                    }
-
-                    // Find last separator after removing trailing char
-                    int indx = uri.LastIndexOfAny(separators);
-
-                    //return the substring or the whole uri in case none of the characters are present
-                    return (indx >= 0 && indx < uri.Length - 1) ? uri.Substring(indx + 1) : uri;
+                    return SanitizeTypeAndUIDValues(uri);
                 }
             }
             return node.ToString();
         }
 
-        private string GetUid(INode node, IGraph graph)
+        private string GetUid(VDS.RDF.INode node, IGraph graph)
         {
             //get the uid omiting all prefixes
-            string local = GetLocalName(node, graph);
+            string local = GetLocalName(node, graph) ?? "nameless"+Guid.NewGuid();
             return $"_:{local}";
         }
 
@@ -86,6 +108,8 @@ namespace OpenTwinsV2.Twins.Controllers
                 .Replace("\r", "\\r")    // omit \r
                 .Replace("\t", "\\t");   // omit \t
         }
+
+        
 
         private List<string> GetNQuadAttributeTriples(string subject, string predicate, ILiteralNode literal)
         {
@@ -104,12 +128,13 @@ namespace OpenTwinsV2.Twins.Controllers
             //There's the possibility of the value containing " characters
 
             //string type by default
-            string dataType = literal.DataType?.ToString() ?? "xsd:string";
+            string dataType = literal.DataType?.ToString() ?? "string";
+            var type = SanitizeTypeAndUIDValues(dataType) ?? "string";
 
             string attribute_uid = $"_:att_{predicate}_{Guid.NewGuid()}";
             nquads.Add($"{attribute_uid} <dgraph.type> \"Attribute\" .");
             nquads.Add($"{attribute_uid} <Attribute.key> \"{predicate}\" .");
-            nquads.Add($"{attribute_uid} <Attribute.type> \"{dataType}\" .");
+            nquads.Add($"{attribute_uid} <Attribute.type> \"{type}\" .");
             nquads.Add($"{attribute_uid} <Attribute.value> \"{value}\" .");
 
             //Link the node to the attribute
@@ -152,7 +177,7 @@ namespace OpenTwinsV2.Twins.Controllers
             var ontology_uid = $"_:{ontology}";
 
             nquads.Add($"{uid} <dgraph.type> \"Thing\" .");
-            nquads.Add($"{uid} <thingId> \"{thingId}\" .");
+            nquads.Add($"{uid} <thingId> \"{ontology}:{thingId}\" .");
             nquads.Add($"{uid} <name> \"{thingId}\" .");
             nquads.Add($"{uid} <createdAt> \"{createdAt}\" .");
 
@@ -179,7 +204,7 @@ namespace OpenTwinsV2.Twins.Controllers
         {
             //DEBUGGING
             System.IO.File.WriteAllText("nquads.txt", "");
-            foreach (String str in nquads)
+            foreach (string str in nquads)
             {
                 System.IO.File.AppendAllText("nquads.txt", str + "\n");
             }
@@ -239,7 +264,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
                     var allNodes = graph.Triples
                     .Select(t => t.Subject)
-                    .Where(s => s.NodeType == NodeType.Uri)
+                    .Where(s => s.NodeType == VDS.RDF.NodeType.Uri)
                     /*.Where(s =>
                     {
                         // Obtain the node type
@@ -263,7 +288,7 @@ namespace OpenTwinsV2.Twins.Controllers
                         }
 
                         string uid = GetUid(node, graph);
-                        string thingId = GetLocalName(node, graph);
+                        string thingId = GetLocalName(node, graph) ?? "thing"+Guid.NewGuid();
     
                         nquads.AddRange(GetNQuadNodeTriples(uid, thingId, createdAt, ontologyId));
                         
@@ -275,13 +300,13 @@ namespace OpenTwinsV2.Twins.Controllers
                     {
                         //Get the subject, predicate and object of the triple
                         string subject = GetUid(triple.Subject, graph); //_:uid
-                        string predicate = GetLocalName(triple.Predicate, graph); //uri
+                        string predicate = GetLocalName(triple.Predicate, graph) ?? "predicate"+Guid.NewGuid(); //uri
 
                         //as this includes the original type and uid of the ontology, we exclude them so as not to duplicate the existing ones
                         if (!ignoredPredicates.Contains(predicate))
                         {
                             //Check if the object is a literal (Attribute) or the uid to another node (Relation)
-                            if (triple.Object.NodeType == NodeType.Literal)
+                            if (triple.Object.NodeType == VDS.RDF.NodeType.Literal)
                             {
                                 //Attribute of a node
                                 var literal = (ILiteralNode)triple.Object;
@@ -377,6 +402,106 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 return NotFound(new { message = ex.Message });
             }
+        }
+
+        
+
+        private async Task<JsonObject?> GetWOTThingProperties(string ontologyId, string thingId)
+        {
+            var json = await _dgraphService.GetThingAttributesByIdAsync(ontologyId, thingId);
+            var res = new JsonObject();
+            if(json != null && json.Value.ValueKind.Equals(JsonValueKind.Array))
+            {
+                foreach(var att in json.Value.EnumerateArray().ToArray())
+                {
+                    var key = att.GetProperty("Attribute.key").ToString()!;
+                    var type = att.GetProperty("Attribute.type").ToString()!;
+                    //var value = att.GetProperty("Attribute.value").ValueKind == JsonValueKind.Number ? att.GetProperty("Attribute.value") : att.GetProperty("Attribute.value").ToString();
+                    
+                    var valueElement = att.GetProperty("Attribute.value").ToString();
+                    object? value;
+
+                    switch (type.ToLower())
+                    {
+                        case "int":
+                        case "integer":
+                            value= int.TryParse(valueElement, NumberStyles.Integer, CultureInfo.InvariantCulture, out _) ? int.Parse(valueElement) : valueElement;
+                            break;
+                        case "float":
+                        case "double":
+                            value = double.TryParse(valueElement, NumberStyles.Float, CultureInfo.InvariantCulture, out _) ? float.Parse(valueElement) : valueElement;
+                            break;
+                        case "bool":
+                            value = bool.TryParse(valueElement, out _) ? bool.Parse(valueElement) : valueElement;
+                            break;
+                        default:
+                            value = valueElement;
+                            break;
+                    }
+
+                    var obj = new JsonObject
+                    {
+                        ["type"] = type
+                    };
+
+                    if(value is not null)
+                    {
+                        obj["default"] = JsonValue.Create(value);
+                    }                   
+
+                    res.Add($"{key}", obj);
+                }
+            }
+            return res.Count>0 ? res : null;
+        }
+
+        [HttpPost("{ontologyId}/things/{thingId}/instanciate/{id}")]
+        public async Task<IActionResult> InstanciateThingOfAntology(string ontologyId, string thingId, string id) {
+            //Instance of a Thing which is part of an ontology
+            if(!await _dgraphService.ExistsOntologyByIdAsync(ontologyId))
+                return StatusCode(500, $"The {ontologyId} ontology does not exist int DGraph");
+
+            if(!!await _dgraphService.ExistsThingInOntologyByIdAsync(ontologyId, thingId))
+                return StatusCode(500, $"There is no {thingId} thing associated to the {ontologyId} ontology in DGraph, it cannot be instanciated");
+
+            bool conflict = true;
+            try
+            {
+                //Provisional: If it throws an exception, then the id is unused
+                await _thingsService.GetThingAsync(id);
+            }
+            catch(KeyNotFoundException e)
+            {
+                conflict = false;
+            }
+
+            if (!conflict) // Check if the id is already on use in thingsService 
+            {
+                //Get and format the thing's attributes to WOT
+                var props = await GetWOTThingProperties(ontologyId, thingId);
+                
+                var payload = new JsonObject
+                {
+                    ["@context"] = new JsonArray("https://www.w3.org/2019/wot/td/v1"),
+                    ["id"] = id,
+                    ["title"] = "",
+                    ["hasType"] = thingId,
+                    ["properties"] = props,
+                    ["actions"] = new JsonObject { },
+                    ["events"] = new JsonObject { }
+                };
+
+               
+                var thingsResponse = await _thingsService.CreateThingAsync(payload);
+                if (!thingsResponse) return StatusCode(500, "Failed to create Thing in things service");
+
+                var dgraphResponse = await _dgraphService.AddThingAsync(ThingBuilder.BuildThing(thingId, id));
+                bool dgraphOk = dgraphResponse != null && dgraphResponse.Uids != null && dgraphResponse.Uids.Count > 0;
+                if (!dgraphOk) return StatusCode(500, "Failed to create thing in DGraph: " + dgraphResponse?.ToString());
+
+                return Ok(new { message = "Thing created successfully" });
+            }
+            return Conflict($"There is already an instanced thing with the id {id}");        
         }
     }
 }

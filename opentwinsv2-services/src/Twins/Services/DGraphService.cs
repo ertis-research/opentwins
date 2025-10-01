@@ -365,6 +365,33 @@ namespace OpenTwinsV2.Twins.Services
             return false;
         }
 
+        public async Task<bool> ExistsThingInOntologyByIdAsync(string ontologyId, string thingId)
+        {
+            var query = $@"
+            {{
+                ontology as var(func: eq(ontologyId, ""{ontologyId}""))
+
+                exists(func: eq(thingId, "" {thingId} "")) @cascade{{
+                     uid
+    		         thingId
+    		        ~hasThing @filter(uid(ontology))
+                }}
+            }}";
+
+            var response = await _client.NewTransaction().Query(query);
+            var json = response.Json.ToStringUtf8();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("exists", out var existsArray) && existsArray.ValueKind == JsonValueKind.Array)
+            {
+                return existsArray.GetArrayLength() > 0;
+            }
+
+            return false;
+        }
+
         public async Task<List<JsonElement>> GetThingsInTwinAsync(string twinId)
         {
             using var txn = _client.NewTransaction();
@@ -630,12 +657,45 @@ namespace OpenTwinsV2.Twins.Services
 
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            Console.WriteLine(json);
 
             if (!root.TryGetProperty("attributes", out JsonElement attributeArray) || attributeArray.GetArrayLength() == 0)
                 return null;
 
             return JsonSerializer.Deserialize<JsonElement>(attributeArray.GetRawText()); ;
+        }
+
+        public async Task<JsonElement?> GetThingAttributesByIdAsync(string ontologyId, string thingId)
+        {
+            var txn = _client.NewTransaction();
+
+            var query = $@"
+            {{
+                ontology as var(func: eq(ontologyId, ""{ontologyId}""))
+
+                thing(func: eq(thingId, ""{thingId}""))
+                @filter(uid_in(~hasThing, uid(ontology))) 
+                {{
+                    hasAttribute{{
+                        Attribute.key
+                        Attribute.type
+                        Attribute.value
+                    }}
+                }}
+            }}";
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("thing", out JsonElement thingArray) || thingArray.GetArrayLength() == 0)
+                return null;
+
+            if (!thingArray[0].TryGetProperty("hasAttribute", out JsonElement attributeArray) || attributeArray.GetArrayLength() == 0)
+                return null;
+
+            return JsonSerializer.Deserialize<JsonElement>(attributeArray.GetRawText()); 
         }
 
         public async Task<Response> AddThingToTwinAsync(string thingId, string twinId)

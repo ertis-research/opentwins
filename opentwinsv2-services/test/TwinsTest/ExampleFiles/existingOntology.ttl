@@ -1,0 +1,33 @@
+@prefix ex: <http://example.org/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix schema: <http://schema.org/> .
+
+ex:alice a foaf:Person ;
+    foaf:name "Alice" ;
+    foaf:age 30 ;
+    foaf:knows ex:bob, ex:carol ;
+    schema:memberOf ex:bookClub .
+
+ex:bob a foaf:Person ;
+    foaf:name "Bob" ;
+    foaf:age 25 ;
+    foaf:knows ex:alice, ex:dave ;
+    schema:memberOf ex:chessClub .
+
+ex:carol a foaf:Person ;
+    foaf:name "Carol" ;
+    foaf:age 28 ;
+    foaf:knows ex:alice ;
+    schema:memberOf ex:bookClub .
+
+ex:dave a foaf:Person ;
+    foaf:name "Dave" ;
+    foaf:age 35 ;
+    foaf:knows ex:bob ;
+    schema:memberOf ex:chessClub .
+
+ex:bookClub a schema:Organization ;
+    schema:name "Local Book Club" .
+
+ex:chessClub a schema:Organization ;
+    schema:name "City Chess Club" .

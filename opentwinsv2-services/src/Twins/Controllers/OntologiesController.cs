@@ -455,6 +455,26 @@ namespace OpenTwinsV2.Twins.Controllers
             return res.Count>0 ? res : null;
         }
 
+        [HttpDelete("{ontologyId}")]
+        public async Task<IActionResult> DeleteOntology(string ontologyId)
+        {
+            var check = await _dgraphService.ExistsOntologyByIdAsync(ontologyId);
+            if (!check)
+            {
+                return NotFound(new { message = $"Ontology '{ontologyId}' does not exist" });
+            }
+            try
+            {
+                var result = await _dgraphService.DeleteByOntologyId(ontologyId);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while deleting the {ontologyId} ontology from DGraph");
+            }
+
+        }
+
         [HttpPost("{ontologyId}/things/{thingId}/instanciate/{id}")]
         public async Task<IActionResult> InstanciateThingOfAntology(string ontologyId, string thingId, string id) {
             //Instance of a Thing which is part of an ontology

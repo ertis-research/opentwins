@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -236,6 +237,139 @@ namespace OpenTwinsV2.Twins.Services
                 throw;
             }
         }
+        
+        public async Task<List<string>> GetAllOntologyRelatedNodesUidAsync(string ontologyId)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var query = $@"
+                {{
+                    ontology as var (func: eq(ontologyId, ""{ontologyId}""))
+
+                    ontologies(func: uid(ontology)){{
+                        uid
+                        hasThing{{
+                            uid
+                            hasAttribute{{
+                                uid
+                            }}
+                            ~relatedTo{{
+                                uid
+                            }}
+                            ~hasType{{
+                                uid
+                            }}
+                        }}
+                    }}
+                }}     
+                ";
+                var res = await txn.Query(query);
+                var json = res.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                var uids = new List<string>();
+
+                if (doc.RootElement.TryGetProperty("ontologies", out JsonElement ontologies)){
+                    foreach(var ontology in ontologies.EnumerateArray())
+                    {
+                        //collect all uids and add it to the list
+                        if(ontology.TryGetProperty("uid", out var ontUid))
+                            uids.Add(ontUid.ToString());
+
+                        if(ontology.TryGetProperty("hasThing", out var things))
+                        {
+                            //iterate through all posible relations of things
+                            foreach(var thing in things.EnumerateArray())
+                            {
+                                if (thing.TryGetProperty("uid", out var thingUid))
+                                    uids.Add(thingUid.ToString());
+                                if(thing.TryGetProperty("~relatedTo", out var rels))
+                                {
+                                    foreach(var rel in rels.EnumerateArray())
+                                    {
+                                        if(rel.TryGetProperty("uid", out var relUid))
+                                            uids.Add(relUid.ToString());
+                                    }
+                                }
+                                if(thing.TryGetProperty("hasAttribute", out var attributes))
+                                {
+                                    foreach(var attr in attributes.EnumerateArray())
+                                    {
+                                        if(attr.TryGetProperty("uid", out var attrUid))
+                                            uids.Add(attrUid.ToString());
+                                    }
+                                }
+                                if(thing.TryGetProperty("~hasType", out var types))
+                                {
+                                    foreach(var type in types.EnumerateArray())
+                                    {
+                                        if(type.TryGetProperty("uid",out var typeUid))
+                                            uids.Add(typeUid.ToString());
+                                    }
+                                }
+                            }
+                        }
+                        
+                    }
+                }
+
+                return uids;
+
+            }
+            catch
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
+        
+        public async Task<Response> DeleteByOntologyId(string ontologyId)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var uids = GetAllOntologyRelatedNodesUidAsync(ontologyId).Result;
+                Console.WriteLine(uids.Count);
+
+                var deleteObjects = new List<Dictionary<string, string>>();
+
+                foreach (var uid in uids)
+                {
+                    // Each object = one node to delete
+                    deleteObjects.Add(new Dictionary<string, string> { { "uid", uid } });
+                }
+
+                // Serialize to JSON
+                var deleteJson = JsonSerializer.Serialize(deleteObjects);
+                var mutation = new Mutation
+                {
+                    DeleteJson = ByteString.CopyFromUtf8(deleteJson)
+                };
+
+                try
+                {
+                    var response = await txn.Mutate(mutation);
+                    await txn.Commit();
+                    return response;
+                }
+                catch (Exception ex)
+                {
+                    await txn.DisposeAsync();
+                    throw new Exception("Error removing ontology: " + ex.Message);
+                }
+
+            }
+            catch
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+        
 
         public async Task<bool> ThingBelongsToTwinAsync(string twinId, string thingId)
         {

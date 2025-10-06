@@ -1,5 +1,5 @@
 using Dapr.Actors.Runtime;
-using Dapr.Client;  
+using Dapr.Client;
 using OpenTwinsV2.Shared.Models;
 using OpenTwinsV2.Things.Infrastructure.Database;
 using OpenTwinsV2.Things.Logging;
@@ -54,6 +54,16 @@ namespace OpenTwinsV2.Things.Actors
         public Task<string?> GetThingDescriptionAsync()
         {
             return _logic.GetThingDescriptionAsync();
+        }
+
+        public Task<string> AddLinkAsync(string v)
+        {
+            return _descriptionManager.AddLinkAsync(v);
+        }
+
+        public Task RemoveLinkAsync(string href)
+        {
+            return _descriptionManager.RemoveLinkAsync(href);
         }
 
         public Task<string> GetCurrentStateAsync()
@@ -124,5 +134,6 @@ namespace OpenTwinsV2.Things.Actors
             Console.WriteLine("OnTimerCallBack is called!");
             return Task.CompletedTask;
         }
+
     }
 }

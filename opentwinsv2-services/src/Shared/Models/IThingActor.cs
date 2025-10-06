@@ -24,7 +24,8 @@ namespace OpenTwinsV2.Shared.Models
         Task<IActorReminder> GetReminder();
         Task RegisterTimer();
         Task UnregisterTimer();
-
+        Task<string> AddLinkAsync(string v);
+        Task RemoveLinkAsync(string href);
     }
 
 }

@@ -102,7 +102,6 @@ namespace OpenTwinsV2.Twins.Services
                         if (string.IsNullOrEmpty(relUid)) continue;
 
                         var relName = relNode?["Relation.name"]?.ToString();
-
                         // hasChild
                         var hasChildArr = relNode?["hasChild"]?.AsArray();
                         if (hasChildArr is not null)
@@ -111,7 +110,7 @@ namespace OpenTwinsV2.Twins.Services
                             {
                                 var toUid = ch?["uid"]?.ToString();
                                 if (string.IsNullOrEmpty(toUid)) continue;
-                                relations[$"{relUid!}-{toUid}"] = (subj, toUid, relName);
+                                relations[relUid!] = (subj, toUid, relName);
                             }
                         }
 
@@ -123,13 +122,28 @@ namespace OpenTwinsV2.Twins.Services
                             {
                                 var toUid = ch?["uid"]?.ToString();
                                 if (string.IsNullOrEmpty(toUid)) continue;
-                                relations[$"{relUid!}-{toUid}"] = (subj, toUid, relName);
+                                relations[relUid!] = (subj, toUid, relName);
+                            }
+                        }
+
+                        if (relNode?["hasPart"] is null && relNode?["hasChild"] is null)
+                        {
+                            var relatedToArr = relNode?["relatedTo"]?.AsArray();
+                            if (relatedToArr is not null)
+                            {
+                                foreach (var ch in relatedToArr)
+                                {
+                                    var toUid = ch?["uid"]?.ToString();
+                                    var toThingId = ch?["thingId"]?.ToString();
+                                    if (string.IsNullOrEmpty(toUid) || string.IsNullOrEmpty(toThingId) || ("<" + toThingId + ">").Equals(subj)) continue; //perdon por esto, es provisional
+                                    relations[relUid! + toUid] = (subj, toUid, relName);
+                                }
                             }
                         }
                     }
                     else
                     {
-                        // 🔹 Propiedades normales dentro de array
+                        // Propiedades normales dentro de array
                         var objUid = child?["uid"]?.ToString();
                         var obj = ResolveId(objUid, uidToThingId);
 

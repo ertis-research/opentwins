@@ -15,5 +15,26 @@
         "planeDeparted": {
             "description": "Triggered when a plane leaves the gate"
         }
+    },
+    "otv2:rules": {
+        "update": {
+            "otv2:if": {
+                "==": [
+                    {
+                        "var": "eventName"
+                    },
+                    "api:update"
+                ]
+            },
+            "otv2:then": {
+                "otv2:updateState": {
+                    "occupied": {
+                        "value": {
+                            "var": "payload.occupied"
+                        }
+                    }
+                }
+            }
+        }
     }
 }

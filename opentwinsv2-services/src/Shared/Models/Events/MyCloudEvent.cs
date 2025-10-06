@@ -1,34 +1,51 @@
 using System;
 using System.Runtime.Serialization;
+using System.Text.Json.Serialization;
 
 namespace OpenTwinsV2.Shared.Models
 {
-    [DataContract]
     public class MyCloudEvent<T>
     {
-        [DataMember(Order = 1)]
-        public string Id { get; set; }
+        [JsonPropertyName("id")]
+        public string? Id { get; set; }
 
-        [DataMember(Order = 2)]
-        public string Source { get; set; }
+        [JsonPropertyName("source")]
+        public string? Source { get; set; }
 
-        [DataMember(Order = 3)]
-        public string Type { get; set; }
+        [JsonPropertyName("type")]
+        public string? Type { get; set; }
 
-        [DataMember(Order = 4)]
-        public string SpecVersion { get; set; }
+        [JsonPropertyName("specversion")]
+        public string? SpecVersion { get; set; }
 
-        [DataMember(Order = 5)]
+        [JsonPropertyName("subject")]
         public string? Subject { get; set; }
 
-        [DataMember(Order = 6)]
+        [JsonPropertyName("time")]
         public DateTime? Time { get; set; }
 
-        [DataMember(Order = 7)]
+        [JsonPropertyName("datacontenttype")]
         public string? DataContentType { get; set; }
 
-        [DataMember(Order = 8, EmitDefaultValue = false)]
+        [JsonPropertyName("data")]
         public T? Data { get; set; }
+
+        [JsonPropertyName("topic")]
+        public string? Topic { get; set; }
+
+        [JsonPropertyName("traceid")]
+        public string? TraceId { get; set; }
+
+        [JsonPropertyName("pubsubname")]
+        public string? PubSubName { get; set; }
+
+        [JsonPropertyName("traceparent")]
+        public string? TraceParent { get; set; }
+
+        [JsonPropertyName("tracestate")]
+        public string? TraceState { get; set; }
+
+        public MyCloudEvent() { }
 
         public MyCloudEvent(
             string id,

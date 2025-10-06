@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Api;
+using Dapr;
 using Dgraph4Net;
 using Google.Protobuf;
 using Grpc.Core;
@@ -421,7 +422,7 @@ namespace OpenTwinsV2.Twins.Services
             {
                 return [];
             }
-                
+
 
             var ontologyProp = thingsArray[0].GetProperty("hasThing");
             var things = JsonSerializer.Deserialize<List<JsonElement>>(ontologyProp.GetRawText());
@@ -431,8 +432,6 @@ namespace OpenTwinsV2.Twins.Services
         // Este metodo y el anterior se repiten, hay que refactorizar!!!!!! que pereza (es que el converter va con este metodo)
         public async Task<string?> GetThingsInTwinNQUADSAsync(string twinId)
         {
-            _logger.LogInformation("Starting GetThingsInTwinNQUADSAsync for twinId={TwinId}", twinId);
-
             string query = $@"
             {{
                 twin as var(func: eq(thingId, ""{twinId}""))
@@ -451,7 +450,11 @@ namespace OpenTwinsV2.Twins.Services
                         domains {{ uid expand(_all_) }}
 
                         ~relatedTo {{  
-                            uid dgraph.type Relation.name Relation.attributes
+                            uid 
+                            dgraph.type 
+                            Relation.name 
+                            Relation.attributes
+                            relatedTo {{ uid thingId name }}
                             hasChild {{ uid thingId name }}
                             hasPart {{ uid thingId name }}
                         }}
@@ -598,13 +601,13 @@ namespace OpenTwinsV2.Twins.Services
             return JsonSerializer.Deserialize<JsonElement>(relationArray.GetRawText()); ;
         }
 
-        
+
 
         public async Task<JsonElement?> GetAttributeByName(string ontologyId, string attributeName)
         {
             var txn = _client.NewTransaction();
 
-            
+
             var query = $@"
             {{
                 ontology as var(func: eq(ontologyId, ""{ontologyId}""))
@@ -616,14 +619,12 @@ namespace OpenTwinsV2.Twins.Services
                 Attribute.value
 
                 thing: ~hasAttribute @filter(uid_in(~hasThing, uid(ontology))) {{
-                  uid
-                  thingId
+                    uid
+                    thingId
                 }}
             }}
-
-              
             }}";
-            
+
 
             var res = await txn.Query(query);
             var json = res.Json.ToStringUtf8();
@@ -714,7 +715,7 @@ namespace OpenTwinsV2.Twins.Services
             try
             {
                 var json = JsonSerializer.Serialize(entities);
-                _logger.LogInformation("DGraph mutation JSON: {Json}", json);
+                _logger.LogDebug("DGraph mutation JSON: {Json}", json);
 
                 var mutation = new Mutation
                 {
@@ -730,6 +731,67 @@ namespace OpenTwinsV2.Twins.Services
                 throw;
             }
         }
+
+        public async Task<Response> DeleteEntitiesAsync(JsonArray entities)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var json = JsonSerializer.Serialize(entities);
+                _logger.LogInformation("DGraph delete JSON: {Json}", json);
+
+                var mutation = new Mutation
+                {
+                    DeleteJson = ByteString.CopyFromUtf8(json)
+                };
+                var response = await txn.Mutate(mutation);
+                await txn.Commit();
+                return response;
+            }
+            catch
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
+        public async Task<string?> GetRelationUidByThingIdsAsync(string sourceThingId, string targetThingId, string relationName)
+        {
+            using var txn = _client.NewTransaction();
+
+            var query = $@"
+            {{
+                source as var(func: eq(thingId, ""{sourceThingId}""))
+                target as var(func: eq(thingId, ""{targetThingId}""))
+
+                relations(func: eq(Relation.name, ""{relationName}"")) @cascade {{
+                    uid
+                    relatedTo @filter(uid(source) OR uid(target))
+                    hasChild @filter(uid(target))
+                }}
+            }}
+            ";
+
+            _logger.LogDebug("GetRelationUidByThingIdsAsync query: {Json}", query);
+
+            var response = await txn.Query(query);
+            var json = response.Json.ToStringUtf8();
+
+            _logger.LogDebug("GetRelationUidByThingIdsAsync response: {Json}", json);
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("relations", out var relations) || relations.GetArrayLength() == 0)
+                return null;
+
+            var rel = relations[0];
+            if (rel.TryGetProperty("uid", out var uidProp))
+                return uidProp.GetString();
+
+            return null;
+        }
+
     }
 }
 

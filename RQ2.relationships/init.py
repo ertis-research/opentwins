@@ -11,11 +11,27 @@ load_dotenv()
 THINGS_ENDPOINT = os.getenv("OTV2_THINGS_URL")
 TWINS_ENDPOINT = os.getenv("OTV2_TWINS_URL")
 
+def removeAndInitDB():
+    resp = requests.delete(TWINS_ENDPOINT + "/graphdb/all")
+    try:
+        resp.raise_for_status()
+        #print("[INFO] Successfully deleted all db:", resp.json())
+    except requests.HTTPError as e:
+        print("[ERROR] Request failed:", e, resp.text)
+        
+    resp = requests.put(TWINS_ENDPOINT + "/graphdb/init")
+    try:
+        resp.raise_for_status()
+        #print("[INFO] Successfully init schema:", resp.json())
+    except requests.HTTPError as e:
+        print("[ERROR] Request failed:", e, resp.text)
+    return resp
+
 def send_put(url, headers=None, json=None):
     resp = requests.put(url, headers=headers, json=json)
     try:
         resp.raise_for_status()
-        print("[INFO] Successfully sent:", resp.json())
+        #print("[INFO] Successfully sent")
     except requests.HTTPError as e:
         print("[ERROR] Request failed:", e, resp.text)
         
@@ -25,7 +41,7 @@ def send_post(url, headers=None, json=None):
     resp = requests.post(url, headers=headers, json=json)
     try:
         resp.raise_for_status()
-        print("[INFO] Successfully sent:", resp.json())
+        #print("[INFO] Successfully sent:", resp.json())
     except requests.HTTPError as e:
         print("[ERROR] Request failed:", e, resp.text)
         
@@ -54,6 +70,8 @@ def post_thing(json_filename, add_id=""):
 
 def prepare_base():
     
+    removeAndInitDB()
+    
     listId = []
     # Web of things
     listId.append(post_thing("thingDescriptions/gate.json", "A1"))
@@ -69,7 +87,7 @@ def prepare_base():
     # Create twin
     send_post(f"{TWINS_ENDPOINT}/twins/urn:test:rq2")
     add_thing_to_twin(",".join(listId))
-    print(listId)
+    #print(listId)
 
 
 

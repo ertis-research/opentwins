@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="Dapr.AspNetCore" Version="1.15.4" />
     <PackageReference Include="Dapr.Client" Version="1.15.4" />
+    <PackageReference Include="Dapr.Messaging" Version="1.16.0" />
     <PackageReference Include="Dgraph4Net" Version="2025.1.28.11" />
     <PackageReference Include="Dgraph4Net.System.Text.Json" Version="2025.1.28.11" />
     <PackageReference Include="dotNetRDF" Version="3.4.0" />

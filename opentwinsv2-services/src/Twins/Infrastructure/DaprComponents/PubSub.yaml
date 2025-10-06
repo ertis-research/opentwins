@@ -1,0 +1,14 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: kafka-pubsub
+spec:
+  type: pubsub.kafka
+  version: v1
+  metadata:
+  - name: brokers # Required. Kafka broker connection setting
+    value: "YOUR_KAFKA_IP_1:9092,YOUR_KAFKA_IP_2:9092,YOUR_KAFKA_IP_3:9092"
+  - name: clientID # Optional. Used as client tracing ID by Kafka brokers.
+    value: "opentwinsv2-client-twins"
+  - name: authType # Required.
+    value: "none"

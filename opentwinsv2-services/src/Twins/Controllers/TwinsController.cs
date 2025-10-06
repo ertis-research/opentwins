@@ -75,7 +75,7 @@ namespace OpenTwinsV2.Twins.Controllers
                     return NotFound($"No things found for twin {twinId}");
 
                 var states = await _thingsService.GetThingsStatesAsync(thingIds);
-                Console.WriteLine(JsonSerializer.Serialize(states));
+                //Console.WriteLine(JsonSerializer.Serialize(states));
 
                 var nquads = _converter.JsonToNquads(rawJson, states);
 

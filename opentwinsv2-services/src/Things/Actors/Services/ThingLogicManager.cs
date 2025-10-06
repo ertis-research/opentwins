@@ -171,7 +171,7 @@ namespace OpenTwinsV2.Things.Actors.Services
             foreach (var (name, logic) in _descManager.ThingDescription.Rules)
             {
                 var subscribed = _descManager.ThingDescription.SubscribedEvents?.FirstOrDefault(e => e.Event == eventType);
-                if (subscribed?.Source != null && subscribed.Source.Count > 0 && !subscribed.Source.Contains(evt.Source)) continue;
+                if (subscribed?.Source != null && subscribed.Source.Count > 0 && evt.Source is not null && !subscribed.Source.Contains(evt.Source)) continue;
 
                 ActorLogger.Info(_thingId, $"Evaluating rule '{name}'. EventType: {eventType}");
                 if (logic.If?.AsNode() is JsonNode cond)

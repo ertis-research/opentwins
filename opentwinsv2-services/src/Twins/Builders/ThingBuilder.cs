@@ -121,6 +121,39 @@ namespace OpenTwinsV2.Twins.Builders
 
         }
 
+        public static JsonObject BuildDeleteRelation(string relationUid)
+        {
+            return new JsonObject
+            {
+                ["uid"] = relationUid
+            };
+        }
+
+        public static JsonObject BuildRelation(Link link, string targetUid, string sourceUid = "_:source", int relCounter = 1)
+        {
+            if (link.Rel == null) return [];
+
+            var relNode = BuildRelationNode(link.Rel);
+            relNode["uid"] = $"_:rel{relCounter}";
+
+            string edgeName = MapRelToEdge(link.Rel);
+
+            if (edgeName == "relatedTo")
+            {
+                relNode["relatedTo"] = new JsonArray(
+                    new JsonObject { ["uid"] = targetUid },
+                    new JsonObject { ["uid"] = sourceUid }
+                );
+            }
+            else
+            {
+                relNode[edgeName] = new JsonArray(new JsonObject { ["uid"] = targetUid });
+                relNode["relatedTo"] = new JsonArray(new JsonObject { ["uid"] = sourceUid });
+            }
+
+            return relNode;
+        }
+
         /// <summary>
         /// Construye un payload JSON con sourceThing + placeholders + relation nodes.
         /// No toca DGraph ni hace logs. 
@@ -151,11 +184,6 @@ namespace OpenTwinsV2.Twins.Builders
 
                 relCounter++;
                 var source = link.Href.ToString();
-
-                var relNode = BuildRelationNode(link.Rel);
-                relNode["uid"] = $"_:rel{relCounter}";
-
-                string edgeName = MapRelToEdge(link.Rel);
                 string targetUid;
                 if (uidTargets.TryGetValue(source, out var foundUid))
                 {
@@ -171,10 +199,7 @@ namespace OpenTwinsV2.Twins.Builders
                     targetUid = blankTarget;
                 }
 
-                relNode[edgeName] = new JsonArray(new JsonObject { ["uid"] = targetUid }); // add edge from relation node to target
-                relNode["relatedTo"] = new JsonArray(new JsonObject { ["uid"] = "_:source" }); // also link the relation node to the source thing
-
-                payload.Add(relNode);
+                payload.Add(BuildRelation(link, targetUid, relCounter: relCounter));
             }
 
             return payload;

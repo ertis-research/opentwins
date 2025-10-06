@@ -1,0 +1,41 @@
+@prefix ex: <http://example.org/> .
+@prefix schema: <http://schema.org/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+
+# Movies
+ex:movie1 a schema:Movie ;
+    schema:name "The Adventure Begins" ;
+    schema:datePublished "2021-07-01" ;
+    schema:director ex:director1 ;
+    schema:actor ex:actor1, ex:actor2 .
+
+ex:movie2 a schema:Movie ;
+    schema:name "Mystery of the Lost City" ;
+    schema:datePublished "2022-03-15" ;
+    schema:director ex:director2 ;
+    schema:actor ex:actor2, ex:actor3 .
+
+# Directors
+ex:director1 a schema:Person ;
+    foaf:name "Alice Johnson" ;
+    schema:birthDate "1980-05-20" .
+
+ex:director2 a schema:Person ;
+    foaf:name "Bob Smith" ;
+    schema:birthDate "1975-11-02" .
+
+# Actors
+ex:actor1 a schema:Person ;
+    foaf:name "Carol White" ;
+    schema:birthDate "1990-02-14" ;
+    schema:actedIn ex:movie1 .
+
+ex:actor2 a schema:Person ;
+    foaf:name "David Brown" ;
+    schema:birthDate "1985-08-09" ;
+    schema:actedIn ex:movie1, ex:movie2 .
+
+ex:actor3 a schema:Person ;
+    foaf:name "Eve Black" ;
+    schema:birthDate "1992-12-30" ;
+    schema:actedIn ex:movie2 .

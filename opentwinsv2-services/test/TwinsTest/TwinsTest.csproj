@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Dapr packages (if needed for your project) -->
+    <PackageReference Include="Dapr.Actors.AspNetCore" Version="1.15.4" />
+    <PackageReference Include="Dapr.Client" Version="1.15.4" />
+
+    <!-- xUnit test framework -->
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+
+    <!-- ASP.NET Core WebApplicationFactory for integration testing -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reference your main project -->
+    <ProjectReference Include="..\..\src\Twins\Twins.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Optional: example files to copy to output -->
+    <None Update="ExampleFiles\existingOntology.ttl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="ExampleFiles\importingOntology.ttl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+     <None Update="ExampleFiles\existingOntologyNQuads.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,102 @@
+# --- Thing declarations ---
+_:movie1 <thingId> "The Adventure Begins" .
+_:movie1 <dgraph.type> "Thing" .
+_:ontologiaPrueba <hasThing> _:movie1 .
+
+_:movie2 <thingId> "Mystery of the Lost City" .
+_:movie2 <dgraph.type> "Thing" .
+_:ontologiaPrueba <hasThing> _:movie2 .
+
+_:director1 <thingId> "Alice Johnson" .
+_:director1 <dgraph.type> "Thing" .
+_:ontologiaPrueba <hasThing> _:director1 .
+
+_:director2 <thingId> "Bob Smith" .
+_:director2 <dgraph.type> "Thing" .
+_:ontologiaPrueba <hasThing> _:director2 .
+
+_:actor1 <thingId> "Carol White" .
+_:actor1 <dgraph.type> "Thing" .
+_:ontologiaPrueba <hasThing> _:actor1 .
+
+_:actor2 <thingId> "David Brown" .
+_:actor2 <dgraph.type> "Thing" .
+_:ontologiaPrueba <hasThing> _:actor2 .
+
+_:actor3 <thingId> "Eve Black" .
+_:actor3 <dgraph.type> "Thing" .
+_:ontologiaPrueba <hasThing> _:actor3 .
+
+# --- Attributes (literals) ---
+_:attr1 <dgraph.type> "Attribute" .
+_:attr1 <Attribute.key> "schema:datePublished" .
+_:attr1 <Attribute.type> "string" .
+_:attr1 <Attribute.value> "2021-07-01" .
+_:movie1 <hasAttribute> _:attr1 .
+
+_:attr2 <dgraph.type> "Attribute" .
+_:attr2 <Attribute.key> "schema:datePublished" .
+_:attr2 <Attribute.type> "string" .
+_:attr2 <Attribute.value> "2022-03-15" .
+_:movie2 <hasAttribute> _:attr2 .
+
+_:attr3 <dgraph.type> "Attribute" .
+_:attr3 <Attribute.key> "schema:birthDate" .
+_:attr3 <Attribute.type> "string" .
+_:attr3 <Attribute.value> "1980-05-20" .
+_:director1 <hasAttribute> _:attr3 .
+
+_:attr4 <dgraph.type> "Attribute" .
+_:attr4 <Attribute.key> "schema:birthDate" .
+_:attr4 <Attribute.type> "string" .
+_:attr4 <Attribute.value> "1975-11-02" .
+_:director2 <hasAttribute> _:attr4 .
+
+_:attr5 <dgraph.type> "Attribute" .
+_:attr5 <Attribute.key> "schema:birthDate" .
+_:attr5 <Attribute.type> "string" .
+_:attr5 <Attribute.value> "1990-02-14" .
+_:actor1 <hasAttribute> _:attr5 .
+
+_:attr6 <dgraph.type> "Attribute" .
+_:attr6 <Attribute.key> "schema:birthDate" .
+_:attr6 <Attribute.type> "string" .
+_:attr6 <Attribute.value> "1985-08-09" .
+_:actor2 <hasAttribute> _:attr6 .
+
+_:attr7 <dgraph.type> "Attribute" .
+_:attr7 <Attribute.key> "schema:birthDate" .
+_:attr7 <Attribute.type> "string" .
+_:attr7 <Attribute.value> "1992-12-30" .
+_:actor3 <hasAttribute> _:attr7 .
+
+# --- Relations (object links) ---
+_:rel1 <dgraph.type> "Relation" .
+_:rel1 <Relation.name> "schema:director" .
+_:rel1 <relatedTo> _:movie1 .
+_:rel1 <relatedTo> _:director1 .
+
+_:rel2 <dgraph.type> "Relation" .
+_:rel2 <Relation.name> "schema:director" .
+_:rel2 <relatedTo> _:movie2 .
+_:rel2 <relatedTo> _:director2 .
+
+_:rel3 <dgraph.type> "Relation" .
+_:rel3 <Relation.name> "schema:actor" .
+_:rel3 <relatedTo> _:movie1 .
+_:rel3 <relatedTo> _:actor1 .
+
+_:rel4 <dgraph.type> "Relation" .
+_:rel4 <Relation.name> "schema:actor" .
+_:rel4 <relatedTo> _:movie1 .
+_:rel4 <relatedTo> _:actor2 .
+
+_:rel5 <dgraph.type> "Relation" .
+_:rel5 <Relation.name> "schema:actor" .
+_:rel5 <relatedTo> _:movie2 .
+_:rel5 <relatedTo> _:actor2 .
+
+_:rel6 <dgraph.type> "Relation" .
+_:rel6 <Relation.name> "schema:actor" .
+_:rel6 <relatedTo> _:movie2 .
+_:rel6 <relatedTo> _:actor3 .

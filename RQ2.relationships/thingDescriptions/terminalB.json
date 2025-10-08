@@ -1,7 +1,7 @@
 {
     "@context": "https://www.w3.org/2019/wot/td/v1",
     "id": "urn:test:rq2:TerminalB",
-    "title": "Terminal B",
+    "title": "TerminalB",
     "properties": {
         "collapsed": {
             "type": "boolean",

@@ -5,6 +5,56 @@ from rdflib import Graph, Literal
 import os
 import random
 
+def horizontal_row_layout(G, nodes, spacing=1.0):
+    """
+    Distribuye los nodos dados en una fila horizontal asegurando que el centro sea (0.0, 0.0).
+    :param G: El grafo
+    :param nodes: Nodos a distribuir en fila
+    :param spacing: Espaciado entre los nodos
+    :return: Diccionario de posiciones para los nodos
+    """
+    pos = {}
+    num_nodes = len(nodes)  # Total de nodos a distribuir
+
+    # Calcular el desplazamiento inicial para centrar los nodos alrededor de (0.0, 0.0)
+    half_width = (num_nodes - 1) * spacing / 2  # Desplazamiento necesario para centrar
+
+    for idx, node in enumerate(nodes):
+        pos[node] = (idx * spacing - half_width, 0)  # Coloca los nodos en fila, centrados en el eje X
+
+    return pos
+
+def get_color(uri):
+        if "Airport" in uri:
+            return "#ff7b7b"
+        elif "Terminal" in uri:
+            return "#ffd46f"
+        elif "Gate" in uri:
+            return "#8DB1D1"
+        elif "Plane" in uri:
+            return "#73ceb3"
+        else:
+            return "#90be6d"
+
+    # hierarchical layout for trees
+def hierarchy_pos(G, root=None, width=0.6, vert_gap=0.2, vert_loc=0, xcenter=0.3):
+    pos = {}
+    if root is None:
+        root = next(iter(nx.topological_sort(G))) if nx.is_directed_acyclic_graph(G) else list(G.nodes)[0]
+    children = list(G.successors(root))
+    if not children:
+        pos[root] = (xcenter, vert_loc)
+    else:
+        dx = width / len(children)
+        nextx = xcenter - width / 2 - dx / 2
+        for child in children:
+            nextx += dx
+            pos.update(hierarchy_pos(G, child, width=dx, vert_gap=vert_gap,
+                                            vert_loc=vert_loc - vert_gap, xcenter=nextx))
+        pos[root] = (xcenter, vert_loc)
+    return pos
+
+
 def visualize_all_graphs_paper_ready():
     """
     Paper-ready visualization of six RDF graphs (esc1.ttl ... esc6.ttl).
@@ -17,40 +67,12 @@ def visualize_all_graphs_paper_ready():
 
     fig, axes = plt.subplots(2, 3, figsize=(18, 10), facecolor="white")
     axes = axes.flatten()
-    filenames = [f"knowledgeGraphs/esc{i}.ttl" for i in range(1, 7)]
+    filenames = [f"output/esc{i}.ttl" for i in range(1, 7)]
 
     ignore_keywords = ["createdAt", "lastUpdate"]
     name_predicate = "http://example.org/name"
 
-    def get_color(uri):
-        if "Airport" in uri:
-            return "#fd6060"
-        elif "Terminal" in uri:
-            return "#ffd46f"
-        elif "Gate" in uri:
-            return "#8DB1D1"
-        elif "Plane" in uri:
-            return "#73ceb3"
-        else:
-            return "#90be6d"
-
-    # hierarchical layout for trees
-    def hierarchy_pos(G, root=None, width=0.9, vert_gap=0.2, vert_loc=0, xcenter=0.3):
-        pos = {}
-        if root is None:
-            root = next(iter(nx.topological_sort(G))) if nx.is_directed_acyclic_graph(G) else list(G.nodes)[0]
-        children = list(G.successors(root))
-        if not children:
-            pos[root] = (xcenter, vert_loc)
-        else:
-            dx = width / len(children)
-            nextx = xcenter - width / 2 - dx / 2
-            for child in children:
-                nextx += dx
-                pos.update(hierarchy_pos(G, child, width=dx, vert_gap=vert_gap,
-                                            vert_loc=vert_loc - vert_gap, xcenter=nextx))
-            pos[root] = (xcenter, vert_loc)
-        return pos
+    
 
     for i, fname in enumerate(filenames):
         ax = axes[i]
@@ -89,6 +111,8 @@ def visualize_all_graphs_paper_ready():
             # skip edges for 5–6
             if i in [4, 5]:
                 continue
+            if i in [2, 3] and not ("Gate" in s or "Plane" in s):
+                continue
             G_nx.add_edge(str(s), str(o), label=p_str)
 
         # Scenarios 5–6 → only unique planes, random layout
@@ -120,22 +144,16 @@ def visualize_all_graphs_paper_ready():
                 subj_str = str(subj)
                 if "Plane" in subj_str and subj_str not in G_nx.nodes:
                     G_nx.add_node(subj_str)
-            core_nodes = [n for n in G_nx.nodes if "Plane" not in n]
+            core_nodes = [n for n in G_nx.nodes if "Gate" in n]
             subG = G_nx.subgraph(core_nodes)
-            pos_core = hierarchy_pos(subG)
+            pos_core = horizontal_row_layout(subG, core_nodes, spacing=0.1)
             pos = dict(pos_core)
             lost_nodes = 0
             
-            airport_node = next((n for n in pos_core.keys() if "Airport" in n), None)
-            if airport_node:
-                ax_airport, ay_airport = pos_core[airport_node]
-            else:
-                # fallback por si no hay airport en el grafo
-                ax_airport, ay_airport = (0.0, 0.0)
+            ax_airport, ay_airport = (0.0, 0.0)
             
             plane_nodes = [n for n in G_nx.nodes if "Plane" in n]
             for node in plane_nodes:
-                print(node)
                 linked_gate = None
                 for u, v in G_nx.edges:
                     if v == node and "Gate" in u:
@@ -146,19 +164,20 @@ def visualize_all_graphs_paper_ready():
                         break
                 if linked_gate and linked_gate in pos_core:
                     gx, gy = pos_core[linked_gate]
+                    pos_core[node] = (gx, gy - 0.15)
                     pos[node] = (gx, gy - 0.15)
                 else:
                     right = -1
                     if(lost_nodes%2 == 0):
                         right = 1
                     offset_x = random.uniform(-0.05, 0.05)
-                    offset_y = random.uniform(-0.05, 0)
-                    pos[node] = (ax_airport + (0.30 * right) + offset_x, ay_airport + offset_y)
+                    offset_y = random.uniform(-0.01, 0)
+                    pos[node] = (ax_airport + (0.1 * right) + offset_x, ay_airport - 0.22 + offset_y)
                     lost_nodes = lost_nodes + 1
                         
-            pos_values = np.array(list(pos.values()))
+            pos_values = np.array(list(pos_core.values()))
             ax.set_xlim(pos_values[:, 0].min() - 0.1, pos_values[:, 0].max() + 0.1)
-            ax.set_ylim(pos_values[:, 1].min() - 0.1, pos_values[:, 1].max() + 0.1)
+            ax.set_ylim(pos_values[:, 1].min() - 0.15, pos_values[:, 1].max() + 0.08)
         else:
             pos = nx.spring_layout(G_nx, seed=42)
 
@@ -178,16 +197,16 @@ def visualize_all_graphs_paper_ready():
             elif i in [2, 3]:
                 if "otv2:hasChild" in short or "location" in short:
                     edge_labels[(u, v)] = short
-
         # Draw
+        
         nx.draw_networkx_nodes(G_nx, pos, ax=ax,
-                                node_color=node_colors, linewidths=0.8, node_size=1800, edgecolors="black")
+                                node_color=node_colors, linewidths=1.5, node_size=1800, edgecolors="black")
         if i not in [4, 5]:
             nx.draw_networkx_edges(G_nx, pos, ax=ax,
                                     arrows=True, arrowstyle="->",
-                                    width=0.8, alpha=0.7)
+                                    width=1.5, alpha=0.7)
             nx.draw_networkx_edge_labels(G_nx, pos, edge_labels=edge_labels,
-                                            font_size=7, label_pos=0.5,
+                                            font_size=9, label_pos=0.5,
                                             rotate=False, ax=ax, font_weight="bold")
         nx.draw_networkx_labels(G_nx, pos, labels=labels_to_draw,
                                 font_size=7, ax=ax, font_weight='bold')
@@ -197,13 +216,13 @@ def visualize_all_graphs_paper_ready():
             for n, (x, y) in pos.items():
                 if n in node_inner_text:
                     ax.text(x, y - 0.05, node_inner_text[n],
-                            fontsize=7, ha="center", va="center",
+                            fontsize=9, ha="center", va="center",
                             color="black", fontweight='bold')
         else:
             for n, (x, y) in pos.items():
                 if n in node_inner_text:
                     ax.text(x, y - 0.18, node_inner_text[n],
-                            fontsize=7, ha="center", va="center",
+                            fontsize=9, ha="center", va="center",
                             color="black", fontweight='bold')
 
         ax.set_title(f"Scenario {i+1}", fontsize=15, pad=5, fontweight='bold')

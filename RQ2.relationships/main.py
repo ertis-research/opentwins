@@ -11,6 +11,10 @@ import os
 import init
 import querys
 import time
+import matplotlib.pyplot as plt
+import networkx as nx
+from rdflib import Graph, Literal
+import figure
 
 load_dotenv()
 
@@ -62,7 +66,7 @@ def load_graph_from_api(name):
 
     g = Graph()
     g.parse(data=resp.text, format=RDF_FORMAT)
-    g.serialize(f"{name}.ttl", format="turtle")
+    g.serialize(f"knowledgeGraphs/{name}.ttl", format="turtle")
     #g.serialize(f"{name}.jsonld", format="json-ld")
     #print(f"Graph loaded with {len(g)} triples")
     if len(g) == 0:
@@ -70,8 +74,7 @@ def load_graph_from_api(name):
     return g
 
 
-
-def main():
+def execute_test():
     
     # ============================================
     # Initialize base configuration for the Digital Twin
@@ -150,7 +153,6 @@ def main():
     g = load_graph_from_api("esc6")
     querys.check_p2p(g)
 
-
     # ============================================
     # Summary
     # These scenarios demonstrate that KGs enable expressive representation
@@ -158,6 +160,11 @@ def main():
     # associative, and peer-to-peer dependencies.
     # ============================================
     print("\nTest complete: KG reasoning over hierarchical, associative, and peer-to-peer relationships verified.")
+
+
+def main():
+    #execute_test()
+    figure.visualize_all_graphs_paper_ready()
 
 if __name__ == "__main__":
     main()

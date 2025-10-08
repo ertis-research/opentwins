@@ -59,8 +59,8 @@ def check_associative(g: Graph):
     PREFIX ns2: <http://example.org/otv2:>
 
     ASK {
-        ?airport ns2:hasChild+ ?gate .
-        FILTER NOT EXISTS { ?gate ns2:hasChild ?something }
+        ?gate ns1:name ?name .
+        FILTER regex(str(?gate), "Gate", "i")
         FILTER NOT EXISTS { ?plane ns1:location ?gate }
     }
     """

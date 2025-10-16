@@ -1,41 +1,33 @@
 @prefix ex: <http://example.org/> .
-@prefix schema: <http://schema.org/> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix schema: <http://schema.org/> .
 
-# Movies
-ex:movie1 a schema:Movie ;
-    schema:name "The Adventure Begins" ;
-    schema:datePublished "2021-07-01" ;
-    schema:director ex:director1 ;
-    schema:actor ex:actor1, ex:actor2 .
+ex:alice a foaf:Person ;
+    foaf:name "Alice" ;
+    foaf:age 30 ;
+    foaf:knows ex:bob, ex:carol ;
+    schema:memberOf ex:bookClub .
 
-ex:movie2 a schema:Movie ;
-    schema:name "Mystery of the Lost City" ;
-    schema:datePublished "2022-03-15" ;
-    schema:director ex:director2 ;
-    schema:actor ex:actor2, ex:actor3 .
+ex:bob a foaf:Person ;
+    foaf:name "Bob" ;
+    foaf:age 25 ;
+    foaf:knows ex:alice, ex:dave ;
+    schema:memberOf ex:chessClub .
 
-# Directors
-ex:director1 a schema:Person ;
-    foaf:name "Alice Johnson" ;
-    schema:birthDate "1980-05-20" .
+ex:carol a foaf:Person ;
+    foaf:name "Carol" ;
+    foaf:age 28 ;
+    foaf:knows ex:alice ;
+    schema:memberOf ex:bookClub .
 
-ex:director2 a schema:Person ;
-    foaf:name "Bob Smith" ;
-    schema:birthDate "1975-11-02" .
+ex:dave a foaf:Person ;
+    foaf:name "Dave" ;
+    foaf:age 35 ;
+    foaf:knows ex:bob ;
+    schema:memberOf ex:chessClub .
 
-# Actors
-ex:actor1 a schema:Person ;
-    foaf:name "Carol White" ;
-    schema:birthDate "1990-02-14" ;
-    schema:actedIn ex:movie1 .
+ex:bookClub a schema:Organization ;
+    schema:name "Local Book Club" .
 
-ex:actor2 a schema:Person ;
-    foaf:name "David Brown" ;
-    schema:birthDate "1985-08-09" ;
-    schema:actedIn ex:movie1, ex:movie2 .
-
-ex:actor3 a schema:Person ;
-    foaf:name "Eve Black" ;
-    schema:birthDate "1992-12-30" ;
-    schema:actedIn ex:movie2 .
+ex:chessClub a schema:Organization ;
+    schema:name "City Chess Club" .

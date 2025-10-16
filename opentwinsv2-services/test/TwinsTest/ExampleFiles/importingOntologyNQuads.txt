@@ -1,0 +1,100 @@
+# --- Thing declarations ---
+_:alice <thingId> "Alice" .
+_:alice <dgraph.type> "Thing" .
+_:ontologiaPrueba <hasThing> _:alice .
+
+_:bob <thingId> "Bob" .
+_:bob <dgraph.type> "Thing" .
+_:ontologiaPrueba <hasThing> _:bob .
+
+_:carol <thingId> "Carol" .
+_:carol <dgraph.type> "Thing" .
+_:ontologiaPrueba <hasThing> _:carol .
+
+_:dave <thingId> "Dave" .
+_:dave <dgraph.type> "Thing" .
+_:ontologiaPrueba <hasThing> _:dave .
+
+_:bookClub <thingId> "Local Book Club" .
+_:bookClub <dgraph.type> "Thing" .
+_:ontologiaPrueba <hasThing> _:bookClub .
+
+_:chessClub <thingId> "City Chess Club" .
+_:chessClub <dgraph.type> "Thing" .
+_:ontologiaPrueba <hasThing> _:chessClub .
+
+# --- Attributes (literals) ---
+_:attr1 <dgraph.type> "Attribute" .
+_:attr1 <Attribute.key> "foaf:age" .
+_:attr1 <Attribute.type> "int" .
+_:attr1 <Attribute.value> "30" .
+_:alice <hasAttribute> _:attr1 .
+
+_:attr2 <dgraph.type> "Attribute" .
+_:attr2 <Attribute.key> "foaf:age" .
+_:attr2 <Attribute.type> "int" .
+_:attr2 <Attribute.value> "25" .
+_:bob <hasAttribute> _:attr2 .
+
+_:attr3 <dgraph.type> "Attribute" .
+_:attr3 <Attribute.key> "foaf:age" .
+_:attr3 <Attribute.type> "int" .
+_:attr3 <Attribute.value> "28" .
+_:carol <hasAttribute> _:attr3 .
+
+_:attr4 <dgraph.type> "Attribute" .
+_:attr4 <Attribute.key> "foaf:age" .
+_:attr4 <Attribute.type> "int" .
+_:attr4 <Attribute.value> "35" .
+_:dave <hasAttribute> _:attr4 .
+
+# --- Relations (object links) ---
+_:rel1 <dgraph.type> "Relation" .
+_:rel1 <Relation.name> "foaf:knows" .
+_:rel1 <relatedTo> _:alice .
+_:rel1 <relatedTo> _:bob .
+
+_:rel2 <dgraph.type> "Relation" .
+_:rel2 <Relation.name> "foaf:knows" .
+_:rel2 <relatedTo> _:alice .
+_:rel2 <relatedTo> _:carol .
+
+_:rel3 <dgraph.type> "Relation" .
+_:rel3 <Relation.name> "foaf:knows" .
+_:rel3 <relatedTo> _:bob .
+_:rel3 <relatedTo> _:alice .
+
+_:rel4 <dgraph.type> "Relation" .
+_:rel4 <Relation.name> "foaf:knows" .
+_:rel4 <relatedTo> _:bob .
+_:rel4 <relatedTo> _:dave .
+
+_:rel5 <dgraph.type> "Relation" .
+_:rel5 <Relation.name> "foaf:knows" .
+_:rel5 <relatedTo> _:carol .
+_:rel5 <relatedTo> _:alice .
+
+_:rel6 <dgraph.type> "Relation" .
+_:rel6 <Relation.name> "foaf:knows" .
+_:rel6 <relatedTo> _:dave .
+_:rel6 <relatedTo> _:bob .
+
+_:rel7 <dgraph.type> "Relation" .
+_:rel7 <Relation.name> "schema:memberOf" .
+_:rel7 <relatedTo> _:alice .
+_:rel7 <relatedTo> _:bookClub .
+
+_:rel8 <dgraph.type> "Relation" .
+_:rel8 <Relation.name> "schema:memberOf" .
+_:rel8 <relatedTo> _:bob .
+_:rel8 <relatedTo> _:chessClub .
+
+_:rel9 <dgraph.type> "Relation" .
+_:rel9 <Relation.name> "schema:memberOf" .
+_:rel9 <relatedTo> _:carol .
+_:rel9 <relatedTo> _:bookClub .
+
+_:rel10 <dgraph.type> "Relation" .
+_:rel10 <Relation.name> "schema:memberOf" .
+_:rel10 <relatedTo> _:dave .
+_:rel10 <relatedTo> _:chessClub .

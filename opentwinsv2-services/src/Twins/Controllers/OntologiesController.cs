@@ -225,7 +225,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 return BadRequest("File can only be of .ttl extension, instead recieved a "+extension.ToLower()+" file");
             }
 
-            if(!await _dgraphService.ExistsThingByIdAsync(ontologyId))
+            if(!await _dgraphService.ExistsOntologyByIdAsync(ontologyId))
             {
                 //Parse to rdf
                 //first we read the file data and save it in a IGraph variable
@@ -376,6 +376,8 @@ namespace OpenTwinsV2.Twins.Controllers
             try
             {
                 var result = await _dgraphService.GetRelationByName(ontologyId, relationName);
+                if (result == null)
+                    throw new KeyNotFoundException("Relation could not be found");
                 return Ok(result);
             }
             catch (KeyNotFoundException ex)
@@ -396,6 +398,8 @@ namespace OpenTwinsV2.Twins.Controllers
             try
             {
                 var result = await _dgraphService.GetAttributeByName(ontologyId, attributeName);
+                if (result == null)
+                    throw new KeyNotFoundException("Attribute could not be found");
                 return Ok(result);
             }
             catch (KeyNotFoundException ex)
@@ -479,10 +483,10 @@ namespace OpenTwinsV2.Twins.Controllers
         public async Task<IActionResult> InstanciateThingOfAntology(string ontologyId, string thingId, string id) {
             //Instance of a Thing which is part of an ontology
             if(!await _dgraphService.ExistsOntologyByIdAsync(ontologyId))
-                return StatusCode(500, $"The {ontologyId} ontology does not exist int DGraph");
+                return NotFound($"The {ontologyId} ontology does not exist int DGraph");
 
-            if(!!await _dgraphService.ExistsThingInOntologyByIdAsync(ontologyId, thingId))
-                return StatusCode(500, $"There is no {thingId} thing associated to the {ontologyId} ontology in DGraph, it cannot be instanciated");
+            if(!await _dgraphService.ExistsThingInOntologyByIdAsync(ontologyId, thingId))
+                return NotFound($"There is no {thingId} thing associated to the {ontologyId} ontology in DGraph, it cannot be instanciated");
 
             bool conflict = true;
             try

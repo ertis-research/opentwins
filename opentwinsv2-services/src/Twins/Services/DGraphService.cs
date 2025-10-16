@@ -420,6 +420,9 @@ namespace OpenTwinsV2.Twins.Services
             if (!root.TryGetProperty("ontologies", out JsonElement ontologiesArray))
                 return false;
 
+            if (ontologiesArray.GetArrayLength() == 0)
+                return false;
+
             if (!ontologiesArray[0].TryGetProperty("hasThing", out JsonElement thingArray))
                 return false;
 

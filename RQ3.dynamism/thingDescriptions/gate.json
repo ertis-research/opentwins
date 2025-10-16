@@ -1,0 +1,40 @@
+{
+    "@context": "https://www.w3.org/2019/wot/td/v1",
+    "id": "urn:test:rq2:Gate",
+    "title": "Gate",
+    "properties": {
+        "occupied": {
+            "type": "boolean",
+            "description": "Indicates whether the gate is occupied by a plane"
+        }
+    },
+    "events": {
+        "planeArrived": {
+            "description": "Triggered when a plane arrives at the gate"
+        },
+        "planeDeparted": {
+            "description": "Triggered when a plane leaves the gate"
+        }
+    },
+    "otv2:rules": {
+        "update": {
+            "otv2:if": {
+                "==": [
+                    {
+                        "var": "eventName"
+                    },
+                    "api:update"
+                ]
+            },
+            "otv2:then": {
+                "otv2:updateState": {
+                    "occupied": {
+                        "value": {
+                            "var": "payload.occupied"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

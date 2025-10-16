@@ -236,7 +236,7 @@ def visualize_all_graphs_paper_ready():
 
     plt.tight_layout()
     plt.subplots_adjust(wspace=0.10, hspace=0.10)
-    plt.savefig("rq2_graphs_paper.pdf", dpi=600,
+    plt.savefig("output/rq2_graphs_paper.pdf", dpi=600,
                 bbox_inches="tight", facecolor="white")
     #plt.show()
     print("[INFO] Image 'rq2_graphs_paper.pdf' successfully generated.")

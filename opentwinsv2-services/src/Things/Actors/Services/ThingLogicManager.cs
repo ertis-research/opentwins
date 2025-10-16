@@ -33,11 +33,19 @@ namespace OpenTwinsV2.Things.Actors.Services
             await _descManager.SaveAsync(td);
             await _stateManager.InitializeFromDescription(td.Properties);
 
-            var events = GetSubscribedEvents(td.SubscribedEvents);
-            if (events.Count > 0)
-                await SubscribeToEventsAsync(events);
+            await UpdateSubscribedEvents();
 
             return "Success";
+        }
+
+        public async Task UpdateSubscribedEvents()
+        {
+            if (_descManager.ThingDescription != null)
+            {
+                var events = GetSubscribedEvents(_descManager.ThingDescription.SubscribedEvents);
+                if (events.Count >= 0)
+                    await SubscribeToEventsAsync(events);
+            }
         }
 
         private List<EventSubscription> GetSubscribedEvents(List<SubscribedEvent>? subscribedEvents)

@@ -5,16 +5,13 @@ namespace OpenTwinsV2.Things.Infrastructure.Database
 {
     public class NpgsqlConnectionFactory : IDbConnectionFactory
     {
-        private readonly string _connectionString;
+        private readonly NpgsqlDataSource _dataSource;
 
         public NpgsqlConnectionFactory(string connectionString)
         {
-            _connectionString = connectionString;
+            _dataSource = NpgsqlDataSource.Create(connectionString);
         }
 
-        public IDbConnection CreateConnection()
-        {
-            return new NpgsqlConnection(_connectionString);
-        }
+        public async Task<NpgsqlConnection> CreateConnection() => await _dataSource.OpenConnectionAsync();
     }
 }

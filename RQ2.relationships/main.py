@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-RQ2 - To what extent can KGs provide a more expressive means of representing and reasoning about the relationships among CDTs?
+RQ2 - How do KGs enhance the representation of DTs and reasoning about the relationships of CDTs?
 """
 
 import requests
@@ -67,7 +67,7 @@ def load_graph_from_api(name):
     g = Graph()
     g.parse(data=resp.text, format=RDF_FORMAT)
     os.makedirs("output", exist_ok=True)
-    g.serialize(f"output/{name}.ttl", format="turtle")
+    g.serialize(f"output/{name}.jsonld", format="json-ld")
     #g.serialize(f"{name}.jsonld", format="json-ld")
     #print(f"Graph loaded with {len(g)} triples")
     if len(g) == 0:
@@ -164,7 +164,7 @@ def execute_test():
 
 
 def main():
-    #execute_test()
+    execute_test()
     figure.visualize_all_graphs_paper_ready()
 
 if __name__ == "__main__":

@@ -2,10 +2,17 @@
 
 using Dapr.Messaging.PublishSubscribe.Extensions;
 using Events.Handlers;
+using Events.Persistence;
 using Events.Services;
+using Npgsql;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var connectionString = builder.Configuration.GetSection("PostgreSQL")["connectionString"];
+var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
+var dataSource = dataSourceBuilder.Build();
+builder.Services.AddSingleton(dataSource);
 
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
@@ -21,6 +28,8 @@ builder.Host.UseSerilog();
 builder.Services.AddDaprClient();                    // Recomendado para llamadas Dapr
 builder.Services.AddDaprPubSubClient();              // Cliente Pub/Sub
 
+builder.Services.AddSingleton<PersistenceBuffer>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PersistenceBuffer>());
 builder.Services.AddSingleton<FastEventConfig>();
 builder.Services.AddSingleton<RoutingRepository>();
 builder.Services.AddSingleton<RoutingService>();     // Enrutador de actores

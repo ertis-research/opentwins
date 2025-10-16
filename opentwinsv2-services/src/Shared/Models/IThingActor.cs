@@ -26,6 +26,8 @@ namespace OpenTwinsV2.Shared.Models
         Task UnregisterTimer();
         Task<string> AddLinkAsync(string v);
         Task RemoveLinkAsync(string href);
+        Task<string> AddSubscriptionAsync(string v);
+        Task<string> RemoveSubscriptionAsync(string eventName);
     }
 
 }

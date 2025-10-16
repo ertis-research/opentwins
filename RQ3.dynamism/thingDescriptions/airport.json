@@ -1,0 +1,81 @@
+{
+    "@context": "https://www.w3.org/2019/wot/td/v1",
+    "id": "urn:test:rq3:Airport",
+    "title": "Airport",
+    "properties": {
+        "total_flights_A":{
+            "type": "number",
+            "readOnly": true
+        },
+        "total_flights_B":{
+            "type": "number",
+            "readOnly": true
+        },
+        "total_flights": {
+            "type": "number",
+            "readOnly": true,
+            "otv2:jsonLogic": {
+                "+": [
+                    {
+                        "var": "total_flights_A"
+                    },
+                    {
+                        "var": "total_flights_B"
+                    }
+                ]
+            }
+        }
+    },
+    "links": [
+        {
+            "href": "urn:test:rq3:TerminalA",
+            "rel": "otv2:hasChild",
+            "type": "application/td+json"
+        },
+        {
+            "href": "urn:test:rq3:TerminalB",
+            "rel": "otv2:hasChild",
+            "type": "application/td+json"
+        }
+    ],
+    "otv2:subscribedEvents": [
+        {
+            "otv2:event": "thing:flightsA.changed",
+            "otv2:source": ["urn:test:rq3:TerminalA"]
+        },
+        {
+            "otv2:event": "thing:flightsB.changed",
+            "otv2:source": [ "urn:test:rq3:TerminalB"]
+        }
+    ],
+    "otv2:rules": {
+        "total_flights_A_event": {
+            "otv2:if": {
+                "==": [{"var": "eventName"},"thing:flightsA.changed"]
+            },
+            "otv2:then": {
+                "otv2:updateState": {
+                    "total_flights_A": {
+                        "value": {
+                            "var": "payload.number_of_flights.value"
+                        }
+                    }
+                }
+            }
+        },
+        "total_flights_B_event": {
+            "otv2:if": {
+                "==": [{"var": "eventName"},"thing:flightsB.changed"]
+            },
+            "otv2:then": {
+                "otv2:updateState": {
+                    "total_flights_B": {
+                        "value": {
+                            "var": "payload.number_of_flights.value"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

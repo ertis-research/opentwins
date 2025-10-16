@@ -1,3 +1,9 @@
+image:
+  repository: bitnamilegacy/kafka
+  pullPolicy: Always
+global:
+  security:
+    allowInsecureImages: true
 controller:
   persistence: 
     enabled: false

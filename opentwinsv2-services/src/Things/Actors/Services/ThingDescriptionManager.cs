@@ -44,25 +44,46 @@ namespace OpenTwinsV2.Things.Actors.Services
             }
         }
 
-        public async Task SaveAsync(ThingDescription td)
+        public async Task SaveAsync(ThingDescription td, bool asyncPersist = true)
         {
             ThingDescription = td;
             await _daprClient.SaveStateAsync("actorstatestore", ThingDescriptionKey + _thingId, td.ToString());
-            await SaveToPostgreSqlAsync(td);
+
+            if (asyncPersist)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var metadata = new Dictionary<string, string>() {
+                            { "cloudevent.source", new Uri(_thingId).ToString() },
+                            { "cloudevent.type", "thing.description.changes:" + _thingId}
+                        };
+                        await _daprClient.PublishEventAsync("kafka-pubsub", "thing.description.changes", td, metadata);
+                        await SaveToPostgreSqlAsync(td);
+                    }
+                    catch (Exception ex)
+                    {
+                        ActorLogger.Error(_thingId, $"Error while background saving TD: {ex}");
+                    }
+                });
+            }
+            else
+            {
+                await SaveToPostgreSqlAsync(td);
+            }
         }
 
         private async Task<ThingDescription?> LoadFromPostgreSqlAsync()
         {
-            using var connection = _connectionFactory.CreateConnection();
-            if (connection is NpgsqlConnection npgsql) await npgsql.OpenAsync();
-            else connection.Open();
+            await using var connection = await _connectionFactory.CreateConnection();
 
             var cmd = new NpgsqlCommand(
                 "SELECT td FROM thing_descriptions WHERE thingId = @ThingId;",
-                (NpgsqlConnection)connection);
+                connection);
             cmd.Parameters.Add(new NpgsqlParameter("@ThingId", DbType.String) { Value = _thingId });
 
-            using var reader = await cmd.ExecuteReaderAsync();
+            await using var reader = await cmd.ExecuteReaderAsync();
             if (await reader.ReadAsync())
             {
                 var json = reader.GetString(0);
@@ -77,15 +98,13 @@ namespace OpenTwinsV2.Things.Actors.Services
 
         private async Task SaveToPostgreSqlAsync(ThingDescription td)
         {
-            using var connection = _connectionFactory.CreateConnection();
-            if (connection is NpgsqlConnection npgsql) await npgsql.OpenAsync();
-            else connection.Open();
+            await using var connection = await _connectionFactory.CreateConnection();
 
             var cmd = new NpgsqlCommand(
                     @"INSERT INTO thing_descriptions (thingId, td)
                     VALUES (@ThingId, @NewTd)
                     ON CONFLICT (thingId) DO UPDATE SET td = @NewTd;",
-                (NpgsqlConnection)connection);
+                connection);
 
             cmd.Parameters.Add(new NpgsqlParameter("@ThingId", DbType.String) { Value = td.Id });
             cmd.Parameters.Add(new NpgsqlParameter("@NewTd", NpgsqlDbType.Jsonb) { Value = td.ToString() });
@@ -138,7 +157,7 @@ namespace OpenTwinsV2.Things.Actors.Services
             };*/
             //await _daprClient.PublishEventAsync("kafka-pubsub", "opentwinsv2.links.changes", newLink, metadata);
             var httpClient = DaprClient.CreateInvokeHttpClient();
-            var response = await httpClient.PostAsJsonAsync("http://twins-service/internal/events/links/" + Uri.EscapeDataString(_thingId) + "/link." + eventName, 
+            var response = await httpClient.PostAsJsonAsync("http://twins-service/internal/events/links/" + Uri.EscapeDataString(_thingId) + "/link." + eventName,
                                     JsonSerializer.Serialize(newLink));
             var result = await response.Content.ReadAsStringAsync();
 
@@ -173,6 +192,60 @@ namespace OpenTwinsV2.Things.Actors.Services
             {
                 throw new ArgumentException("Href cannot be null or empty.", nameof(href));
             }
+        }
+
+        public async Task<string> AddSubscriptionAsync(string json)
+        {
+            if (ThingDescription is null)
+                await LoadAsync();
+
+            if (string.IsNullOrWhiteSpace(json))
+                throw new ArgumentException("Subscription JSON cannot be null or empty.", nameof(json));
+
+            SubscribedEvent? newSubscription;
+            try
+            {
+                newSubscription = JsonSerializer.Deserialize<SubscribedEvent>(json);
+            }
+            catch (JsonException ex)
+            {
+                throw new ArgumentException("Invalid subscription JSON format.", ex);
+            }
+
+            if (newSubscription is null)
+                throw new ArgumentException("The subscription is invalid.");
+
+            ThingDescription!.SubscribedEvents ??= [];
+
+            // Avoid duplicates: replace if same target or ID already exists
+            var existing = ThingDescription.SubscribedEvents.FirstOrDefault(s => s.Event == newSubscription.Event);
+            if (existing != null) ThingDescription.SubscribedEvents.Remove(existing);
+
+            ThingDescription.SubscribedEvents.Add(newSubscription);
+            await SaveAsync(ThingDescription);
+            ActorLogger.Info(_thingId, $"Added '{newSubscription.Event}' subscription event.");
+
+            return ThingDescription.ToString()!;
+        }
+
+        public async Task<string> RemoveSubscriptionAsync(string eventName)
+        {
+            if (ThingDescription is null)
+                await LoadAsync();
+
+            if (string.IsNullOrWhiteSpace(eventName))
+                throw new ArgumentException("Subscription ID cannot be null or empty.");
+
+            if (ThingDescription!.SubscribedEvents is null || ThingDescription.SubscribedEvents.Count == 0)
+                throw new KeyNotFoundException($"No subscriptions found for ThingId {_thingId}.");
+
+            var subscription = ThingDescription.SubscribedEvents.FirstOrDefault(s => s.Event == eventName) ?? throw new KeyNotFoundException($"Subscription '{eventName}' not found in ThingId {_thingId}.");
+
+            ThingDescription.SubscribedEvents.Remove(subscription);
+            await SaveAsync(ThingDescription);
+            ActorLogger.Info(_thingId, $"Published 'removed' subscription event for target '{eventName}'.");
+
+            return ThingDescription.ToString()!;
         }
     }
 }

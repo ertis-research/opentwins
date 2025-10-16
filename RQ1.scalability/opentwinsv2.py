@@ -56,7 +56,7 @@ def get_default_TD(num):
         },
         "otv2:subscribedEvents": [
             {
-                "otv2:event": "mqtt:changes_device{num}",
+                "otv2:event": f"mqtt:changes_device{num}",
                 "otv2:autoEmitState": True
             }
         ]

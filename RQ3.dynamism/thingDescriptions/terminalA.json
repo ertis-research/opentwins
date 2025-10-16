@@ -1,0 +1,50 @@
+{
+    "@context": "https://www.w3.org/2019/wot/td/v1",
+    "id": "urn:test:rq3:TerminalA",
+    "title": "TerminalA",
+    "otv2:subscribedEvents": [
+        {
+            "otv2:event": "mqtt:changes_terminalA"
+        }
+    ],
+    "properties": {
+        "number_of_flights": {
+            "type": "number"
+        }
+    },
+    "otv2:rules": {
+        "updateFlights": {
+            "otv2:if": {
+                "==": [{"var": "eventName"}, "mqtt:changes_terminalA"]
+            },
+            "otv2:then": {
+                "otv2:updateState": {
+                    "number_of_flights": {
+                        "value": {
+                            "var": "payload.flights"
+                        }
+                    }
+                },
+                "otv2:emitEvent": [
+                    {"event" : "thing:flightsA.changed"}
+                ]
+            }
+        }
+    },
+    "events": {
+        "flightsA.changed": {
+            "description": "Triggers when number of flights changes",
+            "data": {
+                "type": "object",
+                "properties": {
+                    "number_of_flights": {
+                        "type": "number"
+                    },
+                    "timestamp": {
+                        "type": "number"
+                    }
+                }
+            }
+        }
+    }
+}

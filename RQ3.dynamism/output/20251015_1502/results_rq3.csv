@@ -1,0 +1,16 @@
+scenario,iteration,match,latency,timestamp
+A1_reactive_update,1,True,0.350006,2025-10-15T13:02:56.140410+00:00
+A2_unsubscribed_no_update,1,True,,2025-10-15T13:02:59.214310+00:00
+A1_reactive_update,2,True,0.008879,2025-10-15T13:03:00.294876+00:00
+A2_unsubscribed_no_update,2,True,,2025-10-15T13:03:03.344905+00:00
+A1_reactive_update,3,True,0.006872,2025-10-15T13:03:04.385687+00:00
+A2_unsubscribed_no_update,3,True,,2025-10-15T13:03:07.443129+00:00
+A1_reactive_update,4,True,0.012043,2025-10-15T13:03:08.512574+00:00
+A2_unsubscribed_no_update,4,True,,2025-10-15T13:03:11.559213+00:00
+A1_reactive_update,5,True,0.018505,2025-10-15T13:03:12.654190+00:00
+A2_unsubscribed_no_update,5,True,,2025-10-15T13:03:15.697923+00:00
+A3_derived_property_propagation,1,True,0.065816,2025-10-15T13:03:17.900044+00:00
+A3_derived_property_propagation,2,True,0.038618,2025-10-15T13:03:20.023934+00:00
+A3_derived_property_propagation,3,True,0.041011,2025-10-15T13:03:22.130607+00:00
+A3_derived_property_propagation,4,True,0.057244,2025-10-15T13:03:24.266478+00:00
+A3_derived_property_propagation,5,True,0.034075,2025-10-15T13:03:26.363289+00:00

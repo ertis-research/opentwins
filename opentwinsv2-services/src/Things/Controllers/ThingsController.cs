@@ -306,4 +306,76 @@ public class ThingsController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Adds a new subscription to the specified Thing.
+    /// </summary>
+    /// <param name="thingId">The identifier of the Thing.</param>
+    /// <param name="subscription">A JSON object containing the subscription to add.</param>
+    /// <returns>
+    /// Returns 200 OK with the updated Thing Description.<br/>
+    /// Returns 400 Bad Request if the subscription is invalid.<br/>
+    /// Returns 404 Not Found if the Thing was not found.
+    /// </returns>
+    [HttpPut("{thingId}/subscriptions")]
+    [Produces("application/td+json")]
+    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> AddSubscription(string thingId, [FromBody] JsonElement subscription)
+    {
+        if (subscription.ValueKind == JsonValueKind.Undefined || subscription.ValueKind == JsonValueKind.Null)
+            return BadRequest("The subscription cannot be null or undefined.");
+
+        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+
+        try
+        {
+            string updatedTd = await actor.AddSubscriptionAsync(subscription.GetRawText());
+            return Content(updatedTd, "application/td+json");
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound($"Thing with ID '{thingId}' not found.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Removes a subscription from the specified Thing by its identifier or target URI.
+    /// </summary>
+    /// <param name="thingId">The identifier of the Thing.</param>
+    /// <param name="subscriptionId">The identifier or target URI of the subscription to remove.</param>
+    /// <returns>
+    /// Returns 204 No Content if the subscription was removed successfully.<br/>
+    /// Returns 404 Not Found if the Thing or the subscription does not exist.
+    /// </returns>
+    [HttpDelete("{thingId}/subscriptions/{*subscriptionId}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RemoveSubscription(string thingId, string subscriptionId)
+    {
+        if (string.IsNullOrWhiteSpace(subscriptionId))
+            return BadRequest("The 'subscriptionId' parameter cannot be empty.");
+
+        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+
+        try
+        {
+            await actor.RemoveSubscriptionAsync(subscriptionId);
+            return NoContent();
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound($"Thing with ID '{thingId}' or subscription '{subscriptionId}' not found.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+
 }

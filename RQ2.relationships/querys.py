@@ -1,7 +1,7 @@
 from rdflib import Graph
 import datetime
 
-TRACE_FILE = "proof_trace.log"
+TRACE_FILE = "output/proof_trace.log"
 
 def log_trace(message):
     """Append trace messages to file and print to console."""

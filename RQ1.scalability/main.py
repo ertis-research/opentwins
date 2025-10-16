@@ -11,6 +11,9 @@ import numpy as np
 import sys
 import ntplib
 import asyncio
+import os
+import csv
+import figure
 
 stop_event = threading.Event()
 
@@ -53,6 +56,19 @@ def get_ntp_offset():
             print(f"[Main] Clock offset vs NTP within acceptable range: {offset:.6f} seconds")
     except Exception as e:
         print(f"[WARNING] Failed to get NTP offset: {e}")
+
+
+def save_results_to_csv(filename, labels, lat_v1, loss_rate_v1, lat_v2, loss_rate_v2):
+    output_dir = "output"
+    os.makedirs(output_dir, exist_ok=True)  # Asegura que la carpeta output exista
+
+    filepath = os.path.join(output_dir, filename)
+    with open(filepath, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Label', 'Latency_v1', 'LossRate_v1', 'Latency_v2', 'LossRate_v2'])
+        for label, l1, l1_loss, l2, l2_loss in zip(labels, lat_v1, loss_rate_v1, lat_v2, loss_rate_v2):
+            writer.writerow([label, l1, l1_loss, l2, l2_loss])
+
 
 async def run_scenario(num_devices, interval, duration, wait_time, runs: int = 1):
     """
@@ -106,43 +122,6 @@ async def run_scenario(num_devices, interval, duration, wait_time, runs: int = 1
 
     return label, avg_v1, mean_lossr_v1, avg_v2, mean_lossr_v2
 
-def plot_latencies_summary(labels, lat_v1, lat_v2, name=""):
-    x = np.arange(len(labels))
-    width = 0.35
-    short_name = name.lower().replace(" ", "_")
-
-    plt.figure(figsize=(12, 6))
-    plt.bar(x - width/2, lat_v1, width, label='OpenTwinsV1', color='darkcyan')
-    plt.bar(x + width/2, lat_v2, width, label='OpenTwinsV2', color='darkorange')
-    plt.xticks(x, labels, rotation=45)
-    plt.ylabel("End-to-End Latency (s)")
-    plt.title(name + " - Latency from MQTT Publish to DB Write")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(short_name + "_db_latency_comparison.pdf")
-    #plt.show()
-
-def plot_loss_rate_summary(labels, loss_rate_v1, loss_rate_v2, name=""):
-    x = np.arange(len(labels))
-    width = 0.35
-    short_name = name.lower().replace(" ", "_")
-
-    # Convertir a porcentaje
-    loss_rate_v1 = np.array(loss_rate_v1) * 100
-    loss_rate_v2 = np.array(loss_rate_v2) * 100
-
-    plt.figure(figsize=(12, 6))
-    plt.bar(x - width/2, loss_rate_v1, width, label='OpenTwinsV1', color='darkcyan')
-    plt.bar(x + width/2, loss_rate_v2, width, label='OpenTwinsV2', color='darkorange')
-
-    plt.xticks(x, labels, rotation=45)
-    plt.ylabel("Loss Rate (%)")
-    plt.title(name + " - Message Loss Rate Comparison Between Platforms")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(short_name + "_loss_rate_comparison.pdf")
-    #plt.show()
-
 def run_test(scenarios, name, wait_time):
     # Reiniciamos las listas al empezar la función
     labels = []
@@ -162,16 +141,20 @@ def run_test(scenarios, name, wait_time):
         loss_rate_v1.append(lrv1)
         loss_rate_v2.append(lrv2)
 
-    plot_latencies_summary(labels, avg_latencies_v1, avg_latencies_v2, name)
-    plot_loss_rate_summary(labels, loss_rate_v1, loss_rate_v2, name)
+    #plot_latencies_summary(labels, avg_latencies_v1, avg_latencies_v2, name)
+    #plot_loss_rate_summary(labels, loss_rate_v1, loss_rate_v2, name)
+    
+    save_results_to_csv(f"{name}.csv", labels, avg_latencies_v1, loss_rate_v1, avg_latencies_v2, loss_rate_v2)
 
 if __name__ == "__main__":
     try: 
         print("[Main] SCENARIOS BASELINE")
-        run_test(SCENARIOS_BASELINE, "Baseline", 15)
+        run_test(SCENARIOS_BASELINE, "baseline", 15)
+        figure.generate_plots_from_csv("baseline.csv", "Baseline")
         
         print("[Main] SCENARIOS MEDIUM LOAD")
-        run_test(SCENARIOS_MEDIUM_LOAD, "Medium Load", 45)
+        run_test(SCENARIOS_MEDIUM_LOAD, "medium_load", 45)
+        figure.generate_plots_from_csv("medium_load.csv", "Medium Load")
         
         #print("[Main] SCENARIOS STRESS")
         #run_test(SCENARIOS_STRESS, "Stress", 75)

@@ -1,160 +1,128 @@
-using System.Data;
 using Npgsql;
-using OpenTwinsV2.Shared.Constants;
+using Events.Persistence;
 using OpenTwinsV2.Shared.Models;
+using OpenTwinsV2.Shared.Constants;
 
-public class RoutingRepository
+namespace Events.Services
 {
-    private readonly string _connectionString;
-    private readonly ILogger<RoutingRepository> _logger;
-
-    public RoutingRepository(IConfiguration configuration, ILogger<RoutingRepository> logger)
+    public class RoutingRepository
     {
-        _connectionString = configuration.GetSection("PostgreSQL")["connectionString"]!;
-        _logger = logger;
-    }
+        private readonly NpgsqlDataSource _dataSource;
+        private readonly PersistenceBuffer _buffer;
+        private readonly ILogger<RoutingRepository> _logger;
 
-    private async Task<NpgsqlConnection> OpenConnectionAsync()
-    {
-        _logger.LogDebug("Opening PostgreSQL connection...");
-        var conn = new NpgsqlConnection(_connectionString);
-        await conn.OpenAsync();
-        _logger.LogDebug("PostgreSQL connection opened successfully.");
-        return conn;
-    }
-
-    public async Task<List<(string Topic, string Event)>> GetTopicsEventsAsync()
-    {
-        _logger.LogDebug("Fetching topic-event mappings.");
-        using var conn = await OpenConnectionAsync();
-        var sql = @"SELECT t.name AS topic, e.name AS event
-                    FROM topicsEvents te
-                    JOIN topics t ON t.id = te.topicId
-                    JOIN events e ON e.id = te.eventId;";
-
-        using var cmd = new NpgsqlCommand(sql, conn);
-        using var reader = await cmd.ExecuteReaderAsync();
-
-        var result = new List<(string, string)>();
-        while (await reader.ReadAsync())
+        public RoutingRepository(NpgsqlDataSource dataSource, PersistenceBuffer buffer, ILogger<RoutingRepository> logger)
         {
-            result.Add((reader.GetString(0), reader.GetString(1)));
+            _dataSource = dataSource;
+            _buffer = buffer;
+            _logger = logger;
         }
-        _logger.LogDebug("Retrieved {Count} topic-event mappings.", result.Count);
-        return result;
-    }
 
-    // --- Leer relaciones evento -> actores (things) ---
-    public async Task<List<(string Event, ActorIdentity Actor)>> GetEventsThingsAsync()
-    {
-        _logger.LogDebug("Fetching event-thing mappings.");
-        using var conn = await OpenConnectionAsync();
-        var sql = @"SELECT e.name as eventName, td.thingId
-                    FROM EventsThings et
-                    JOIN events e ON e.id = et.eventId
-                    JOIN thing_descriptions td ON td.id = et.thingId;";
-
-        using var cmd = new NpgsqlCommand(sql, conn);
-        using var reader = await cmd.ExecuteReaderAsync();
-
-        var result = new List<(string, ActorIdentity)>();
-        while (await reader.ReadAsync())
+        // --- Lectura directa (sin buffer) ---
+        public async Task<List<(string Topic, string Event)>> GetTopicsEventsAsync()
         {
-            var evt = reader.GetString(0);
-            var actor = new ActorIdentity(reader.GetString(1), Actors.ThingActor);
-            result.Add((evt, actor));
+            await using var conn = await _dataSource.OpenConnectionAsync();
+            const string sql = @"
+                SELECT t.name AS topic, e.name AS event
+                FROM topicsEvents te
+                JOIN topics t ON t.id = te.topicId
+                JOIN events e ON e.id = te.eventId;";
+
+            await using var cmd = new NpgsqlCommand(sql, conn);
+            await using var reader = await cmd.ExecuteReaderAsync();
+
+            var result = new List<(string, string)>();
+            while (await reader.ReadAsync())
+                result.Add((reader.GetString(0), reader.GetString(1)));
+
+            return result;
         }
-        _logger.LogDebug("Retrieved {Count} event-thing mappings.", result.Count);
-        return result;
-    }
 
-    // --- Guardar vínculos topic <-> event ---
-    public async Task LinkTopicEventAsync(string topicName, string eventName)
-    {
-        _logger.LogDebug("Linking topic '{Topic}' with event '{Event}'.", topicName, eventName);
-        using var conn = await OpenConnectionAsync();
-        var sql = @"
-            INSERT INTO topics(name) VALUES(@topic) ON CONFLICT(name) DO NOTHING;
-            INSERT INTO events(name) VALUES(@event) ON CONFLICT(name) DO NOTHING;
-            INSERT INTO topicsEvents(topicId, eventId)
-            SELECT t.id, e.id
-            FROM topics t, events e
-            WHERE t.name=@topic AND e.name=@event
-            ON CONFLICT DO NOTHING;";
+        public async Task<List<(string Event, ActorIdentity Actor)>> GetEventsThingsAsync()
+        {
+            await using var conn = await _dataSource.OpenConnectionAsync();
+            const string sql = @"
+                SELECT e.name as eventName, td.thingId
+                FROM EventsThings et
+                JOIN events e ON e.id = et.eventId
+                JOIN thing_descriptions td ON td.id = et.thingId;";
 
-        using var cmd = new NpgsqlCommand(sql, conn);
-        cmd.Parameters.Add(new NpgsqlParameter("@topic", DbType.String) { Value = topicName });
-        cmd.Parameters.Add(new NpgsqlParameter("@event", DbType.String) { Value = eventName });
+            await using var cmd = new NpgsqlCommand(sql, conn);
+            await using var reader = await cmd.ExecuteReaderAsync();
 
-        var rows = await cmd.ExecuteNonQueryAsync();
-        if (rows == 0)
-            _logger.LogWarning("No new topic-event link created (topic='{Topic}', event='{Event}').", topicName, eventName);
-        else
-            _logger.LogDebug("Topic-event link created successfully.");
-    }
+            var result = new List<(string, ActorIdentity)>();
+            while (await reader.ReadAsync())
+            {
+                var evt = reader.GetString(0);
+                var actor = new ActorIdentity(reader.GetString(1), Actors.ThingActor);
+                result.Add((evt, actor));
+            }
+            return result;
+        }
 
-    // --- Guardar vínculos event <-> actor (thing) ---
-    public async Task LinkEventThingAsync(string eventName, string thingId)
-    {
-        _logger.LogDebug("Linking event '{Event}' with thing '{ThingId}'.", eventName, thingId);
-        using var conn = await OpenConnectionAsync();
-        var sql = @"
-            INSERT INTO events(name) VALUES(@event) ON CONFLICT(name) DO NOTHING;
-            INSERT INTO eventsThings(eventId, thingId)
-            SELECT e.id, td.id
-            FROM events e, thing_descriptions td
-            WHERE e.name=@event AND td.thingId=@thing
-            ON CONFLICT DO NOTHING;";
+        // --- Escritura diferida en batch ---
 
-        using var cmd = new NpgsqlCommand(sql, conn);
-        cmd.Parameters.Add(new NpgsqlParameter("@event", DbType.String) { Value = eventName });
-        cmd.Parameters.Add(new NpgsqlParameter("@thing", DbType.String) { Value = thingId });
+        public async Task LinkTopicEventAsync(string topicName, string eventName)
+        {
+            const string sql = @"
+                INSERT INTO topics(name) VALUES(@topic) ON CONFLICT DO NOTHING;
+                INSERT INTO events(name) VALUES(@event) ON CONFLICT DO NOTHING;
+                INSERT INTO topicsEvents(topicId, eventId)
+                SELECT t.id, e.id
+                FROM topics t, events e
+                WHERE t.name=@topic AND e.name=@event
+                ON CONFLICT DO NOTHING;";
 
-        var rows = await cmd.ExecuteNonQueryAsync();
-        if (rows == 0)
-            _logger.LogWarning("No new event-thing link created (event='{Event}', thing='{ThingId}').", eventName, thingId);
-        else
-            _logger.LogDebug("Event-thing link created successfully.");
-    }
+            await _buffer.EnqueueAsync(new PersistenceJob(sql, new()
+            {
+                new("@topic", NpgsqlTypes.NpgsqlDbType.Text) { Value = topicName },
+                new("@event", NpgsqlTypes.NpgsqlDbType.Text) { Value = eventName }
+            }));
+        }
 
-    public async Task UnlinkTopicEventAsync(string topicName, string eventName)
-    {
-        _logger.LogDebug("Unlinking topic '{Topic}' from event '{Event}'.", topicName, eventName);
-        using var conn = await OpenConnectionAsync();
-        var sql = @"
-            DELETE FROM TopicsEvents
-            WHERE topicId = (SELECT id FROM topics WHERE name=@topic)
-                AND eventId = (SELECT id FROM events WHERE name=@event);";
+        public async Task LinkEventThingAsync(string eventName, string thingId)
+        {
+            const string sql = @"
+                INSERT INTO events(name) VALUES(@event) ON CONFLICT DO NOTHING;
+                INSERT INTO eventsThings(eventId, thingId)
+                SELECT e.id, td.id
+                FROM events e, thing_descriptions td
+                WHERE e.name=@event AND td.thingId=@thing
+                ON CONFLICT DO NOTHING;";
 
-        using var cmd = new NpgsqlCommand(sql, conn);
-        cmd.Parameters.Add(new NpgsqlParameter("@topic", DbType.String) { Value = topicName });
-        cmd.Parameters.Add(new NpgsqlParameter("@event", DbType.String) { Value = eventName });
+            await _buffer.EnqueueAsync(new PersistenceJob(sql, new()
+            {
+                new("@event", NpgsqlTypes.NpgsqlDbType.Text) { Value = eventName },
+                new("@thing", NpgsqlTypes.NpgsqlDbType.Text) { Value = thingId }
+            }));
+        }
 
-        var rows = await cmd.ExecuteNonQueryAsync();
-        if (rows == 0)
-            _logger.LogWarning("No topic-event link found to delete (topic='{Topic}', event='{Event}').", topicName, eventName);
-        else
-            _logger.LogDebug("Topic-event link deleted successfully.");
-    }
+        public async Task UnlinkTopicEventAsync(string topicName, string eventName)
+        {
+            const string sql = @"
+                DELETE FROM TopicsEvents
+                WHERE topicId = (SELECT id FROM topics WHERE name=@topic)
+                  AND eventId = (SELECT id FROM events WHERE name=@event);";
 
-    // --- Eliminar vínculo event <-> actor (thing) ---
-    public async Task UnlinkEventThingAsync(string eventName, string thingId)
-    {
-        _logger.LogDebug("Unlinking event '{Event}' from thing '{ThingId}'.", eventName, thingId);
-        using var conn = await OpenConnectionAsync();
-        var sql = @"
-            DELETE FROM EventsThings
-            WHERE eventId = (SELECT id FROM events WHERE name=@event)
-                AND thingId = (SELECT id FROM thing_descriptions WHERE thingId=@thing);";
+            await _buffer.EnqueueAsync(new PersistenceJob(sql, new()
+            {
+                new("@topic", NpgsqlTypes.NpgsqlDbType.Text) { Value = topicName },
+                new("@event", NpgsqlTypes.NpgsqlDbType.Text) { Value = eventName }
+            }));
+        }
 
-        using var cmd = new NpgsqlCommand(sql, conn);
-        cmd.Parameters.Add(new NpgsqlParameter("@event", DbType.String) { Value = eventName });
-        cmd.Parameters.Add(new NpgsqlParameter("@thing", DbType.String) { Value = thingId });
+        public async Task UnlinkEventThingAsync(string eventName, string thingId)
+        {
+            const string sql = @"
+                DELETE FROM EventsThings
+                WHERE eventId = (SELECT id FROM events WHERE name=@event)
+                  AND thingId = (SELECT id FROM thing_descriptions WHERE thingId=@thing);";
 
-        var rows = await cmd.ExecuteNonQueryAsync();
-        if (rows == 0)
-            _logger.LogWarning("No event-thing link found to delete (event='{Event}', thing='{ThingId}').", eventName, thingId);
-        else
-            _logger.LogDebug("Event-thing link deleted successfully.");
+            await _buffer.EnqueueAsync(new PersistenceJob(sql, new()
+            {
+                new("@event", NpgsqlTypes.NpgsqlDbType.Text) { Value = eventName },
+                new("@thing", NpgsqlTypes.NpgsqlDbType.Text) { Value = thingId }
+            }));
+        }
     }
 }

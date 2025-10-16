@@ -66,6 +66,20 @@ namespace OpenTwinsV2.Things.Actors
             return _descriptionManager.RemoveLinkAsync(href);
         }
 
+        public async Task<string> AddSubscriptionAsync(string v)
+        {
+            var res = await _descriptionManager.AddSubscriptionAsync(v);
+            await _logic.UpdateSubscribedEvents();
+            return res;
+        }
+
+        public async Task<string> RemoveSubscriptionAsync(string eventName)
+        {
+            var res = await _descriptionManager.RemoveSubscriptionAsync(eventName);
+            await _logic.UpdateSubscribedEvents();
+            return res;
+        }
+
         public Task<string> GetCurrentStateAsync()
         {
             return Task.FromResult(_logic.GetCurrentState());

@@ -1,0 +1,50 @@
+{
+    "@context": "https://www.w3.org/2019/wot/td/v1",
+    "id": "",
+    "title": "Plane",
+    "otv2:subscribedEvents": [
+        {
+            "otv2:event": "mqtt:changes_plane_rq3"
+        }
+    ],
+    "properties": {
+        "lightsOn": {
+            "type": "boolean"
+        },
+        "altitude": {
+            "type": "number",
+            "description": "Current altitude of the plane in meters",
+            "unit": "meters",
+            "minimum": 0
+        },
+        "status": {
+            "type": "string",
+            "description": "Status of the plane ('Taxiing', 'Climbing', 'Cruising', 'Landing')"
+        }
+    },
+    "otv2:rules": {
+        "update": {
+            "otv2:if": {
+                "==": [
+                    {
+                        "var": "eventName"
+                    },
+                    "mqtt:changes_plane_rq3"
+                ]
+            },
+            "otv2:then": {
+                "otv2:updateState": {
+                    "lightsOn": {
+                        "value": { "var": "payload.lightsOn" }
+                    },
+                    "altitude": {
+                        "value": { "var": "payload.altitude" }
+                    },
+                    "status": {
+                        "value": { "var": "payload.status" }
+                    }
+                }
+            }
+        }
+    }
+}

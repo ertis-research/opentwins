@@ -509,7 +509,7 @@ namespace OpenTwinsV2.Twins.Services
             {{
                 ontology as var(func: eq(ontologyId, ""{ontologyId}""))
 
-                exists(func: eq(thingId, "" {thingId} "")) @cascade{{
+                exists(func: eq(thingId, ""{thingId}"")) @cascade{{
                      uid
     		         thingId
     		        ~hasThing @filter(uid(ontology))

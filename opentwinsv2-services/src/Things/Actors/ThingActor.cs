@@ -14,16 +14,17 @@ namespace OpenTwinsV2.Things.Actors
         private readonly ThingStateManager _stateManager;
         private readonly ThingDescriptionManager _descriptionManager;
         private readonly ThingLogicManager _logic;
+        private readonly string _thingId;
 
         public ThingActor(ActorHost host, IDbConnectionFactory connectionFactory)
         : base(host)
         {
             _connectionFactory = connectionFactory;
 
-            var thingId = Id.GetId();
-            _stateManager = new ThingStateManager(_daprClient, thingId);
-            _descriptionManager = new ThingDescriptionManager(_daprClient, _connectionFactory, thingId);
-            _logic = new ThingLogicManager(_daprClient, thingId, _descriptionManager, _stateManager);
+            _thingId = Id.GetId();
+            _stateManager = new ThingStateManager(_daprClient, _thingId);
+            _descriptionManager = new ThingDescriptionManager(_daprClient, _connectionFactory, _thingId);
+            _logic = new ThingLogicManager(_daprClient, _thingId, _descriptionManager, _stateManager);
         }
 
         protected override async Task OnActivateAsync()
@@ -51,9 +52,30 @@ namespace OpenTwinsV2.Things.Actors
             return await _logic.SetThingDescriptionAsync(newThingDescription);
         }
 
-        public Task<string?> GetThingDescriptionAsync()
+        public async Task<string?> GetThingDescriptionAsync()
         {
-            return _logic.GetThingDescriptionAsync();
+            return await _logic.GetThingDescriptionAsync();
+        }
+
+        public async Task<bool> DeleteThingAsync()
+        {
+            try
+            {
+                if (_descriptionManager.ThingDescription == null) return false;
+
+                await _descriptionManager.DeleteAsync();
+                ActorLogger.Info(_thingId, "Thing description deleted successfully.");
+
+                await _stateManager.DeleteAsync();
+                ActorLogger.Info(_thingId, "Thing state deleted successfully.");
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                ActorLogger.Error(_thingId, $"Error while deleting Thing: {ex.Message}");
+                return false;
+            }
         }
 
         public Task<string> AddLinkAsync(string v)

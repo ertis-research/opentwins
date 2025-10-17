@@ -74,6 +74,44 @@ namespace OpenTwinsV2.Things.Actors.Services
             }
         }
 
+        public async Task DeleteAsync()
+        {
+            try
+            {
+                await _daprClient.DeleteStateAsync(StateStoreName, ThingDescriptionKey + _thingId);
+                ActorLogger.Info(_thingId, "Thing Description deleted from statestore.");
+            }
+            catch (Exception ex)
+            {
+                ActorLogger.Error(_thingId, $"Error while deleting ThingDescription from statestore: {ex}");
+                throw new InvalidOperationException("Error while deleting ThingDescription from statestore.", ex);
+            }
+
+            try
+            {
+                await using var connection = await _connectionFactory.CreateConnection();
+                var cmd = new NpgsqlCommand(
+                    "DELETE FROM thing_descriptions WHERE thingId = @ThingId;",
+                    connection);
+                cmd.Parameters.Add(new NpgsqlParameter("@ThingId", DbType.String) { Value = _thingId });
+
+                int affectedRows = await cmd.ExecuteNonQueryAsync();
+                if (affectedRows == 0)
+                {
+                    ActorLogger.Warn(_thingId, $"No ThingDescription found to delete for ThingId {_thingId}.");
+                }
+                else
+                {
+                    ActorLogger.Info(_thingId, "Thing Description deleted from PostgreSQL.");
+                }
+            }
+            catch (Exception ex)
+            {
+                ActorLogger.Error(_thingId, $"Error while deleting ThingDescription from PostgreSQL: {ex}");
+                throw new InvalidOperationException("Error while deleting ThingDescription from PostgreSQL.", ex);
+            }
+        }
+
         private async Task<ThingDescription?> LoadFromPostgreSqlAsync()
         {
             await using var connection = await _connectionFactory.CreateConnection();

@@ -155,6 +155,43 @@ public class ThingsController : ControllerBase
 
     }
 
+    /// <summary>
+    /// Deletes a Thing by its identifier.
+    /// </summary>
+    /// <param name="thingId">The identifier of the Thing to delete.</param>
+    /// <returns>
+    /// Returns 204 No Content if the Thing was successfully deleted.<br/>
+    /// Returns 404 Not Found if the Thing was not found.<br/>
+    /// Returns 500 Internal Server Error if there was an error deleting the Thing.
+    /// </returns>
+    [HttpDelete("{thingId}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> DeleteThing(string thingId)
+    {
+        if (string.IsNullOrWhiteSpace(thingId))
+            return BadRequest("The 'thingId' cannot be null or empty.");
+
+        try
+        {
+            IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+
+            bool isDeleted = await actor.DeleteThingAsync();
+
+            if (!isDeleted)
+            {
+                return NotFound($"Thing with ID '{thingId}' not found.");
+            }
+
+            return NoContent(); // 204 No Content si la eliminación es exitosa.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete Thing with ID '{ThingId}'", thingId);
+            return StatusCode(500, "Internal server error while deleting the Thing.");
+        }
+    }
 
     /// <summary>
     /// Retrieves the current state of the specified Thing.

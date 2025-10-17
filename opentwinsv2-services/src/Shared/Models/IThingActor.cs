@@ -8,6 +8,7 @@ namespace OpenTwinsV2.Shared.Models
         Task<string> SetThingDescriptionAsync(string data);
         Task<string?> GetThingDescriptionAsync();
         Task<string> GetCurrentStateAsync();
+        Task<bool> DeleteThingAsync();
         Task OnEventReceived(MyCloudEvent<string> eventRecv);
         Task InvokeAction(string actionName, string parameters);
         Task SendEvent(MyCloudEvent<string> evnt);

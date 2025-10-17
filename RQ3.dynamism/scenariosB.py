@@ -1,6 +1,24 @@
+import use_platform
+
 # ==================================================
 # Scenario Block B: Dynamic reconfiguration placeholders
 # ==================================================
+ID_TWIN = "urn:test:rq3"
+
+def init_test():
+    listId = []
+    
+    use_platform.remove_and_init_DB()
+    
+    listId.append(use_platform.post_thing("thingDescriptions/terminalA.json"))
+    listId.append(use_platform.post_thing("thingDescriptions/terminalB.json"))
+    listId.append(use_platform.post_thing("thingDescriptions/airport.json"))
+    for i in range(1, 6):
+        listId.append(use_platform.post_thing("thingDescriptions/plane.json", "urn:test:rq3:Plane" + str(i), f"Plane{i}"))
+        
+    use_platform.post_twin(ID_TWIN)
+    use_platform.add_thing_to_twin(ID_TWIN, ",".join(listId))
+
 def scenario_b1_create_thing_without_twin():
     """Placeholder for scenario: create thing not linked to twin."""
     pass

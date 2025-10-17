@@ -41,6 +41,21 @@ namespace OpenTwinsV2.Things.Actors.Services
             ActorLogger.Info(_thingId, "Current state saved to Redis.");
         }
 
+        public async Task DeleteAsync()
+        {
+            try
+            {
+                // Eliminar el estado desde el state store de Dapr
+                await _daprClient.DeleteStateAsync(StateStoreName, CurrentStateKey + _thingId);
+                ActorLogger.Info(_thingId, "Thing state deleted from statestore.");
+            }
+            catch (Exception ex)
+            {
+                ActorLogger.Error(_thingId, $"Error while deleting Thing state from statestore: {ex}");
+                throw new InvalidOperationException("Error while deleting Thing state from statestore.", ex);
+            }
+        }
+
         public async Task UpdateAsync(Dictionary<string, PropertyState> newProperties, Dictionary<string, PropertyAffordance>? infoProperties)
         {
             if (infoProperties == null) return;

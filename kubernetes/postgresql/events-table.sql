@@ -23,3 +23,11 @@ CREATE TABLE TopicsEvents (
     FOREIGN KEY (topicId) REFERENCES topics(id),
     FOREIGN KEY (eventId) REFERENCES events(id)
 );
+
+ALTER TABLE eventsthings
+DROP CONSTRAINT eventsthings_thingid_fkey,
+ADD CONSTRAINT eventsthings_thingid_fkey FOREIGN KEY (thingId) REFERENCES thing_descriptions(id) ON DELETE CASCADE;
+
+ALTER TABLE topicsevents
+DROP CONSTRAINT topicsevents_eventid_fkey,
+ADD CONSTRAINT topicsevents_eventid_fkey FOREIGN KEY (eventId) REFERENCES events(id) ON DELETE CASCADE;

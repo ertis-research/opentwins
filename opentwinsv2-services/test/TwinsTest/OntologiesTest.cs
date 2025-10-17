@@ -12,14 +12,25 @@ using System.Text.Json;
 using System.Net.Http.Json;
 using System.Text.RegularExpressions;
 using System.Net.Http.Headers;
+using System.Diagnostics;
+using System.Text.Json.Nodes;
+using Dapr.Actors;
+using OpenTwinsV2.Things.Actors;
+using OpenTwinsV2.Shared.Constants;
+using OpenTwinsV2.Shared.Models;
+using Dapr.Actors.Client;
 
 public class OntologiesAPIFixture : IAsyncLifetime
 {
     public HttpClient Client { get; private set; } = null!;
+    public HttpClient ThingsClient { get; private set; } = null!;
     private WebApplicationFactory<Twins.TestMaker> _factory = null!;
     // public IServiceProvider Services => _factory.Services;
     public DGraphService DGraphService { get; private set; } = null!;
+    public ThingsService ThingsService { get; private set; } = null!;
     public Func<IServiceScope> CreateScope { get; private set; } = null!;
+    private Process _ThingsProcess = null!;
+    private Process _TwinsProcess = null!;
 
     public string ontologyId = "ontologiaPrueba";
 
@@ -61,25 +72,187 @@ public class OntologiesAPIFixture : IAsyncLifetime
 
     }
 
+    private Process StartDaprProcess(string appId, int appPort, int daprHttpPort, string configPath, string resourcesPath, string workingDir, int grpcPort)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "dapr",
+            Arguments = $"run --app-id {appId} --app-port {appPort} --dapr-http-port {daprHttpPort} {(configPath.Equals("") ? "" : "--config")} {configPath} --resources-path {resourcesPath} -- dotnet run --urls=http://localhost:{appPort}/",
+            WorkingDirectory = workingDir,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        psi.EnvironmentVariables["DAPR_HTTP_PORT"] = daprHttpPort.ToString();
+        psi.EnvironmentVariables["DAPR_APP_ID"] = appId;
+        psi.EnvironmentVariables["APP_PORT"] = appPort.ToString(); ;
+        psi.EnvironmentVariables["DAPR_GRPC_PORT"] = grpcPort.ToString();
+        var process = new Process
+        {
+            StartInfo = psi  
+            
+        };
+        process.Start();
+        return process;
+    }
+    
+    private async Task WaitForDaprReadyAsync(int daprPort, int maxRetries = 30)
+    {
+        using var http = new HttpClient();
+        for (int i = 0; i < maxRetries; i++)
+        {
+            try
+            {
+                var res = await http.GetAsync($"http://localhost:{daprPort}/v1.0/healthz");
+                if (res.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"✅ Dapr on port {daprPort} ready");
+                    return;
+                }
+            }
+            catch { }
+            await Task.Delay(1000);
+        }
+        throw new Exception($"Dapr on port {daprPort} did not start in time.");
+    }
+
+    private async Task WaitForServiceReadyAsync(string url, int maxRetries = 30)
+    {
+        using var http = new HttpClient();
+        for (int i = 0; i < maxRetries; i++)
+        {
+            try
+            {
+                var res = await http.GetAsync(url);
+                if (res.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"Service ready at {url}");
+                    return;
+                }
+            }
+            catch { }
+            await Task.Delay(1000);
+        }
+        throw new Exception($"Service at {url} did not start in time.");
+    }
     public async Task InitializeAsync()
     {
-       _factory = new WebApplicationFactory<Twins.TestMaker>()
+        var daprThingsComponentsPath = Path.GetFullPath(Path.Combine("..", "..", "..", "..", "..", "src", "Things", "Infrastructure", "DaprComponentsLocal"));
+        var daprThingsConfigPath = Path.GetFullPath(Path.Combine("..", "..", "..", "..", "..", "src", "Things", "daprConfig.yaml"));
+        var daprTwinsComponentsPath = Path.GetFullPath(Path.Combine("..", "..", "..", "..", "..", "src", "Twins", "Infrastructure", "DaprComponentsLocal"));
+        var daprTwinsConfigPath = Path.GetFullPath(Path.Combine("..", "..", "..", "..", "..", "src", "Twins", "daprConfig.yaml"));
+
+        // Environment.SetEnvironmentVariable("DAPR_HTTP_PORT", "56001");
+
+        // _ThingsProcess = new Process
+        // {
+        //     StartInfo = new ProcessStartInfo
+        //     {
+        //         FileName = "dapr",
+        //         Arguments = $"run --app-id things-service --app-port 5001 --app-protocol http --dapr-http-port 56001 --config {daprThingsConfigPath} --resources-path {daprThingsComponentsPath} -- dotnet run --urls=http://localhost:5001/",
+        //         WorkingDirectory = Path.GetFullPath(Path.Combine("..", "..", "..", "..", "..", "src", "Things")), // adjust path to service project
+        //         RedirectStandardOutput = true,
+        //         RedirectStandardError = true,
+        //         UseShellExecute = false
+        //     }
+        // };
+        // _ThingsProcess.Start();
+
+
+
+        // var tcs = new TaskCompletionSource();
+        // _ThingsProcess.OutputDataReceived += (sender, e) =>
+        // {
+        //     if (e.Data != null && e.Data.Contains("You're up and running!"))
+        //         tcs.TrySetResult();
+        // };
+        // _ThingsProcess.BeginOutputReadLine();
+        // await tcs.Task;
+
+
+        // _TwinsProcess = new Process
+        // {
+        //     StartInfo = new ProcessStartInfo
+        //     {
+        //         FileName = "dapr",
+        //         Arguments = $"run --app-id twins-service --app-port 5013 --dapr-http-port 56002 --resources-path {daprTwinsComponentsPath} -- dotnet run --urls=http://localhost:5013/",
+        //         WorkingDirectory = Path.GetFullPath(Path.Combine("..", "..", "..", "..", "..", "src", "Twins")), // adjust path to service project
+        //         RedirectStandardOutput = true,
+        //         RedirectStandardError = true,
+        //         UseShellExecute = false,
+        //     }
+        // };
+        // _TwinsProcess.Start();
+
+        // using var http2 = new HttpClient();
+        // while (true)
+        // {
+        //     try
+        //     {
+        //         var res = await http2.GetAsync("http://localhost:5013/ontologies/hola");
+        //         if (res.IsSuccessStatusCode)
+        //         {
+        //             Console.WriteLine("✅ Dapr ready");
+        //             break;
+        //         }
+        //     }
+        //     catch {  }
+        //     await Task.Delay(1000);
+        // }
+
+        // Environment.SetEnvironmentVariable("DAPR_HTTP_PORT", "5001");
+
+        // _ThingsProcess = StartDaprProcess(
+        //     appId: "things-service",
+        //     appPort: 5001,
+        //     daprHttpPort: 56001,
+        //     configPath: daprThingsConfigPath,
+        //     resourcesPath: daprThingsComponentsPath,
+        //     workingDir: Path.Combine("..", "..", "..", "..", "..", "src", "Things"),
+
+        //     grpcPort: 50001
+        // );
+
+        // _TwinsProcess = StartDaprProcess(
+        //     appId: "twins-service",
+        //     appPort: 5013,
+        //     daprHttpPort: 56002, // assign a different port
+        //     configPath: "",
+        //     resourcesPath: daprTwinsComponentsPath,
+        //     workingDir: Path.Combine("..", "..", "..", "..", "..", "src", "Twins"),
+
+        //     grpcPort: 50002
+        // );
+
+        // await WaitForDaprReadyAsync(56001); // Things
+        // await WaitForDaprReadyAsync(56002); // Twins
+
+        await WaitForServiceReadyAsync("http://localhost:5001/health");
+        await WaitForServiceReadyAsync("http://localhost:5013/ontologies/hola");
+
+        // 6️⃣ Create HTTP clients
+        ThingsClient = new HttpClient { BaseAddress = new Uri("http://localhost:5001") };
+        // TwinsClient = new HttpClient { BaseAddress = new Uri("http://localhost:5013") };
+        //ThingsClient = new HttpClient { BaseAddress = new Uri("http://localhost:5001") };
+
+        _factory = new WebApplicationFactory<Twins.TestMaker>()
             .WithWebHostBuilder(builder =>
             {
                 builder.ConfigureServices(services =>
                 {
                     services.AddSingleton<DGraphService>();
+                    // services.AddSingleton<ThingsService>();
+
+                    
                 });
+                
             });
 
         Client = _factory.CreateClient();
 
-        // using var scope = _factory.Services.CreateScope();
         DGraphService = _factory.Services.GetRequiredService<DGraphService>();
-        
-
-        // await _dgraphService.InitializeAsync();
-
+        // ThingsService = _factory.Services.GetRequiredService<ThingsService>();
         // This runs ONCE for all tests in the collection
         string path = Path.Combine(AppContext.BaseDirectory, "ExampleFiles", "existingOntologyNQuads.txt");
         var nquads = new List<string>();
@@ -90,7 +263,7 @@ public class OntologiesAPIFixture : IAsyncLifetime
             nquads.Add("_:ontologiaPrueba <ontologyId> \"ontologiaPrueba\" .");
             nquads.AddRange(File.ReadAllLines(path));
 
-             getFirstIds(nquads); 
+            getFirstIds(nquads);
 
         }
         catch (System.IO.FileNotFoundException ex)
@@ -101,18 +274,69 @@ public class OntologiesAPIFixture : IAsyncLifetime
 
         try
         {
-            var response = await DGraphService.AddNQuadTripleAsync(nquads);
+            await DGraphService.AddNQuadTripleAsync(nquads);
         }
         catch (Exception ex)
         {
             Console.WriteLine("Something went wrong while uploading to DGraph: " + ex.Message);
         }
+
+        //as it imported it correctly, i will instanciate a thing for the instanciate tests
+        //create payload
+        var payload = new JsonObject
+        {
+            ["@context"] = new JsonArray("https://www.w3.org/2019/wot/td/v1"),
+            ["id"] = instanciatedThingId,
+            ["title"] = "",
+            ["hasType"] = thingId,
+            ["properties"] = new JsonObject { }, //provisional
+            ["actions"] = new JsonObject { },
+            ["events"] = new JsonObject { }
+        };
+
+        // HERE should call the Things API to instanciate the Thing, but since it's already defined because there is no DELETE method, I skip it
+        // var response = await ThingsClient.PostAsJsonAsync("/things", payload);
+        // Console.WriteLine(response.IsSuccessStatusCode ? "BIEN INSTANCIADO" : "MAL INSTANCIADO");
     }
 
     public async Task DisposeAsync()
     {
         Console.WriteLine("ENTRA EN AFTERALL");
+        //Here the instanciated Thing should be deleted from the Things Service, but there is no method in the API for that
         await DGraphService.DeleteByOntologyId("ontologiaPrueba");
+        // try
+        // {
+        //     if (!_ThingsProcess.HasExited)
+        //     {
+        //         _ThingsProcess.Kill(entireProcessTree: true); // This kills Dapr and the app
+        //         _ThingsProcess.WaitForExit(5000);
+        //     }
+        // }
+        // catch (Exception ex)
+        // {
+        //     Console.WriteLine($"Error stopping Dapr: {ex}");
+        // }
+        // finally
+        // {
+        //     _ThingsProcess.Dispose();
+        // }
+
+        //  try
+        // {
+        //     if (!_TwinsProcess.HasExited)
+        //     {
+        //         _TwinsProcess.Kill(entireProcessTree: true); // This kills Dapr and the app
+        //         _TwinsProcess.WaitForExit(5000);
+        //     }
+        // }
+        // catch (Exception ex)
+        // {
+        //     Console.WriteLine($"Error stopping Dapr: {ex}");
+        // }
+        // finally
+        // {
+        //     _TwinsProcess.Dispose();
+        // }
         _factory?.Dispose();
     }
 }
@@ -129,6 +353,7 @@ public class OntologiesTest
     private readonly HttpClient _client;
     private readonly OntologiesAPIFixture _fixture;
     public DGraphService _dgraphService = null!;
+    public ThingsService _thingsService = null!;
 
     public readonly string _ontologyId;
 
@@ -136,6 +361,7 @@ public class OntologiesTest
     public readonly string _relationName;
     public readonly string _attributeKey;
     public readonly string _instaciatedThingId;
+    public readonly HttpClient _thingsClient;
 
     public OntologiesTest(OntologiesAPIFixture fixture)
     {
@@ -143,10 +369,12 @@ public class OntologiesTest
         _ontologyId = fixture.ontologyId;
         _client = fixture.Client; // get the HttpClient from the fixture
         _dgraphService = fixture.DGraphService;
+        _thingsService = fixture.ThingsService;
         _thingId = fixture.thingId;
         _relationName = fixture.relationName;
         _attributeKey = fixture.attributeKey;
         _instaciatedThingId = fixture.instanciatedThingId;
+        _thingsClient = fixture.ThingsClient;
     }
 
     private JsonElement GetJsonRoot(string jsonString)
@@ -183,7 +411,7 @@ public class OntologiesTest
             var fileContent = new StreamContent(fileStream);
             fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse(GetMimeType(path)); //appropriate MIME type
             string fileName = Path.GetFileName(path);
-            content.Add(fileContent, "ontologyFile", fileName); // "file" = form field name
+            content.Add(fileContent, "ontologyFile", fileName);
 
             return content;
         }
@@ -432,7 +660,6 @@ public class OntologiesTest
         [Fact]
         public async Task DeleteOntology_OntologyExists_200AndNoOntology()
         {
-            //Arrange
             //Import another ontology so it doesn't affect the other methods
             string path = Path.Combine(AppContext.BaseDirectory, "ExampleFiles", "importingOntologyNQuads.txt");
             string ontologyId = "anotherTestOntology";
@@ -491,19 +718,37 @@ public class OntologiesTest
         public InstanciateThingFromOntologyTest(OntologiesAPIFixture fixture) : base(fixture) { }
 
         //The ontology and the thing exists and the id is unused
+        [Fact]
+        public async Task InstanciateThingFromOntology_IdNotOnUse_200AndThing()
+        {
+            //Arrange
+            string uninstanciatedId = "newInstanciatedId"+Guid.NewGuid();
+            //Act
+            var responsePost = await _client.PostAsync($"http://localhost:5013/ontologies/{_ontologyId}/things/{_thingId}/instanciate/{uninstanciatedId}", null);
+            await Task.Delay(500);
+            var responseGet = await _thingsClient.GetAsync($"/things/{uninstanciatedId}");
+            var jsonString = await responseGet.Content.ReadAsStringAsync();
+            var jsonRoot = GetJsonRoot(jsonString);
+            //Assert
+            Assert.True(responsePost.IsSuccessStatusCode);
+            Assert.True(responseGet.IsSuccessStatusCode);
+            Assert.Equal(JsonValueKind.Object, jsonRoot.ValueKind);
+
+            //TODO delete thing from Things*****
+        }
 
         //The ontology and the thing exists but the id is already on use
-        // [Fact]
-        // public async Task InstanciateThingFromOntology_IdOnUse_Conflict()
-        // {
-        //     //Arrange
-        //     string instanciatedId = _instaciatedThingId;
-        //     //Act
-        //     var response = await _client.PostAsync($"http://localhost:5013/ontologies/{_ontologyId}/things/{_thingId}/instanciate/{instanciatedId}", null);
-        //     //Assert
-        //     Assert.False(response.IsSuccessStatusCode);
-        //     Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        // }
+        [Fact]
+        public async Task InstanciateThingFromOntology_IdOnUse_Conflict()
+        {
+            //Arrange
+            string instanciatedId = _instaciatedThingId;
+            //Act
+            var response = await _client.PostAsync($"http://localhost:5013/ontologies/{_ontologyId}/things/{_thingId}/instanciate/{instanciatedId}", null);
+            //Assert
+            Assert.False(response.IsSuccessStatusCode);
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        }
 
         //The ontology exists but the thing doesn't
         [Fact]

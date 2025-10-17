@@ -26,6 +26,8 @@
   <ItemGroup>
     <!-- Reference your main project -->
     <ProjectReference Include="..\..\src\Twins\Twins.csproj" />
+    <ProjectReference Include="..\..\src\Things\Things.csproj" />
+     <ProjectReference Include="..\..\src\Shared\Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup>

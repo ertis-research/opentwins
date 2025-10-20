@@ -166,70 +166,74 @@ namespace OpenTwinsV2.Things.Actors.Services
             {
                 newLink = JsonSerializer.Deserialize<Link>(linkJson);
             }
-            catch (JsonException ex)
-            {
-                throw new ArgumentException("Invalid link JSON format.", ex);
-            }
+            catch (JsonException ex) { throw new ArgumentException("Invalid link JSON format.", ex); }
 
-            if (newLink is null)
-                throw new ArgumentException("The link is invalid.");
+            if (newLink is null) throw new ArgumentException("The link is invalid.");
 
-            // Initialize list if null
+
             ThingDescription!.Links ??= [];
-
-            // Avoid duplicates: replace if same href already exists
-            var existing = ThingDescription.Links.FirstOrDefault(l => l.Href == newLink.Href);
-            string eventName = "added";
-            if (existing != null)
-            {
-                ThingDescription.Links.Remove(existing);
-                eventName = "updated";
-            }
-
+            if (ThingDescription.Links.Any(l => l.Href == newLink.Href && l.Rel == newLink.Rel)) throw new InvalidOperationException("A link with the same Href and Rel already exists.");
             ThingDescription.Links.Add(newLink);
             await SaveAsync(ThingDescription);
-            /*
-            var metadata = new Dictionary<string, string>() {
-                { "cloudevent.source", new Uri(_thingId).ToString() },
-                { "cloudevent.type", "link." + eventName }
-            };*/
-            //await _daprClient.PublishEventAsync("kafka-pubsub", "opentwinsv2.links.changes", newLink, metadata);
+
             var httpClient = DaprClient.CreateInvokeHttpClient();
-            var response = await httpClient.PostAsJsonAsync("http://twins-service/internal/events/links/" + Uri.EscapeDataString(_thingId) + "/link." + eventName,
+            var response = await httpClient.PostAsJsonAsync($"http://twins-service/internal/things/{Uri.EscapeDataString(_thingId)}/links",
                                     JsonSerializer.Serialize(newLink));
             var result = await response.Content.ReadAsStringAsync();
 
-            ActorLogger.Info(_thingId, $"Published '{eventName}' link event for href '{newLink.Href}'.");
+            ActorLogger.Info(_thingId, $"Published add link event for href '{newLink.Href}'.");
 
             return ThingDescription.ToString()!;
         }
 
-        public async Task RemoveLinkAsync(string href)
+        public async Task<string> UpdateLinkAsync(string targetId, string relName, string linkJson)
         {
             if (ThingDescription is null)
                 await LoadAsync();
 
-            if (!string.IsNullOrWhiteSpace(href) && Uri.TryCreate(href, UriKind.Absolute, out Uri? uri))
-            {
-                if (ThingDescription!.Links is null || ThingDescription.Links.Count == 0)
-                    throw new KeyNotFoundException($"No links found for ThingId {_thingId}.");
+            if (string.IsNullOrWhiteSpace(linkJson) || string.IsNullOrWhiteSpace(targetId) || string.IsNullOrWhiteSpace(relName))
+                throw new ArgumentException("Link JSON cannot be null or empty.", nameof(linkJson));
 
-                var link = ThingDescription.Links.FirstOrDefault(l => l.Href == uri) ?? throw new KeyNotFoundException($"Link with href '{href}' not found in ThingId {_thingId}.");
-
-                ThingDescription.Links.Remove(link);
-                await SaveAsync(ThingDescription);
-                var cloudEvent = new CloudEvent<Link>(link)
-                {
-                    Source = new Uri(_thingId),
-                    Type = "link.removed"
-                };
-                await _daprClient.PublishEventAsync("kafka-pubsub", "opentwinsv2.links.changes", cloudEvent);
-                ActorLogger.Info(_thingId, $"Published 'removed' link event for href '{href}'.");
-            }
-            else
+            Link? newLink;
+            try
             {
-                throw new ArgumentException("Href cannot be null or empty.", nameof(href));
+                newLink = JsonSerializer.Deserialize<Link>(linkJson);
             }
+            catch (JsonException ex) { throw new ArgumentException("Invalid link JSON format.", ex); }
+
+            if (newLink is null) throw new ArgumentException("The link is invalid.");
+
+            int index = ThingDescription?.Links?.FindIndex(l => l.Href.ToString() == targetId && l.Rel == relName) ?? throw new KeyNotFoundException("Link not found");
+            ThingDescription.Links[index] = newLink;
+            await SaveAsync(ThingDescription);
+
+            var httpClient = DaprClient.CreateInvokeHttpClient();
+            var response = await httpClient.PutAsJsonAsync($"http://twins-service/internal/things/{Uri.EscapeDataString(_thingId)}/links/{relName}/{targetId}",
+                                    JsonSerializer.Serialize(newLink));
+            var result = await response.Content.ReadAsStringAsync();
+
+            ActorLogger.Info(_thingId, $"Published update link event.");
+
+            return ThingDescription.ToString()!;
+        }
+
+        public async Task RemoveLinkAsync(string targetId, string relName)
+        {
+            if (ThingDescription is null) await LoadAsync();
+            if (string.IsNullOrWhiteSpace(targetId) || string.IsNullOrWhiteSpace(relName)) throw new ArgumentException("TargetId or Rel cannot be null or empty.");
+            if (ThingDescription?.Links == null || ThingDescription.Links.Count == 0) throw new KeyNotFoundException("No links available.");
+
+            int index = ThingDescription.Links.FindIndex(l => l.Href.ToString() == targetId && l.Rel == relName);
+            if (index < 0) throw new KeyNotFoundException($"Link with Href='{targetId}' and Rel='{relName}' not found.");
+
+            ThingDescription.Links.RemoveAt(index);
+            await SaveAsync(ThingDescription);
+
+            var httpClient = DaprClient.CreateInvokeHttpClient();
+            var response = await httpClient.DeleteAsync($"http://twins-service/internal/things/{Uri.EscapeDataString(_thingId)}/links/{relName}/{targetId}");
+            var result = await response.Content.ReadAsStringAsync();
+
+            ActorLogger.Info(_thingId, $"Published delete link event.");
         }
 
         public async Task<string> AddSubscriptionAsync(string json)
@@ -285,5 +289,6 @@ namespace OpenTwinsV2.Things.Actors.Services
 
             return ThingDescription.ToString()!;
         }
+
     }
 }

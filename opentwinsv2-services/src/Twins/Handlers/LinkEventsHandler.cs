@@ -1,12 +1,6 @@
 using OpenTwinsV2.Twins.Builders;
 using OpenTwinsV2.Twins.Services;
-using Dapr.Messaging.PublishSubscribe;
-using System.Text.Json;
 using OpenTwinsV2.Shared.Models;
-using System.Text;
-using System.Text.Json.Nodes;
-using Dapr;
-using Json.More;
 
 namespace OpenTwinsV2.Twins.Handlers
 {
@@ -21,62 +15,49 @@ namespace OpenTwinsV2.Twins.Handlers
             _dgraphService = dgraphService;
         }
 
-        public async Task HandleAsync(Link link, string source, string eventType)
+        public async Task HandleAddLinkAsync(string thingIdSource, Link link)
         {
-            string thingIdTarget = link.Href.ToString();
-            string thingIdSource = source;
-
-            JsonArray mutations = [];
-
-            switch (eventType.ToLowerInvariant())
-            {
-                case "link.added":
-                    var addResult = await HandleAddLink(link, thingIdSource, thingIdTarget);
-                    if (addResult != null) mutations.Add(addResult);
-                    break;
-                case "link.updated":
-                    var delUpdate = await HandleDeleteLink(link, thingIdSource, thingIdTarget);
-                    if (delUpdate != null) mutations.Add(delUpdate);
-                    var addUpdate = await HandleAddLink(link, thingIdSource, thingIdTarget);
-                    if (addUpdate != null) mutations.Add(addUpdate);
-                    break;
-                case "link.removed":
-                    var delResult = await HandleDeleteLink(link, thingIdSource, thingIdTarget);
-                    if (delResult != null) mutations.Add(delResult);
-                    break;
-                default:
-                    _logger.LogWarning("Unknown event type: {EventType}", eventType);
-                    break;
-            }
-
-            _logger.LogDebug("Mutations: {Mutations}", JsonSerializer.Serialize(mutations));
-
-            await _dgraphService.AddEntitiesAsync(mutations);
-            _logger.LogInformation("Link event processed successfully");
-        }
-
-        private async Task<JsonObject?> HandleAddLink(Link link, string thingIdSource, string thingIdTarget)
-        {
+            var thingIdTarget = link.Href.ToString();
             var uids = await _dgraphService.GetUidsByThingIdsAsync([thingIdTarget, thingIdSource]);
             if (uids.TryGetValue(thingIdTarget, out var uidTarget) && uids.TryGetValue(thingIdSource, out var uidSource))
             {
                 _logger.LogDebug("uidTarget: {uidTarget}, uidSource: {uidSource}", uidTarget, uidSource);
-                return ThingBuilder.BuildRelation(link, uidTarget, uidSource);
+                var mutation = ThingBuilder.BuildRelation(link, uidTarget, uidSource);
+                await _dgraphService.AddEntitiesAsync([mutation]);
             }
-            return null;
         }
 
-        private async Task<JsonObject?> HandleDeleteLink(Link link, string thingIdSource, string thingIdTarget)
+        public async Task HandleUpdateLinkAsync(string thingIdSource, string thingIdTarget, string relName, Link link)
         {
-            if (link.Rel != null)
+            var uid = await _dgraphService.GetRelationUidByThingIdsAsync(thingIdSource, thingIdTarget, relName);
+            if (uid == null)
             {
-                var uid = await _dgraphService.GetRelationUidByThingIdsAsync(thingIdSource, thingIdTarget, link.Rel);
-                if (uid != null)
-                {
-                    return ThingBuilder.BuildDeleteRelation(uid);
-                }
+                _logger.LogWarning("No existing relation found between {thingIdSource} and {thingIdTarget} with name {relName}", thingIdSource, thingIdTarget, relName);
+                return;
             }
-            return null;
+            var newTarget = link.Href.ToString();
+            var uids = await _dgraphService.GetUidsByThingIdsAsync([newTarget, thingIdSource]);
+            if (uids.TryGetValue(thingIdTarget, out var uidTarget) && uids.TryGetValue(thingIdSource, out var uidSource))
+            {
+                _logger.LogDebug("uidTarget: {uidTarget}, uidSource: {uidSource}", uidTarget, uidSource);
+                var mutation = ThingBuilder.BuildRelation(link, uidTarget, uidSource);
+                mutation["uid"] = uid;
+                await _dgraphService.AddEntitiesAsync([mutation]);
+            }
+        }
+
+        public async Task HandleDeleteLinkAsync(string thingIdSource, string thingIdTarget, string relName)
+        {
+            if (string.IsNullOrEmpty(thingIdSource) || string.IsNullOrEmpty(thingIdTarget) || string.IsNullOrEmpty(relName))
+            {
+                throw new ArgumentException("thingIdSource, thingIdTarget, and relName cannot be null or empty.");
+            }
+            var uid = await _dgraphService.GetRelationUidByThingIdsAsync(thingIdSource, thingIdTarget, relName);
+            if (uid != null)
+            {
+                var mutation = ThingBuilder.BuildDeleteRelation(uid);
+                await _dgraphService.DeleteEntitiesAsync([mutation]);
+            }
         }
     }
 }

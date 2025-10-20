@@ -12,6 +12,7 @@ from kafka_client import KafkaClient
 import matplotlib.pyplot as plt
 import pandas as pd
 from scenariosA import scenario_a1_a2_combined, scenario_a3_derived_property_propagation
+from scenariosB import scenario_b1_create_thing_without_twin, scenario_b2_add_thing_to_twin, scenario_b3_delete_thing, scenario_b4_add_relationship, scenario_b5_modify_relationship, scenario_b6_delete_relationship
 
 from mqtt import MQTTClient
 
@@ -113,6 +114,8 @@ def plot_results(summary_df, output_dir):
 # Main Test Execution
 # ========================================
 def main():
+    num_runs = 5
+    
     mqtt_client = MQTTClient()
     kafka_client = KafkaClient()
     
@@ -125,18 +128,49 @@ def main():
     all_results = []
 
     # === Run A1 + A2 as a joint block ===
-    for i in range(5):
-        logger.info(f"--- Iteration {i+1}/5 for A1+A2 block ---")
-        df_a1a2 = scenario_a1_a2_combined(mqtt_client, kafka_client)
-        df_a1a2["iteration"] = i + 1
-        all_results.append(df_a1a2)
+    # for i in range(5):
+    #     logger.info(f"--- Iteration {i+1}/5 for A1+A2 block ---")
+    #     df_a1a2 = scenario_a1_a2_combined(mqtt_client, kafka_client)
+    #     df_a1a2["iteration"] = i + 1
+    #     all_results.append(df_a1a2)
 
-    # === Run A3 independently ===
-    for i in range(5):
-        logger.info(f"--- Iteration {i+1}/5 for A3 ---")
-        df_a3 = scenario_a3_derived_property_propagation(mqtt_client)
-        df_a3["iteration"] = i + 1
-        all_results.append(df_a3)
+    # # === Run A3 independently ===
+    # for i in range(5):
+    #     logger.info(f"--- Iteration {i+1}/5 for A3 ---")
+    #     df_a3 = scenario_a3_derived_property_propagation(mqtt_client)
+    #     df_a3["iteration"] = i + 1
+    #     all_results.append(df_a3)
+        
+    # === Run B1: Create thing without twin ===
+    # for i in range(5):
+    #     logger.info(f"--- Iteration {i+1}/5 for B1 (create thing without twin) ---")
+    #     df_b1 = scenario_b1_create_thing_without_twin(kafka_client)
+    #     df_b1["iteration"] = i + 1
+    #     all_results.append(df_b1)
+        
+    # for i in range(5):
+    #     logger.info(f"--- Iteration {i+1}/5 for B2 (add thing to twin) ---")
+    #     df_b2 = scenario_b2_add_thing_to_twin()
+    #     df_b2["iteration"] = i + 1
+    #     all_results.append(df_b2)
+        
+    # for i in range(5):
+    #     logger.info(f"--- Iteration {i+1}/5 for B4 (add relationship) ---")
+    #     df_b4 = scenario_b4_add_relationship(kafka_client)
+    #     df_b4["iteration"] = i + 1
+    #     all_results.append(df_b4)
+        
+    # for i in range(num_runs):
+    #     logger.info(f"--- Iteration {i+1}/{num_runs} for B5 (modify relationship) ---")
+    #     df_b5 = scenario_b5_modify_relationship(kafka_client)
+    #     df_b5["iteration"] = i + 1
+    #     all_results.append(df_b5)
+        
+    for i in range(num_runs):
+        logger.info(f"--- Iteration {i+1}/{num_runs} for B6 (delete relationship) ---")
+        df_b6 = scenario_b6_delete_relationship(kafka_client)
+        df_b6["iteration"] = i + 1
+        all_results.append(df_b6)
 
     # Combine and save all
     df_all = pd.concat(all_results, ignore_index=True)

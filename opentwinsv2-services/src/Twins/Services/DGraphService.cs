@@ -961,7 +961,7 @@ namespace OpenTwinsV2.Twins.Services
                 source as var(func: eq(thingId, ""{sourceThingId}""))
                 target as var(func: eq(thingId, ""{targetThingId}""))
 
-                relations(func: eq(Relation.name, ""{relationName}"")) @cascade {{
+                relations(func: eq(Relation.name, ""{relationName}"")) {{
                     uid
                     relatedTo @filter(uid(source) OR uid(target))
                     hasChild @filter(uid(target))

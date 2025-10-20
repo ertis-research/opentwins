@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from networkx import Graph
+from rdflib import Graph
 import requests
 from dotenv import load_dotenv
 import os
@@ -103,13 +103,8 @@ def set_property(thingId, property, value):
         
     return resp
 
-def setPlane(thingId, targetId):
-    data = {
-            "href": targetId,
-            "rel": "location",
-            "type": "application/td+json"
-        }
-    resp = requests.put(f"{THINGS_ENDPOINT}/things/{thingId}/links", json=data)
+def add_link(thingId, linkData):
+    resp = requests.post(f"{THINGS_ENDPOINT}/things/{thingId}/links", json=linkData)
     try:
         resp.raise_for_status()
         #print("[INFO] Successfully sent")
@@ -118,8 +113,18 @@ def setPlane(thingId, targetId):
         
     return resp
 
-def removePlane(thingId, targetId):
-    resp = requests.delete(f"{THINGS_ENDPOINT}/things/{thingId}/links/{targetId}")
+def update_link(thingId, target, relName, linkData):
+    resp = requests.put(f"{THINGS_ENDPOINT}/things/{thingId}/links/{relName}/{target}", json=linkData)
+    try:
+        resp.raise_for_status()
+        #print("[INFO] Successfully sent")
+    except requests.HTTPError as e:
+        print("[ERROR] Request failed:", e, resp.text)
+        
+    return resp
+
+def delete_link(thingId, targetId, relName):
+    resp = requests.delete(f"{THINGS_ENDPOINT}/things/{thingId}/links/{relName}/{targetId}")
     try:
         resp.raise_for_status()
         #print("[INFO] Successfully sent")

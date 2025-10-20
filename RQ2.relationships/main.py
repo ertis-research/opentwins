@@ -10,10 +10,6 @@ from dotenv import load_dotenv
 import os
 import init
 import querys
-import time
-import matplotlib.pyplot as plt
-import networkx as nx
-from rdflib import Graph, Literal
 import figure
 
 load_dotenv()
@@ -39,7 +35,7 @@ def setPlane(thingId, targetId):
             "rel": "location",
             "type": "application/td+json"
         }
-    resp = requests.put(f"{THINGS_ENDPOINT}/things/{thingId}/links", json=data)
+    resp = requests.post(f"{THINGS_ENDPOINT}/things/{thingId}/links", json=data)
     try:
         resp.raise_for_status()
         #print("[INFO] Successfully sent")
@@ -49,7 +45,7 @@ def setPlane(thingId, targetId):
     return resp
 
 def removePlane(thingId, targetId):
-    resp = requests.delete(f"{THINGS_ENDPOINT}/things/{thingId}/links/{targetId}")
+    resp = requests.delete(f"{THINGS_ENDPOINT}/things/{thingId}/links/location/{targetId}")
     try:
         resp.raise_for_status()
         #print("[INFO] Successfully sent")

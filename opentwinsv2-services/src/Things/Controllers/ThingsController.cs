@@ -60,9 +60,12 @@ public class ThingsController : ControllerBase
         {
             td = await actor.SetThingDescriptionAsync(rawJson);
         }
-        catch (InvalidOperationException ex)
+        catch (ActorMethodInvocationException ex)
         {
-            return BadRequest(ex.Message);
+            if (ex.Message.Contains("InvalidOperationException"))
+                return BadRequest(ex.Message);
+
+            return StatusCode(500, $"Internal error: {ex.Message}");
         }
 
         return Ok(td);
@@ -116,9 +119,12 @@ public class ThingsController : ControllerBase
         {
             td = await actor.SetThingDescriptionAsync(rawJson);
         }
-        catch (InvalidOperationException ex)
+        catch (ActorMethodInvocationException ex)
         {
-            return BadRequest(ex.Message);
+            if (ex.Message.Contains("InvalidOperationException"))
+                return BadRequest(ex.Message);
+
+            return StatusCode(500, $"Internal error: {ex.Message}");
         }
 
         return Ok(td);
@@ -147,10 +153,12 @@ public class ThingsController : ControllerBase
             }
             return Content(td, "application/td+json");
         }
-        catch (InvalidOperationException ex)
+        catch (ActorMethodInvocationException ex)
         {
-            // Expected issue (e.g., state was not loaded)
-            return StatusCode(500, $"Error retrieving ThingDescription: {ex.Message}");
+            if (ex.Message.Contains("InvalidOperationException"))
+                return StatusCode(500, $"Error retrieving ThingDescription: {ex.Message}");
+
+            return StatusCode(500, $"Internal error: {ex.Message}");
         }
 
     }
@@ -281,7 +289,7 @@ public class ThingsController : ControllerBase
     /// Returns 400 Bad Request if the link is invalid.<br/>
     /// Returns 404 Not Found if the Thing was not found.
     /// </returns>
-    [HttpPut("{thingId}/links")]
+    [HttpPost("{thingId}/links")]
     [Produces("application/td+json")]
     [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
@@ -298,13 +306,56 @@ public class ThingsController : ControllerBase
             string updatedTd = await actor.AddLinkAsync(link.GetRawText());
             return Content(updatedTd, "application/td+json");
         }
-        catch (KeyNotFoundException)
+        catch (ActorMethodInvocationException ex)
         {
-            return NotFound($"Thing con ID '{thingId}' no encontrado.");
+            if (ex.Message.Contains("KeyNotFoundException"))
+                return NotFound($"Thing with ID '{thingId}' not found.");
+
+            if (ex.Message.Contains("InvalidOperationException"))
+                return BadRequest(ex.Message);
+
+            return StatusCode(500, $"Internal error: {ex.Message}");
         }
-        catch (InvalidOperationException ex)
+    }
+
+    /// <summary>
+    /// Updates an existing link of the specified Thing.
+    /// </summary>
+    /// <param name="thingId">The identifier of the Thing.</param>
+    /// <param name="href">The target ID of the link to update.</param>
+    /// <param name="rel">The relationship of the link to update.</param>
+    /// <param name="link">A JSON object containing the updated link.</param>
+    /// <returns>
+    /// Returns 200 OK with the updated Thing Description.<br/>
+    /// Returns 400 Bad Request if the link is invalid.<br/>
+    /// Returns 404 Not Found if the Thing or link was not found.
+    /// </returns>
+    [HttpPut("{thingId}/links/{rel}/{*href}")]
+    [Produces("application/td+json")]
+    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateLink(string thingId, string href, string rel, [FromBody] JsonElement link)
+    {
+        if (link.ValueKind == JsonValueKind.Undefined || link.ValueKind == JsonValueKind.Null)
+            return BadRequest("The link cannot be null or undefined.");
+
+        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+
+        try
         {
-            return BadRequest(ex.Message);
+            string updatedTd = await actor.UpdateLinkAsync(href, rel, link.GetRawText());
+            return Content(updatedTd, "application/td+json");
+        }
+        catch (ActorMethodInvocationException ex)
+        {
+            if (ex.Message.Contains("KeyNotFoundException"))
+                return NotFound($"Thing with ID '{thingId}' or link {rel} with '{href}' not found.");
+
+            if (ex.Message.Contains("InvalidOperationException"))
+                return BadRequest(ex.Message);
+
+            return StatusCode(500, $"Internal error: {ex.Message}");
         }
     }
 
@@ -314,32 +365,35 @@ public class ThingsController : ControllerBase
     /// </summary>
     /// <param name="thingId">The identifier of the Thing.</param>
     /// <param name="href">The href of the link to remove.</param>
+    /// <param name="rel">The relationship of the link to update.</param>
     /// <returns>
     /// Returns 204 No Content if the link was removed successfully.<br/>
     /// Returns 404 Not Found if the Thing or the link does not exist.
     /// </returns>
-    [HttpDelete("{thingId}/links/{*href}")]
+    [HttpDelete("{thingId}/links/{rel}/{*href}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> RemoveLink(string thingId, string href)
+    public async Task<IActionResult> RemoveLink(string thingId, string href, string rel)
     {
         if (string.IsNullOrWhiteSpace(href))
-            return BadRequest("El parámetro 'href' no puede ser vacío.");
+            return BadRequest("Target cannot be null or undefined.");
 
         IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
 
         try
         {
-            await actor.RemoveLinkAsync(href);
+            await actor.RemoveLinkAsync(href, rel);
             return NoContent();
         }
-        catch (KeyNotFoundException)
+        catch (ActorMethodInvocationException ex)
         {
-            return NotFound($"Thing con ID '{thingId}' o link '{href}' no encontrado.");
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(ex.Message);
+            if (ex.Message.Contains("KeyNotFoundException"))
+                return NotFound($"Thing with ID '{thingId}' or link '{href}' not found.");
+
+            if (ex.Message.Contains("InvalidOperationException"))
+                return BadRequest(ex.Message);
+
+            return StatusCode(500, $"Internal error: {ex.Message}");
         }
     }
 
@@ -370,13 +424,15 @@ public class ThingsController : ControllerBase
             string updatedTd = await actor.AddSubscriptionAsync(subscription.GetRawText());
             return Content(updatedTd, "application/td+json");
         }
-        catch (KeyNotFoundException)
+        catch (ActorMethodInvocationException ex)
         {
-            return NotFound($"Thing with ID '{thingId}' not found.");
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(ex.Message);
+            if (ex.Message.Contains("KeyNotFoundException"))
+                return NotFound($"Thing with ID '{thingId}' not found.");
+
+            if (ex.Message.Contains("InvalidOperationException"))
+                return BadRequest(ex.Message);
+
+            return StatusCode(500, $"Internal error: {ex.Message}");
         }
     }
 
@@ -404,13 +460,15 @@ public class ThingsController : ControllerBase
             await actor.RemoveSubscriptionAsync(subscriptionId);
             return NoContent();
         }
-        catch (KeyNotFoundException)
+        catch (ActorMethodInvocationException ex)
         {
-            return NotFound($"Thing with ID '{thingId}' or subscription '{subscriptionId}' not found.");
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(ex.Message);
+            if (ex.Message.Contains("KeyNotFoundException"))
+                return NotFound($"Thing with ID '{thingId}' not found or subscription '{subscriptionId}' not found.");
+
+            if (ex.Message.Contains("InvalidOperationException"))
+                return BadRequest(ex.Message);
+
+            return StatusCode(500, $"Internal error: {ex.Message}");
         }
     }
 

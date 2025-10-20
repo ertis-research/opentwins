@@ -78,14 +78,19 @@ namespace OpenTwinsV2.Things.Actors
             }
         }
 
-        public Task<string> AddLinkAsync(string v)
+        public async Task<string> AddLinkAsync(string v)
         {
-            return _descriptionManager.AddLinkAsync(v);
+            return await _descriptionManager.AddLinkAsync(v);
         }
 
-        public Task RemoveLinkAsync(string href)
+        public async Task<string> UpdateLinkAsync(string targetId, string relName, string newLink)
         {
-            return _descriptionManager.RemoveLinkAsync(href);
+            return await _descriptionManager.UpdateLinkAsync(targetId, relName, newLink);
+        }
+
+        public async Task RemoveLinkAsync(string href, string relName)
+        {
+            await _descriptionManager.RemoveLinkAsync(href, relName);
         }
 
         public async Task<string> AddSubscriptionAsync(string v)

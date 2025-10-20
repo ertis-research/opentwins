@@ -40,32 +40,67 @@ namespace Twins.Controllers
             }
 
             _logger.LogDebug("Processing Link from {Source}: {Link}", ceSource, JsonSerializer.Serialize(link));
-            await _handler.HandleAsync(link, ceSource, ceType);
+            //await _handler.HandleAsync(link, ceSource, ceType);
             _logger.LogInformation("Event processed successfully.");
 
             return Ok();
         }
-        
-        [HttpPost("events/links/{source}/{type}")]
+
+        [HttpPost("things/{source}/links")]
         [ApiExplorerSettings(IgnoreApi = true)]
-        public async Task<IActionResult> HandleLinkDapr(string source, string type, [FromBody] string newLink)
+        public async Task<IActionResult> HandleAddLinkDapr(string source, [FromBody] string jlink)
         {
-            _logger.LogInformation("Received a new event from Dapr.");
+            _logger.LogInformation("Received a new add link event from Dapr.");
+            var link = JsonSerializer.Deserialize<Link>(jlink);
 
-            using var reader = new StreamReader(HttpContext.Request.Body);
-            var body = await reader.ReadToEndAsync();
-
-            var link = JsonSerializer.Deserialize<Link>(newLink);
-
-            if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(type) || link == null)
+            if (string.IsNullOrEmpty(source) || link == null)
             {
-                _logger.LogWarning("Event discarded: missing source, type, or link data.");
+                _logger.LogWarning("Event discarded: missing source or link data.");
                 return Ok();
             }
 
-            _logger.LogDebug("Processing Link from {Source}: {Link}",source, JsonSerializer.Serialize(link));
-            await _handler.HandleAsync(link, source, type);
-            _logger.LogInformation("Event processed successfully.");
+            _logger.LogDebug("Processing Link from {Source}: {Link}", source, JsonSerializer.Serialize(link));
+            await _handler.HandleAddLinkAsync(source, link);
+            _logger.LogInformation("Add link event processed successfully.");
+
+            return Ok();
+        }
+
+        [HttpPut("things/{source}/links/{relName}/{*target}")]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public async Task<IActionResult> HandleAddLinkDapr(string source, string target, string relName, [FromBody] string jlink)
+        {
+            _logger.LogInformation("Received a new update link event from Dapr.");
+            var link = JsonSerializer.Deserialize<Link>(jlink);
+
+            if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(target) || string.IsNullOrEmpty(relName) || link == null)
+            {
+                _logger.LogWarning("Event discarded: missing source, target, relation name or link data.");
+                return Ok();
+            }
+
+            _logger.LogDebug("Processing Link from {Source}: {Link}", source, JsonSerializer.Serialize(link));
+            await _handler.HandleUpdateLinkAsync(source, target, relName, link);
+            _logger.LogInformation("Update link event processed successfully.");
+
+            return Ok();
+        }
+        
+        [HttpDelete("things/{source}/links/{relName}/{*target}")]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public async Task<IActionResult> HandleDeleteLinkDapr(string source, string target, string relName)
+        {
+            _logger.LogInformation("Received a new delete link event from Dapr.");
+
+            if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(target) || string.IsNullOrEmpty(relName))
+            {
+                _logger.LogWarning("Event discarded: missing source, target, relation name or link data.");
+                return Ok();
+            }
+
+            _logger.LogDebug("Processing Link from {Source} to {Target}", source, target);
+            await _handler.HandleDeleteLinkAsync(source, target, relName);
+            _logger.LogInformation("Delete link event processed successfully.");
 
             return Ok();
         }

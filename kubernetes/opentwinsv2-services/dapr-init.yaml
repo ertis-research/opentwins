@@ -50,9 +50,5 @@ kind: Configuration
 metadata:
   name: dapr-config
 spec:
-  mtls:
-    enabled: false
-    sentryAddress: "sentry.dapr-system.svc:7443"
-    controlPlaneTrustDomain: "cluster.local"
   tracing:
     samplingRate: "0"

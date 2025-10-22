@@ -66,7 +66,7 @@ def remove_and_init_DB():
 def delete_subscription(thingId, eventName):
     send_delete(f"{THINGS_ENDPOINT}/things/{thingId}/subscriptions/{eventName}")
 
-def post_twin(twinId):
+def create_twin(twinId):
     send_post(f"{TWINS_ENDPOINT}/twins/{twinId}")
 
 def add_thing_to_twin(twinId, thingIds):
@@ -75,7 +75,7 @@ def add_thing_to_twin(twinId, thingIds):
 def get_thing_state(thingId):
     return send_get(f"{THINGS_ENDPOINT}/things/{thingId}/state")
 
-def post_thing(json_filename, uid=None, name=None):
+def create_thing(json_filename, uid=None, name=None):
     json_path = Path(json_filename)
     if not json_path.exists():
         raise FileNotFoundError(f"File not found: {json_filename}")
@@ -91,6 +91,9 @@ def post_thing(json_filename, uid=None, name=None):
     send_post(url, headers=headers, json=data)
     
     return data["id"]
+
+def delete_thing(thingId):
+    send_delete(f"{THINGS_ENDPOINT}/things/{thingId}")
     
 def set_property(thingId, property, value):
     data = {property: value}
@@ -133,7 +136,7 @@ def delete_link(thingId, targetId, relName):
         
     return resp
 
-def load_graph_from_api(twinId, name):
+def load_graph_from_api(twinId, output_dir, name):
     headers = {"Accept": "application/n-quads"}
     resp = requests.get(f"{TWINS_ENDPOINT}/twins/{twinId}", headers=headers)
     resp.raise_for_status()
@@ -141,7 +144,7 @@ def load_graph_from_api(twinId, name):
     g = Graph()
     g.parse(data=resp.text, format=RDF_FORMAT)
     os.makedirs("output", exist_ok=True)
-    g.serialize(f"output/{name}.ttl", format="turtle")
+    g.serialize(os.path.join(output_dir, f"{name}.ttl"), format="turtle")
     if len(g) == 0:
         print("[ERROR] Graph empty")
     return g

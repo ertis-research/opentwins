@@ -10,3 +10,24 @@ spec:
     drainRebalancedActors: true
     reentrancy:
       enabled: true
+  dataPlane:
+    # Configuración de los pipes de la aplicación (comunicación sidecar <-> sidecar)
+    appPipes:
+      # Límite de tiempo para la comunicación gRPC/HTTP saliente
+      maxRequestBodySize: 4 # MB (default: 4)
+      # 🔑 CLAVE: Reducir el timeout de las llamadas de service invocation
+      readBufferSizeKB: 4 # KB (default: 4)
+    http:
+      readTimeout: "5s"
+      writeTimeout: "5s"
+      idleTimeout: "60s"
+    grpc:
+      connectionTimeout: "5s"
+      maxRequestBodySize: 4
+  nameResolution:
+    component: "consul"
+    version: "v1"
+    configuration:
+      selfRegister: true
+  mtls:
+    enabled: false

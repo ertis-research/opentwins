@@ -114,16 +114,21 @@ net stop w32time
 net start w32time
 w32tm /resync
 
+consul agent -dev
 
 helm upgrade --install dapr dapr/dapr 
  --version=1.15 
  --namespace dapr-system 
  --create-namespace 
  --set dapr_scheduler.cluster.storageSize=16Gi
- --set global.mtls.enabled=false 
+ --set global.mtls.enabled=true 
  --wait
 
 helm upgrade --install dapr-dashboard dapr/dapr-dashboard --namespace dapr-system --set serviceType=NodePort
 
 docker build -t REGISTRYID/opentwinsv2-events:0.0.1 . -f Dockerfile.Events
 docker push REGISTRYID/opentwinsv2-events:0.0.1
+
+El motivo por el que experimentaste lentitud en tu entorno local es porque Dapr utiliza mDNS por defecto para la invocación de servicios en modo Self-Hosted. Si tu firewall, VPN o la configuración de tu sistema operativo (especialmente en máquinas virtuales o Docker Desktop) interfiere con las comunicaciones multicast, mDNS puede tardar en resolverse o fallar, causando esos largos timeouts de 15 segundos.
+
+En cambio, al pasar a Kubernetes, Dapr utiliza el DNS de Kubernetes, un sistema centralizado y robusto que es mucho más rápido y fiable, eliminando la dependencia del mDNS para el descubrimiento de servicios. Se elimina el cuello de botella de mDNS, y las llamadas InvokeMethodAsync se vuelven rápidas, sumando solo los milisegundos de latencia de red y el overhead normal del sidecar.

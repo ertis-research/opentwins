@@ -7,6 +7,7 @@
 #**/appsettings.json
 **/appsettings.Development.json
 **/appsettings.json
+opentwinsv2-services/src/Twins/appsettings.json
 
 #secrets
 /kubernetes/benthos/benthos-secret.yaml
@@ -500,3 +501,5 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+opentwinsv2-services/src/Twins/daprConfig.yaml

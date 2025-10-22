@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import logging
+import time
 import pandas as pd
 from rdflib import Literal, Namespace, URIRef
 import use_platform
@@ -16,13 +17,13 @@ def init_test():
     
     use_platform.remove_and_init_DB()
     
-    listId.append(use_platform.post_thing("thingDescriptions/terminalA.json"))
-    listId.append(use_platform.post_thing("thingDescriptions/terminalB.json"))
-    listId.append(use_platform.post_thing("thingDescriptions/airport.json"))
+    listId.append(use_platform.create_thing("thingDescriptions/terminalA.json"))
+    listId.append(use_platform.create_thing("thingDescriptions/terminalB.json"))
+    listId.append(use_platform.create_thing("thingDescriptions/airport.json"))
     for i in range(1, 6):
-        listId.append(use_platform.post_thing("thingDescriptions/plane.json", f"{TWIN_ID}:Plane" + str(i), f"Plane{i}"))
+        listId.append(use_platform.create_thing("thingDescriptions/plane.json", f"{TWIN_ID}:Plane" + str(i), f"Plane{i}"))
         
-    use_platform.post_twin(TWIN_ID)
+    use_platform.create_twin(TWIN_ID)
     use_platform.add_thing_to_twin(TWIN_ID, ",".join(listId))
     
     use_platform.add_link(f"{TWIN_ID}:Plane3", {
@@ -32,14 +33,15 @@ def init_test():
     })
 
 
-def scenario_b1_create_thing_without_twin(kafka_client):
+def scenario_b1_create_thing_without_twin(kafka_client, output_dir):
     init_test()
-    g1 = use_platform.load_graph_from_api(TWIN_ID, "init_rq3_b1")
+    g1 = use_platform.load_graph_from_api(TWIN_ID, output_dir, "init_rq3_b1")
+    time.sleep(10)
     PLANE_ID=f"{TWIN_ID}:Plane6"
     
     send_request_time = datetime.now(timezone.utc)
     logging.info(f"Sending request to create plane ID {PLANE_ID} at {send_request_time.isoformat()}")
-    use_platform.post_thing("thingDescriptions/plane.json", PLANE_ID)
+    use_platform.create_thing("thingDescriptions/plane.json", PLANE_ID)
     
     result = kafka_client.get_time_from_source(topic="thing.description.changes", source=PLANE_ID, start_timestamp=send_request_time.timestamp()*1000)
     latency = float("nan")
@@ -47,12 +49,12 @@ def scenario_b1_create_thing_without_twin(kafka_client):
         latency = (result - send_request_time).total_seconds()
         logging.info(f"Received creation for plane ID {PLANE_ID}. Latency: {latency:.3f} seconds")
     
-    g2 = use_platform.load_graph_from_api(TWIN_ID, "after_rq3_b1")
+    g2 = use_platform.load_graph_from_api(TWIN_ID, output_dir, "after_rq3_b1")
     
     match = g1.isomorphic(g2)
     
     return pd.DataFrame([{
-        "scenario": "B1_create_thing",
+        "scenario": "B1",
         "iteration": 1,
         "match": match,
         "latency": latency,
@@ -60,18 +62,19 @@ def scenario_b1_create_thing_without_twin(kafka_client):
     }])
 
 
-def scenario_b2_add_thing_to_twin():
+def scenario_b2_add_thing_to_twin(output_dir):
     init_test()
     PLANE_ID=f"{TWIN_ID}:Plane7"
     
-    g1 = use_platform.load_graph_from_api(TWIN_ID, "init_rq3_b2")
-    use_platform.post_thing("thingDescriptions/plane.json", PLANE_ID)
+    g1 = use_platform.load_graph_from_api(TWIN_ID, output_dir, "init_rq3_b2")
+    time.sleep(10)
+    use_platform.create_thing("thingDescriptions/plane.json", PLANE_ID)
 
     send_request_time = datetime.now(timezone.utc)
     logging.info(f"Sending request to add plane ID {PLANE_ID} to twin {TWIN_ID} at {send_request_time.isoformat()}")
     use_platform.add_thing_to_twin(TWIN_ID, PLANE_ID)
     
-    g2 = use_platform.load_graph_from_api(TWIN_ID, "after_rq3_b2")
+    g2 = use_platform.load_graph_from_api(TWIN_ID, output_dir, "after_rq3_b2")
 
     plane_uri = URIRef(PLANE_ID)
     createdAt = None
@@ -97,7 +100,7 @@ def scenario_b2_add_thing_to_twin():
     logging.info(f"Match {match}")
     
     return pd.DataFrame([{
-        "scenario": "B2_add_thing_to_twin",
+        "scenario": "B2",
         "iteration": 1,
         "match": match,
         "latency": latency,
@@ -105,14 +108,47 @@ def scenario_b2_add_thing_to_twin():
     }])
 
 
-def scenario_b3_delete_thing():
-    """Placeholder for scenario: delete thing and verify removal."""
-    pass
-
-
-def scenario_b4_add_relationship(kafka_client):
+def scenario_b3_delete_thing(kafka_client, output_dir):
     init_test()
-    g1 = use_platform.load_graph_from_api(TWIN_ID, "init_rq3_b4")
+    g1 = use_platform.load_graph_from_api(TWIN_ID, output_dir, "init_rq3_b3")
+    time.sleep(10)
+    
+    PLANE_ID=f"{TWIN_ID}:Plane3"
+    
+    send_request_time = datetime.now(timezone.utc)
+    logging.info(f"Sending request to create plane ID {PLANE_ID} at {send_request_time.isoformat()}")
+    use_platform.delete_thing(PLANE_ID)
+    
+    result = kafka_client.get_time_from_source(topic="thing.description.deleted", source=PLANE_ID, start_timestamp=send_request_time.timestamp()*1000)
+    latency = float("nan")
+    if result != None:
+        latency = (result - send_request_time).total_seconds()
+        logging.info(f"Received deletion for plane ID {PLANE_ID}. Latency: {latency:.3f} seconds")
+    
+    g2 = use_platform.load_graph_from_api(TWIN_ID, output_dir, "after_rq3_b3")
+
+    plane_uri = URIRef(PLANE_ID)
+    g1_triples = set(g1)
+    g2_triples = set(g2)
+    g1_triples_without_plane = {t for t in g1_triples if plane_uri not in t}
+
+    match = g2_triples == g1_triples_without_plane
+    logging.info(f"Match {match}")
+    
+    return pd.DataFrame([{
+        "scenario": "B3",
+        "iteration": 1,
+        "match": match,
+        "latency": latency,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }])
+
+
+def scenario_b4_add_relationship(kafka_client, output_dir):
+    init_test()
+    g1 = use_platform.load_graph_from_api(TWIN_ID, output_dir, "init_rq3_b4")
+    time.sleep(10)
+    
     PLANE_ID=f"{TWIN_ID}:Plane2"
     TERMINAL_ID = f"{TWIN_ID}:TerminalA"
     NS1 = Namespace("http://example.org/")
@@ -133,7 +169,7 @@ def scenario_b4_add_relationship(kafka_client):
         latency = (result - send_request_time).total_seconds()
         logging.info(f"Received modification for plane ID {PLANE_ID}. Latency: {latency:.3f} seconds")
     
-    g2 = use_platform.load_graph_from_api(TWIN_ID, "after_rq3_b4")
+    g2 = use_platform.load_graph_from_api(TWIN_ID, output_dir, "after_rq3_b4")
     
     plane_uri = URIRef(PLANE_ID)
     terminal_uri = URIRef(TERMINAL_ID)
@@ -155,7 +191,7 @@ def scenario_b4_add_relationship(kafka_client):
     logging.info(f"Match {match}")
     
     return pd.DataFrame([{
-        "scenario": "B4_add_rel",
+        "scenario": "B4",
         "iteration": 1,
         "match": match,
         "latency": latency,
@@ -163,9 +199,11 @@ def scenario_b4_add_relationship(kafka_client):
     }])
 
 
-def scenario_b5_modify_relationship(kafka_client):
+def scenario_b5_modify_relationship(kafka_client, output_dir):
     init_test()
-    g1 = use_platform.load_graph_from_api(TWIN_ID, "init_rq3_b5")
+    g1 = use_platform.load_graph_from_api(TWIN_ID, output_dir, "init_rq3_b5")
+    time.sleep(10)
+    
     PLANE_ID=f"{TWIN_ID}:Plane3"
     NS1 = Namespace("http://example.org/")
     
@@ -185,7 +223,7 @@ def scenario_b5_modify_relationship(kafka_client):
         latency = (result - send_request_time).total_seconds()
         logging.info(f"Received modification for plane ID {PLANE_ID}. Latency: {latency:.3f} seconds")
     
-    g2 = use_platform.load_graph_from_api(TWIN_ID, "after_rq3_b5")
+    g2 = use_platform.load_graph_from_api(TWIN_ID, output_dir, "after_rq3_b5")
 
     plane_uri = URIRef(PLANE_ID)
     terminal_uri = URIRef(TERMINALB_ID)
@@ -205,7 +243,7 @@ def scenario_b5_modify_relationship(kafka_client):
     logging.info(f"Match {match}")
     
     return pd.DataFrame([{
-        "scenario": "B5_modify_rel",
+        "scenario": "B5",
         "iteration": 1,
         "match": match,
         "latency": latency,
@@ -213,9 +251,11 @@ def scenario_b5_modify_relationship(kafka_client):
     }])
 
 
-def scenario_b6_delete_relationship(kafka_client):
+def scenario_b6_delete_relationship(kafka_client, output_dir):
     init_test()
-    g1 = use_platform.load_graph_from_api(TWIN_ID, "init_rq3_b6")
+    g1 = use_platform.load_graph_from_api(TWIN_ID, output_dir, "init_rq3_b6")
+    time.sleep(10)
+    
     PLANE_ID=f"{TWIN_ID}:Plane3"
     NS1 = Namespace("http://example.org/")
     
@@ -229,7 +269,7 @@ def scenario_b6_delete_relationship(kafka_client):
         latency = (result - send_request_time).total_seconds()
         logging.info(f"Received link deletion for plane ID {PLANE_ID}. Latency: {latency:.3f} seconds")
     
-    g2 = use_platform.load_graph_from_api(TWIN_ID, "after_rq3_b6")
+    g2 = use_platform.load_graph_from_api(TWIN_ID, output_dir, "after_rq3_b6")
 
     plane_uri = URIRef(PLANE_ID)
     terminal_uri = URIRef(TERMINALB_ID)
@@ -250,7 +290,7 @@ def scenario_b6_delete_relationship(kafka_client):
     logging.info(f"Match {match}")
     
     return pd.DataFrame([{
-        "scenario": "B6_delete_rel",
+        "scenario": "B6",
         "iteration": 1,
         "match": match,
         "latency": latency,

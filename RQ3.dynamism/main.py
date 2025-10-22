@@ -7,6 +7,7 @@ RQ3 - Evaluating the dynamic updating and reconfiguration capabilities of the pl
 import logging
 import os
 from datetime import datetime, timezone
+import time
 from dotenv import load_dotenv
 from kafka_client import KafkaClient
 import matplotlib.pyplot as plt
@@ -114,7 +115,7 @@ def plot_results(summary_df, output_dir):
 # Main Test Execution
 # ========================================
 def main():
-    num_runs = 5
+    num_runs = 1
     
     mqtt_client = MQTTClient()
     kafka_client = KafkaClient()
@@ -127,48 +128,73 @@ def main():
 
     all_results = []
 
-    # === Run A1 + A2 as a joint block ===
-    # for i in range(5):
-    #     logger.info(f"--- Iteration {i+1}/5 for A1+A2 block ---")
-    #     df_a1a2 = scenario_a1_a2_combined(mqtt_client, kafka_client)
-    #     df_a1a2["iteration"] = i + 1
-    #     all_results.append(df_a1a2)
+    #=== Run A1 + A2 as a joint block ===
+    logger.info("Prewarn: Starting scenario A1 + A2 combined block...")
+    scenario_a1_a2_combined(mqtt_client, kafka_client)
+    for i in range(num_runs):
+        logger.info(f"--- Iteration {i+1}/{num_runs} for A1+A2 block ---")
+        df_a1a2 = scenario_a1_a2_combined(mqtt_client, kafka_client)
+        df_a1a2["iteration"] = i + 1
+        all_results.append(df_a1a2)
 
-    # # === Run A3 independently ===
-    # for i in range(5):
-    #     logger.info(f"--- Iteration {i+1}/5 for A3 ---")
-    #     df_a3 = scenario_a3_derived_property_propagation(mqtt_client)
-    #     df_a3["iteration"] = i + 1
-    #     all_results.append(df_a3)
+    # === Run A3 ===
+    logger.info("Prewarn: Starting scenario A3 (Derived Property Propagation)...")
+    scenario_a3_derived_property_propagation(mqtt_client)
+    for i in range(num_runs):
+        logger.info(f"--- Iteration {i+1}/{num_runs} for A3 ---")
+        df_a3 = scenario_a3_derived_property_propagation(mqtt_client)
+        df_a3["iteration"] = i + 1
+        all_results.append(df_a3)
         
-    # === Run B1: Create thing without twin ===
-    # for i in range(5):
-    #     logger.info(f"--- Iteration {i+1}/5 for B1 (create thing without twin) ---")
-    #     df_b1 = scenario_b1_create_thing_without_twin(kafka_client)
-    #     df_b1["iteration"] = i + 1
-    #     all_results.append(df_b1)
-        
-    # for i in range(5):
-    #     logger.info(f"--- Iteration {i+1}/5 for B2 (add thing to twin) ---")
-    #     df_b2 = scenario_b2_add_thing_to_twin()
-    #     df_b2["iteration"] = i + 1
-    #     all_results.append(df_b2)
-        
-    # for i in range(5):
-    #     logger.info(f"--- Iteration {i+1}/5 for B4 (add relationship) ---")
-    #     df_b4 = scenario_b4_add_relationship(kafka_client)
-    #     df_b4["iteration"] = i + 1
-    #     all_results.append(df_b4)
-        
-    # for i in range(num_runs):
-    #     logger.info(f"--- Iteration {i+1}/{num_runs} for B5 (modify relationship) ---")
-    #     df_b5 = scenario_b5_modify_relationship(kafka_client)
-    #     df_b5["iteration"] = i + 1
-    #     all_results.append(df_b5)
-        
+    #=== Run B1: Create thing without twin ===
+    logger.info("Prewarn: Starting scenario B1 (Create Thing Without Twin)...")
+    scenario_b1_create_thing_without_twin(kafka_client, output_dir)
+    for i in range(num_runs):
+        logger.info(f"--- Iteration {i+1}/{num_runs} for B1 (create thing without twin) ---")
+        df_b1 = scenario_b1_create_thing_without_twin(kafka_client, output_dir)
+        df_b1["iteration"] = i + 1
+        all_results.append(df_b1)
+    
+    #=== Run B2: Add thing to twin ===
+    logger.info("Prewarn: Starting scenario B2 (Add Thing to Twin)...")
+    scenario_b2_add_thing_to_twin(output_dir)
+    for i in range(num_runs):
+        logger.info(f"--- Iteration {i+1}/{num_runs} for B2 (add thing to twin) ---")
+        df_b2 = scenario_b2_add_thing_to_twin(output_dir)
+        df_b2["iteration"] = i + 1
+        all_results.append(df_b2)
+    
+    logger.info("Prewarn: Starting scenario B3 (Delete Thing)...")
+    scenario_b3_delete_thing(kafka_client, output_dir)
+    time.sleep(15)
+    for i in range(num_runs):
+        logger.info(f"--- Iteration {i+1}/{num_runs} for B3 (delete thing) ---")
+        df_b3 = scenario_b3_delete_thing(kafka_client, output_dir)
+        df_b3["iteration"] = i + 1
+        all_results.append(df_b3)
+        time.sleep(5)
+    
+    logger.info("Prewarn: Starting scenario B4 (Add Relationship)...")
+    scenario_b4_add_relationship(kafka_client, output_dir)
+    for i in range(num_runs):
+        logger.info(f"--- Iteration {i+1}/{num_runs} for B4 (add relationship) ---")
+        df_b4 = scenario_b4_add_relationship(kafka_client, output_dir)
+        df_b4["iteration"] = i + 1
+        all_results.append(df_b4)
+    
+    logger.info("Prewarn: Starting scenario B5 (Modify Relationship)...")
+    scenario_b5_modify_relationship(kafka_client, output_dir)
+    for i in range(num_runs):
+        logger.info(f"--- Iteration {i+1}/{num_runs} for B5 (modify relationship) ---")
+        df_b5 = scenario_b5_modify_relationship(kafka_client, output_dir)
+        df_b5["iteration"] = i + 1
+        all_results.append(df_b5)
+    
+    logger.info("Prewarn: Starting scenario B6 (Delete Relationship)...")
+    scenario_b6_delete_relationship(kafka_client, output_dir)
     for i in range(num_runs):
         logger.info(f"--- Iteration {i+1}/{num_runs} for B6 (delete relationship) ---")
-        df_b6 = scenario_b6_delete_relationship(kafka_client)
+        df_b6 = scenario_b6_delete_relationship(kafka_client, output_dir)
         df_b6["iteration"] = i + 1
         all_results.append(df_b6)
 

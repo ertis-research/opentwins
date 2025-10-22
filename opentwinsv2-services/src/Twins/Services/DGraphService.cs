@@ -202,6 +202,66 @@ namespace OpenTwinsV2.Twins.Services
             }
         }
 
+        public async Task<Response> DeleteThingAsync(string thingId)
+        {
+            if (string.IsNullOrWhiteSpace(thingId))
+                throw new ArgumentException("ThingId cannot be null or empty", nameof(thingId));
+
+            using var txn = _client.NewTransaction();
+
+            var query = $@"
+            query {{
+                q(func: eq(thingId, ""{thingId}"")) {{
+                    uid
+                }}
+            }}";
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8();
+            var doc = JsonDocument.Parse(json);
+            var arr = doc.RootElement.GetProperty("q");
+
+            if (arr.GetArrayLength() == 0)
+                throw new KeyNotFoundException($"ThingId {thingId} not found");
+
+            var uid = arr[0].GetProperty("uid").GetString();
+
+            var mu = new Mutation
+            {
+                DelNquads = ByteString.CopyFromUtf8($"<{uid}> * * ."),
+                CommitNow = true
+            };
+
+            return await txn.Mutate(mu);
+        }
+
+        private async Task<List<string>> GetRelationUidsByThingAsync(string thingUid)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var query = $@"
+                {{
+                    relations(func: type(Relation)) @filter(uid_in(relatedTo, {thingUid})) {{
+                        uid
+                    }}
+                }}";
+
+                var res = await txn.Query(query);
+                var json = res.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                if (!doc.RootElement.TryGetProperty("relations", out var relArray))
+                    return new List<string>();
+
+                return [.. relArray.EnumerateArray().Select(r => r.GetProperty("uid").GetString()!)];
+            }
+            finally
+            {
+                await txn.DisposeAsync();
+            }
+        }
+
         private string ListNQuadsToMutationFormat(List<string> nquads)
         {
             StringBuilder res = new StringBuilder();
@@ -238,7 +298,7 @@ namespace OpenTwinsV2.Twins.Services
                 throw;
             }
         }
-        
+
         public async Task<List<string>> GetAllOntologyRelatedNodesUidAsync(string ontologyId)
         {
             var txn = _client.NewTransaction();
@@ -273,47 +333,48 @@ namespace OpenTwinsV2.Twins.Services
 
                 var uids = new List<string>();
 
-                if (doc.RootElement.TryGetProperty("ontologies", out JsonElement ontologies)){
-                    foreach(var ontology in ontologies.EnumerateArray())
+                if (doc.RootElement.TryGetProperty("ontologies", out JsonElement ontologies))
+                {
+                    foreach (var ontology in ontologies.EnumerateArray())
                     {
                         //collect all uids and add it to the list
-                        if(ontology.TryGetProperty("uid", out var ontUid))
+                        if (ontology.TryGetProperty("uid", out var ontUid))
                             uids.Add(ontUid.ToString());
 
-                        if(ontology.TryGetProperty("hasThing", out var things))
+                        if (ontology.TryGetProperty("hasThing", out var things))
                         {
                             //iterate through all posible relations of things
-                            foreach(var thing in things.EnumerateArray())
+                            foreach (var thing in things.EnumerateArray())
                             {
                                 if (thing.TryGetProperty("uid", out var thingUid))
                                     uids.Add(thingUid.ToString());
-                                if(thing.TryGetProperty("~relatedTo", out var rels))
+                                if (thing.TryGetProperty("~relatedTo", out var rels))
                                 {
-                                    foreach(var rel in rels.EnumerateArray())
+                                    foreach (var rel in rels.EnumerateArray())
                                     {
-                                        if(rel.TryGetProperty("uid", out var relUid))
+                                        if (rel.TryGetProperty("uid", out var relUid))
                                             uids.Add(relUid.ToString());
                                     }
                                 }
-                                if(thing.TryGetProperty("hasAttribute", out var attributes))
+                                if (thing.TryGetProperty("hasAttribute", out var attributes))
                                 {
-                                    foreach(var attr in attributes.EnumerateArray())
+                                    foreach (var attr in attributes.EnumerateArray())
                                     {
-                                        if(attr.TryGetProperty("uid", out var attrUid))
+                                        if (attr.TryGetProperty("uid", out var attrUid))
                                             uids.Add(attrUid.ToString());
                                     }
                                 }
-                                if(thing.TryGetProperty("~hasType", out var types))
+                                if (thing.TryGetProperty("~hasType", out var types))
                                 {
-                                    foreach(var type in types.EnumerateArray())
+                                    foreach (var type in types.EnumerateArray())
                                     {
-                                        if(type.TryGetProperty("uid",out var typeUid))
+                                        if (type.TryGetProperty("uid", out var typeUid))
                                             uids.Add(typeUid.ToString());
                                     }
                                 }
                             }
                         }
-                        
+
                     }
                 }
 
@@ -327,7 +388,7 @@ namespace OpenTwinsV2.Twins.Services
             }
         }
 
-        
+
         public async Task<Response> DeleteByOntologyId(string ontologyId)
         {
             var txn = _client.NewTransaction();
@@ -370,7 +431,7 @@ namespace OpenTwinsV2.Twins.Services
                 throw;
             }
         }
-        
+
 
         public async Task<bool> ThingBelongsToTwinAsync(string twinId, string thingId)
         {
@@ -833,16 +894,13 @@ namespace OpenTwinsV2.Twins.Services
             if (!thingArray[0].TryGetProperty("hasAttribute", out JsonElement attributeArray) || attributeArray.GetArrayLength() == 0)
                 return null;
 
-            return JsonSerializer.Deserialize<JsonElement>(attributeArray.GetRawText()); 
+            return JsonSerializer.Deserialize<JsonElement>(attributeArray.GetRawText());
         }
 
         public async Task<Response> AddThingToTwinAsync(string thingId, string twinId)
         {
-            var twinUid = await GetUidsByThingIdsAsync([twinId]);
-            var thingUid = await GetUidsByThingIdsAsync([thingId]);
-
-            if (twinUid == null || thingUid == null)
-                throw new Exception("Twin or Thing not found");
+            var uids = await GetUidsByThingIdsAsync([twinId, thingId]);
+            if (!uids.TryGetValue(thingId, out var thingUid) || !uids.TryGetValue(twinId, out var twinUid)) throw new KeyNotFoundException("Twin or Thing not found");
 
             var mutation = new
             {
@@ -863,16 +921,13 @@ namespace OpenTwinsV2.Twins.Services
             await txn.Commit();
 
             return response;
+
         }
 
         public async Task<Response> RemoveThingFromTwinAsync(string thingId, string twinId)
         {
-            var twinUid = await GetUidsByThingIdsAsync([twinId]);
-            var thingUid = await GetUidsByThingIdsAsync([thingId]);
-
-            if (twinUid == null || thingUid == null)
-                throw new KeyNotFoundException("Twin or Thing not found");
-
+            var uids = await GetUidsByThingIdsAsync([twinId, thingId]);
+            if (!uids.TryGetValue(thingId, out var thingUid) || !uids.TryGetValue(twinId, out var twinUid)) throw new KeyNotFoundException("Twin or Thing not found");
             // 1. Eliminar la relación contains entre Twin y Thing
             var txn = _client.NewTransaction();
 

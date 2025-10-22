@@ -5,3 +5,10 @@ metadata:
 spec:
   tracing:
     samplingRate: "0"
+  nameResolution:
+    component: "consul"
+    version: "v1"
+    configuration:
+      selfRegister: true
+  mtls:
+    enabled: false

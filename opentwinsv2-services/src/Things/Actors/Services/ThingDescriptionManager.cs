@@ -9,6 +9,7 @@ using OpenTwinsV2.Things.Infrastructure.Database;
 using Dapr.Actors;
 using Dapr;
 using System.Text.Json.Nodes;
+using Dapr.Actors.Runtime;
 
 namespace OpenTwinsV2.Things.Actors.Services
 {
@@ -19,6 +20,7 @@ namespace OpenTwinsV2.Things.Actors.Services
         private readonly IDbConnectionFactory _connectionFactory;
         private readonly string _thingId;
         private const string StateStoreName = "actorstatestore";
+
 
         public ThingDescription? ThingDescription { get; private set; }
 
@@ -74,41 +76,37 @@ namespace OpenTwinsV2.Things.Actors.Services
             }
         }
 
-        public async Task DeleteAsync()
+        public async Task DeleteAsync(bool asyncPersist = true)
         {
-            try
-            {
-                await _daprClient.DeleteStateAsync(StateStoreName, ThingDescriptionKey + _thingId);
-                ActorLogger.Info(_thingId, "Thing Description deleted from statestore.");
-            }
-            catch (Exception ex)
-            {
-                ActorLogger.Error(_thingId, $"Error while deleting ThingDescription from statestore: {ex}");
-                throw new InvalidOperationException("Error while deleting ThingDescription from statestore.", ex);
-            }
+            await _daprClient.DeleteStateAsync(StateStoreName, ThingDescriptionKey + _thingId);
+            ActorLogger.Info(_thingId, "Thing Description deleted from statestore.");
 
-            try
-            {
-                await using var connection = await _connectionFactory.CreateConnection();
-                var cmd = new NpgsqlCommand(
-                    "DELETE FROM thing_descriptions WHERE thingId = @ThingId;",
-                    connection);
-                cmd.Parameters.Add(new NpgsqlParameter("@ThingId", DbType.String) { Value = _thingId });
+            await _daprClient.InvokeMethodAsync(HttpMethod.Delete, "twins-service", $"internal/things/{_thingId}");
 
-                int affectedRows = await cmd.ExecuteNonQueryAsync();
-                if (affectedRows == 0)
-                {
-                    ActorLogger.Warn(_thingId, $"No ThingDescription found to delete for ThingId {_thingId}.");
-                }
-                else
-                {
-                    ActorLogger.Info(_thingId, "Thing Description deleted from PostgreSQL.");
-                }
-            }
-            catch (Exception ex)
+            if (asyncPersist)
             {
-                ActorLogger.Error(_thingId, $"Error while deleting ThingDescription from PostgreSQL: {ex}");
-                throw new InvalidOperationException("Error while deleting ThingDescription from PostgreSQL.", ex);
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var metadata = new Dictionary<string, string>()
+                        {
+                            { "cloudevent.source", new Uri(_thingId).ToString() },
+                            { "cloudevent.type", "thing.description.deleted:" + _thingId }
+                        };
+
+                        await _daprClient.PublishEventAsync("kafka-pubsub", "thing.description.deleted", _thingId, metadata);
+                        await DeleteFromPostgreSqlAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        ActorLogger.Error(_thingId, $"Error while background deleting TD: {ex}");
+                    }
+                });
+            }
+            else
+            {
+                await DeleteFromPostgreSqlAsync();
             }
         }
 
@@ -153,6 +151,25 @@ namespace OpenTwinsV2.Things.Actors.Services
             ActorLogger.Info(_thingId, "Thing Description saved in PostgreSQL.");
         }
 
+        private async Task DeleteFromPostgreSqlAsync()
+        {
+            await using var connection = await _connectionFactory.CreateConnection();
+            var cmd = new NpgsqlCommand(
+                "DELETE FROM thing_descriptions WHERE thingId = @ThingId;",
+                connection);
+            cmd.Parameters.Add(new NpgsqlParameter("@ThingId", DbType.String) { Value = _thingId });
+
+            int affectedRows = await cmd.ExecuteNonQueryAsync();
+            if (affectedRows == 0)
+            {
+                ActorLogger.Warn(_thingId, $"No ThingDescription found to delete for ThingId {_thingId}.");
+            }
+            else
+            {
+                ActorLogger.Info(_thingId, "Thing Description deleted from PostgreSQL.");
+            }
+        }
+
         public async Task<string> AddLinkAsync(string linkJson)
         {
             if (ThingDescription is null)
@@ -175,12 +192,16 @@ namespace OpenTwinsV2.Things.Actors.Services
             if (ThingDescription.Links.Any(l => l.Href == newLink.Href && l.Rel == newLink.Rel)) throw new InvalidOperationException("A link with the same Href and Rel already exists.");
             ThingDescription.Links.Add(newLink);
             await SaveAsync(ThingDescription);
-
-            var httpClient = DaprClient.CreateInvokeHttpClient();
-            var response = await httpClient.PostAsJsonAsync($"http://twins-service/internal/things/{Uri.EscapeDataString(_thingId)}/links",
-                                    JsonSerializer.Serialize(newLink));
-            var result = await response.Content.ReadAsStringAsync();
-
+            await _daprClient.InvokeMethodAsync(HttpMethod.Post, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}/links", JsonSerializer.Serialize(newLink));
+/*
+            using var http = _httpClientFactory.CreateClient();
+            var response = await http.PostAsJsonAsync($"{_twinsUrl}internal/things/{Uri.EscapeDataString(_thingId)}/links", JsonSerializer.Serialize(newLink));
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                ActorLogger.Error(_thingId, $"Error body: {error}");
+            }
+            */
             ActorLogger.Info(_thingId, $"Published add link event for href '{newLink.Href}'.");
 
             return ThingDescription.ToString()!;
@@ -205,12 +226,17 @@ namespace OpenTwinsV2.Things.Actors.Services
 
             int index = ThingDescription?.Links?.FindIndex(l => l.Href.ToString() == targetId && l.Rel == relName) ?? throw new KeyNotFoundException("Link not found");
             ThingDescription.Links[index] = newLink;
-            await SaveAsync(ThingDescription);
 
-            var httpClient = DaprClient.CreateInvokeHttpClient();
-            var response = await httpClient.PutAsJsonAsync($"http://twins-service/internal/things/{Uri.EscapeDataString(_thingId)}/links/{relName}/{targetId}",
-                                    JsonSerializer.Serialize(newLink));
-            var result = await response.Content.ReadAsStringAsync();
+            await SaveAsync(ThingDescription);
+            await _daprClient.InvokeMethodAsync(HttpMethod.Put, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}/links/{relName}/{targetId}", JsonSerializer.Serialize(newLink));
+/*
+            using var http = _httpClientFactory.CreateClient();
+            var response = await http.PutAsJsonAsync($"{_twinsUrl}internal/things/{Uri.EscapeDataString(_thingId)}/links/{relName}/{targetId}", JsonSerializer.Serialize(newLink));
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                ActorLogger.Error(_thingId, $"Error body: {error}");
+            }*/
 
             ActorLogger.Info(_thingId, $"Published update link event.");
 
@@ -228,10 +254,17 @@ namespace OpenTwinsV2.Things.Actors.Services
 
             ThingDescription.Links.RemoveAt(index);
             await SaveAsync(ThingDescription);
+            await _daprClient.InvokeMethodAsync(HttpMethod.Delete, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}/links/{relName}/{targetId}");
 
-            var httpClient = DaprClient.CreateInvokeHttpClient();
-            var response = await httpClient.DeleteAsync($"http://twins-service/internal/things/{Uri.EscapeDataString(_thingId)}/links/{relName}/{targetId}");
-            var result = await response.Content.ReadAsStringAsync();
+/*
+            using var http = _httpClientFactory.CreateClient();
+            var response = await http.DeleteAsync($"{_twinsUrl}internal/things/{Uri.EscapeDataString(_thingId)}/links/{relName}/{targetId}");
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                ActorLogger.Error(_thingId, $"Error body: {error}");
+            }
+            */
 
             ActorLogger.Info(_thingId, $"Published delete link event.");
         }

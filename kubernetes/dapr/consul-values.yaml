@@ -1,0 +1,7 @@
+global:
+  name: consul
+server:
+  exposeService:
+    enabled: true
+    type: NodePort
+

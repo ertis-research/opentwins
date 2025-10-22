@@ -34,7 +34,7 @@ def send_msg_and_validate(mqtt_client, topic: str, msg: dict, thing_id: str, exp
     sent_time = datetime.fromtimestamp(timestamp, tz=timezone.utc)
     logger.info(f"Message sent to topic '{topic}': {msg} at {sent_time.isoformat()}")
 
-    time.sleep(1)  # allow propagation
+    time.sleep(3)  # allow propagation
 
     state = use_platform.get_thing_state(thing_id)
     state_values = {k: v["value"] for k, v in state.items()}
@@ -67,7 +67,7 @@ def scenario_a1_a2_combined(mqtt_client, kafka_client):
     results = []
 
     # --- A1 ---
-    use_platform.post_thing("thingDescriptions/plane.json", PLANE_ID, "Plane")
+    use_platform.create_thing("thingDescriptions/plane.json", PLANE_ID, "Plane")
     msg1 = {
         "lightsOn": random.choice([True, False]),
         "altitude": random.randint(0, 12000),
@@ -79,7 +79,7 @@ def scenario_a1_a2_combined(mqtt_client, kafka_client):
     )
 
     results.append({
-        "scenario": "A1_reactive_update",
+        "scenario": "A1",
         "iteration": 1,
         "match": match_a1,
         "latency": latency_a1,
@@ -108,7 +108,7 @@ def scenario_a1_a2_combined(mqtt_client, kafka_client):
     )
 
     results.append({
-        "scenario": "A2_unsubscribed_no_update",
+        "scenario": "A2",
         "iteration": 1,
         "match": match_a2,
         "latency": latency_a2,
@@ -120,9 +120,9 @@ def scenario_a1_a2_combined(mqtt_client, kafka_client):
 
 def scenario_a3_derived_property_propagation(mqtt_client):
     """Scenario A3: Verify that derived properties in a CDT (Airport) update correctly, measuring latency."""
-    use_platform.post_thing("thingDescriptions/airport.json")
-    use_platform.post_thing("thingDescriptions/terminalA.json")
-    use_platform.post_thing("thingDescriptions/terminalB.json")
+    use_platform.create_thing("thingDescriptions/airport.json")
+    use_platform.create_thing("thingDescriptions/terminalA.json")
+    use_platform.create_thing("thingDescriptions/terminalB.json")
 
     # Generate random messages
     tA_msg = {"flights": random.randint(10, 100)}
@@ -157,7 +157,7 @@ def scenario_a3_derived_property_propagation(mqtt_client):
     logger.info(f"Expected total_flights={total_expected} | Actual={total_actual} | Match={match} | Latency={latency:.3f}s")
 
     return pd.DataFrame([{
-        "scenario": "A3_derived_property_propagation",
+        "scenario": "A3",
         "iteration": 1,
         "match": match,
         "latency": latency,

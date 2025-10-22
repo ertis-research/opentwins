@@ -63,7 +63,7 @@ def load_graph_from_api(name):
     g = Graph()
     g.parse(data=resp.text, format=RDF_FORMAT)
     os.makedirs("output", exist_ok=True)
-    g.serialize(f"output/{name}.jsonld", format="json-ld")
+    g.serialize(f"output/{name}.ttl", format="turtle")
     #g.serialize(f"{name}.jsonld", format="json-ld")
     #print(f"Graph loaded with {len(g)} triples")
     if len(g) == 0:

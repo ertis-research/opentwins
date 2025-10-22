@@ -22,3 +22,5 @@ COPY --from=build /App/out .
 EXPOSE 8080
 
 ENTRYPOINT ["dotnet", "Things.dll"]
+# docker build -t REGISTRYID/opentwinsv2-things:0.0.1 -f Dockerfile.Things .
+#docker push REGISTRYID/opentwinsv2-things:0.0.1

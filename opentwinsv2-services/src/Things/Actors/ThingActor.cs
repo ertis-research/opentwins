@@ -9,7 +9,7 @@ namespace OpenTwinsV2.Things.Actors
 {
     internal class ThingActor : Actor, IThingActor, IRemindable
     {
-        private static readonly DaprClient _daprClient = new DaprClientBuilder().Build();
+        private readonly DaprClient _daprClient = new DaprClientBuilder().Build();
         private readonly IDbConnectionFactory _connectionFactory;
         private readonly ThingStateManager _stateManager;
         private readonly ThingDescriptionManager _descriptionManager;

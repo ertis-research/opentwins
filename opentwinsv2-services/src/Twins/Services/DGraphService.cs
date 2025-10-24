@@ -59,9 +59,16 @@ namespace OpenTwinsV2.Twins.Services
         public async Task<Payload> InitSchemaAsync()
         {
             string schema = @"
+                namespaceId: string @index(exact) .
+                Namespace.name: string @index(term) .
+                prefix: string @index(term) .
+                uri: string .
+                createdAt: datetime .
+
                 thingId: string @index(exact) .
                 name: string @index(term) .
-                createdAt: datetime .
+                Namespace.createdAt: datetime .
+                Thing.prefix: uid .
 
                 hasType: [uid] @reverse .
                 hasAttribute: [uid] @reverse .
@@ -78,6 +85,7 @@ namespace OpenTwinsV2.Twins.Services
                 Attribute.key: string @index(term) .
                 Attribute.type: string @index(term) .
                 Attribute.value: string .
+                Attribute.prefix: uid .
 
                 Action.name: string @index(term) .
                 Action.payload: string .
@@ -88,6 +96,7 @@ namespace OpenTwinsV2.Twins.Services
                 Relation.name: string @index(term) .
                 Relation.createdAt: datetime .
                 Relation.attributes: string .
+                Relation.prefix: uid .
 
                 hasPart: [uid] @reverse .
                 hasChild: [uid] @reverse .
@@ -95,6 +104,14 @@ namespace OpenTwinsV2.Twins.Services
 
                 domainId: string @index(exact) .
                 Domain.name: string @index(term) .
+
+                type Namespace {
+                    namespaceId
+                    prefix
+                    uri
+                    Namespace.name
+                    Namespace.createdAt
+                }
 
                 type Thing {
                     thingId
@@ -106,11 +123,13 @@ namespace OpenTwinsV2.Twins.Services
                     hasEvent
                     twins
                     domains
+                    Thing.prefix
                 }
 
                 type Ontology {
                     ontologyId
                     Ontology.name
+                    namespace
                     createdAt
                     hasThing
                 } 
@@ -155,6 +174,7 @@ namespace OpenTwinsV2.Twins.Services
                     Attribute.key
                     Attribute.type
                     Attribute.value
+                    Attribute.prefix
                 }
 
                 type Action {
@@ -171,6 +191,7 @@ namespace OpenTwinsV2.Twins.Services
                     Relation.name
                     Relation.createdAt
                     Relation.attributes
+                    Relation.prefix
                     relatedTo
                     hasPart
                     hasChild
@@ -299,17 +320,121 @@ namespace OpenTwinsV2.Twins.Services
             }
         }
 
+        private List<string> getUidListFromRootJSON(JsonDocument doc)
+        {
+            var uids = new List<string>();
+            if (doc.RootElement.TryGetProperty("ontologies", out JsonElement ontologies))
+            {
+                foreach (var ontology in ontologies.EnumerateArray())
+                {
+                    //collect all uids and add it to the list
+                    if (ontology.TryGetProperty("uid", out var ontUid))
+                        uids.Add(ontUid.ToString());
+
+                    if(ontology.TryGetProperty("namespace", out var namespaces))
+                    {
+                        
+                        foreach(var ns in namespaces.EnumerateArray()){
+                            if (ns.TryGetProperty("uid", out var nsUid))
+                                uids.Add(nsUid.ToString());
+                        }
+                    }
+
+                    if (ontology.TryGetProperty("hasThing", out var things))
+                    {
+                        //iterate through all posible relations of things
+                        foreach (var thing in things.EnumerateArray())
+                        {
+                            if (thing.TryGetProperty("uid", out var thingUid))
+                                uids.Add(thingUid.ToString());
+                            if (thing.TryGetProperty("~relatedTo", out var rels))
+                            {
+                                foreach (var rel in rels.EnumerateArray())
+                                {
+                                    if (rel.TryGetProperty("uid", out var relUid))
+                                        uids.Add(relUid.ToString());
+                                }
+                            }
+                            if (thing.TryGetProperty("hasAttribute", out var attributes))
+                            {
+                                foreach (var attr in attributes.EnumerateArray())
+                                {
+                                    if (attr.TryGetProperty("uid", out var attrUid))
+                                        uids.Add(attrUid.ToString());
+                                }
+                            }
+                            if (thing.TryGetProperty("~hasType", out var types))
+                            {
+                                foreach (var type in types.EnumerateArray())
+                                {
+                                    if (type.TryGetProperty("uid", out var typeUid))
+                                        uids.Add(typeUid.ToString());
+                                }
+                            }
+                        }
+                    }
+
+                }
+            }
+            return uids;
+        }
+
+        public async Task<List<string>> GetAllThingFromOntologyNodesUidAsync(string ontologyId, string thingId)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var query = $@"
+                    {{
+                        ontology as var (func: eq(ontologyId, ""{ontologyId}""))
+                        thing as var (func: eq(thingId, ""{thingId}""))
+
+                        ontologies(func: uid(ontology)){{
+                            hasThing @filter(uid(thing)){{
+                                uid
+                                hasAttribute{{
+                                    uid
+                                }}
+                                ~relatedTo{{
+                                    uid
+                                }}
+                                ~hasType{{
+                                    uid
+                                }}
+                            }}
+                        }}
+                    }}     
+                ";
+
+                var res = await txn.Query(query);
+                var json = res.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                // var root = doc.RootElement;
+
+                return getUidListFromRootJSON(doc);
+            }
+            catch
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+        
         public async Task<List<string>> GetAllOntologyRelatedNodesUidAsync(string ontologyId)
         {
             var txn = _client.NewTransaction();
             try
             {
                 var query = $@"
-                {{
-                    ontology as var (func: eq(ontologyId, ""{ontologyId}""))
+                    {{
+                        ontology as var (func: eq(ontologyId, ""{ontologyId}""))
 
                     ontologies(func: uid(ontology)){{
                         uid
+                        namespace{{
+                            uid
+                        }}
                         hasThing{{
                             uid
                             hasAttribute{{
@@ -325,61 +450,14 @@ namespace OpenTwinsV2.Twins.Services
                     }}
                 }}     
                 ";
+
                 var res = await txn.Query(query);
                 var json = res.Json.ToStringUtf8();
 
                 using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
+                // var root = doc.RootElement;
 
-                var uids = new List<string>();
-
-                if (doc.RootElement.TryGetProperty("ontologies", out JsonElement ontologies))
-                {
-                    foreach (var ontology in ontologies.EnumerateArray())
-                    {
-                        //collect all uids and add it to the list
-                        if (ontology.TryGetProperty("uid", out var ontUid))
-                            uids.Add(ontUid.ToString());
-
-                        if (ontology.TryGetProperty("hasThing", out var things))
-                        {
-                            //iterate through all posible relations of things
-                            foreach (var thing in things.EnumerateArray())
-                            {
-                                if (thing.TryGetProperty("uid", out var thingUid))
-                                    uids.Add(thingUid.ToString());
-                                if (thing.TryGetProperty("~relatedTo", out var rels))
-                                {
-                                    foreach (var rel in rels.EnumerateArray())
-                                    {
-                                        if (rel.TryGetProperty("uid", out var relUid))
-                                            uids.Add(relUid.ToString());
-                                    }
-                                }
-                                if (thing.TryGetProperty("hasAttribute", out var attributes))
-                                {
-                                    foreach (var attr in attributes.EnumerateArray())
-                                    {
-                                        if (attr.TryGetProperty("uid", out var attrUid))
-                                            uids.Add(attrUid.ToString());
-                                    }
-                                }
-                                if (thing.TryGetProperty("~hasType", out var types))
-                                {
-                                    foreach (var type in types.EnumerateArray())
-                                    {
-                                        if (type.TryGetProperty("uid", out var typeUid))
-                                            uids.Add(typeUid.ToString());
-                                    }
-                                }
-                            }
-                        }
-
-                    }
-                }
-
-                return uids;
-
+                return getUidListFromRootJSON(doc);
             }
             catch
             {
@@ -387,7 +465,6 @@ namespace OpenTwinsV2.Twins.Services
                 throw;
             }
         }
-
 
         public async Task<Response> DeleteByOntologyId(string ontologyId)
         {
@@ -422,6 +499,48 @@ namespace OpenTwinsV2.Twins.Services
                 {
                     await txn.DisposeAsync();
                     throw new Exception("Error removing ontology: " + ex.Message);
+                }
+
+            }
+            catch
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+        
+        public async Task<Response> DeleteByOntologyIdAndThingId(string ontologyId, string thingId)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var uids = GetAllThingFromOntologyNodesUidAsync(ontologyId, thingId).Result;
+
+                var deleteObjects = new List<Dictionary<string, string>>();
+
+                foreach (var uid in uids)
+                {
+                    // Each object = one node to delete
+                    deleteObjects.Add(new Dictionary<string, string> { { "uid", uid } });
+                }
+
+                // Serialize to JSON
+                var deleteJson = JsonSerializer.Serialize(deleteObjects);
+                var mutation = new Mutation
+                {
+                    DeleteJson = ByteString.CopyFromUtf8(deleteJson)
+                };
+
+                try
+                {
+                    var response = await txn.Mutate(mutation);
+                    await txn.Commit();
+                    return response;
+                }
+                catch (Exception ex)
+                {
+                    await txn.DisposeAsync();
+                    throw new Exception("Error removing thing from ontology: " + ex.Message);
                 }
 
             }
@@ -632,6 +751,7 @@ namespace OpenTwinsV2.Twins.Services
                     hasThing{{
                         uid
                         name
+                        thingId
                     }}
                 }}
             }}";
@@ -652,6 +772,41 @@ namespace OpenTwinsV2.Twins.Services
             var ontologyProp = thingsArray[0].GetProperty("hasThing");
             var things = JsonSerializer.Deserialize<List<JsonElement>>(ontologyProp.GetRawText());
             return things ?? [];
+        }
+
+        public async Task<JsonElement?> GetNamespacesInOntologyAsync(string ontologyId)
+        {
+            var txn = _client.NewTransaction();
+            string query = $@"
+                {{
+                    ontology(func: eq(ontologyId, ""{ontologyId}"")){{
+                        namespace{{
+                            namespaceId
+                            prefix
+                            uri
+                        }}
+                    }}
+                }}
+            ";
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            // Acceder a things[0]["~twins"]
+            if (!root.TryGetProperty("ontology", out JsonElement ontologyArray) || ontologyArray.GetArrayLength() == 0)
+            {
+                return null;
+            }
+
+            // if (!root.TryGetProperty("namespace", out JsonElement nsArray) || nsArray.GetArrayLength() == 0)
+            // {
+            //     return null;
+            // }
+
+            return JsonSerializer.Deserialize<JsonElement>(ontologyArray[0].GetRawText());
         }
 
         // Este metodo y el anterior se repiten, hay que refactorizar!!!!!! que pereza (es que el converter va con este metodo)
@@ -759,27 +914,47 @@ namespace OpenTwinsV2.Twins.Services
 
             var query = $@"
             {{
-              ontology(func: eq(ontologyId, ""{ontologyId}"")) {{
-                uid
-                hasThing @filter(eq(thingId, ""{thingId}"")) {{
-                  uid
-                  thingId
-                  name
-                  createdAt
-                  hasAttribute {{
-                    Attribute.key
-                    Attribute.value
-                  }}
-                  ~relatedTo {{
-                    Relation.name
-                    uid
-                    relatedTo{{
-                      name
-                        uid
-                    }}
-                  }}
+                things as var(func: eq(thingId, ""{thingId}"")) @cascade {{
+                    ~hasThing @filter(eq(ontologyId, ""{ontologyId}""))
                 }}
-              }}
+
+                thing(func: uid(things)){{
+                    thingId
+                    name
+                    createdAt
+                    Thing.prefix{{
+                            namespaceId
+                            prefix
+                            uri
+                        }}
+                    hasAttribute{{
+                        Attribute.key
+                        Attribute.value
+                        Attribute.prefix{{
+                            namespaceId
+                            prefix
+                            uri
+                        }}
+                    }}
+                    ~relatedTo{{
+                        uid
+                        Relation.name
+                        Relation.prefix{{
+                            namespaceId
+                            prefix
+                            uri
+                        }}
+                        relatedTo @filter(NOT uid(things)){{
+                            name
+                            thingId
+                            Thing.prefix{{
+                            namespaceId
+                            prefix
+                            uri
+                        }}
+                        }}
+                    }}
+                }}
             }}";
 
             var res = await txn.Query(query);
@@ -788,12 +963,10 @@ namespace OpenTwinsV2.Twins.Services
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            if (!root.TryGetProperty("ontology", out JsonElement ontologyArray) || ontologyArray.GetArrayLength() == 0)
+            if (!root.TryGetProperty("thing", out JsonElement ontologyArray) || ontologyArray.GetArrayLength() == 0)
                 return null;
 
-            if (!ontologyArray[0].TryGetProperty("hasThing", out JsonElement thingArray) || thingArray.GetArrayLength() == 0)
-                return null;
-            return JsonSerializer.Deserialize<JsonElement>(thingArray[0].GetRawText());
+            return JsonSerializer.Deserialize<JsonElement>(ontologyArray[0].GetRawText());
         }
 
         public async Task<JsonElement?> GetRelationByName(string ontologyId, string relationName)
@@ -1044,6 +1217,7 @@ namespace OpenTwinsV2.Twins.Services
             return null;
         }
 
+        
     }
 }
 

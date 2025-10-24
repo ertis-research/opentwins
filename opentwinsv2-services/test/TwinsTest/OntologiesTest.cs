@@ -295,7 +295,7 @@ public class OntologiesAPIFixture : IAsyncLifetime
         };
 
         // HERE should call the Things API to instanciate the Thing, but since it's already defined because there is no DELETE method, I skip it
-        // var response = await ThingsClient.PostAsJsonAsync("/things", payload);
+        var response = await ThingsClient.PostAsJsonAsync("/things", payload);
         // Console.WriteLine(response.IsSuccessStatusCode ? "BIEN INSTANCIADO" : "MAL INSTANCIADO");
     }
 
@@ -303,6 +303,7 @@ public class OntologiesAPIFixture : IAsyncLifetime
     {
         Console.WriteLine("ENTRA EN AFTERALL");
         //Here the instanciated Thing should be deleted from the Things Service, but there is no method in the API for that
+        await ThingsClient.DeleteAsync($"/things/{instanciatedThingId}");
         await DGraphService.DeleteByOntologyId("ontologiaPrueba");
         // try
         // {
@@ -383,43 +384,92 @@ public class OntologiesTest
         return jsonDoc.RootElement.Clone();
     }
 
+    private string GetMimeType(string filePath)
+    {
+        string extension = Path.GetExtension(filePath).ToLowerInvariant();
+        return extension switch
+        {
+            ".ttl" => "text/turtle",
+            ".txt" => "text/plain",
+            ".json" => "application/json",
+            ".csv" => "text/csv",
+            ".xml" => "application/xml",
+            ".html" => "text/html",
+            _ => "application/octet-stream", // fallback
+        };
+    }
+
+    private HttpContent GetHttpContentForPostRequest(string path)
+    {
+        var fileStream = File.OpenRead(path);
+        var content = new MultipartFormDataContent();
+
+        // Add the file content
+        var fileContent = new StreamContent(fileStream);
+        fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse(GetMimeType(path)); //appropriate MIME type
+        string fileName = Path.GetFileName(path);
+        content.Add(fileContent, "ontologyFile", fileName);
+
+        return content;
+    }
+
+    private async Task<string> importSampleOntology(string ontologyId)
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "ExampleFiles", "importingOntologyNQuads.txt");
+        string thingId = "";
+        var nquads = new List<string>();
+        try
+        {
+
+            nquads.Add($"_:ontologiaPrueba <dgraph.type> \"Ontology\" .");
+            nquads.Add($"_:ontologiaPrueba <ontologyId> \"{ontologyId}\" .");
+            nquads.AddRange(File.ReadAllLines(path));
+
+            var pattern = @"^.+<(?<predicate>[^>]+)>\s+""(?<object>[^""]+)""";
+
+            foreach(string nquad in nquads){
+                var match = Regex.Match(nquad, pattern);
+
+                if (!match.Success)
+                    continue;
+
+                var predicate = match.Groups["predicate"].Value;
+                var value = match.Groups["object"].Value;
+
+                if (predicate.Equals("thingId"))
+                {
+                    thingId = value;
+                    Console.WriteLine("THING ID QUE SE HA COGIDO: " + thingId);
+                    break;
+                }
+            }
+        }
+        catch (System.IO.FileNotFoundException ex)
+        {
+            Console.WriteLine("File not found: " + ex.Message);
+            return "";
+        }
+
+        try
+        {
+            var response = await _dgraphService.AddNQuadTripleAsync(nquads);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Something went wrong while uploading to DGraph: " + ex.Message);
+        }
+
+        return thingId;
+    }
+    
+    private async void deleteImportedOntology(string ontologyId)
+    {
+        await _dgraphService.DeleteByOntologyId(ontologyId);
+    }
+
     public class UploadOntologyTest : OntologiesTest
     {
         public UploadOntologyTest(OntologiesAPIFixture fixture) : base(fixture) { }
-
-        private string GetMimeType(string filePath)
-        {
-            string extension = Path.GetExtension(filePath).ToLowerInvariant();
-            return extension switch
-            {
-                ".ttl" => "text/turtle",
-                ".txt" => "text/plain",
-                ".json" => "application/json",
-                ".csv" => "text/csv",
-                ".xml" => "application/xml",
-                ".html" => "text/html",
-                _ => "application/octet-stream", // fallback
-            };
-        }
-
-        private HttpContent GetHttpContentForPostRequest(string path)
-        {
-            var fileStream = File.OpenRead(path);
-            var content = new MultipartFormDataContent();
-
-            // Add the file content
-            var fileContent = new StreamContent(fileStream);
-            fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse(GetMimeType(path)); //appropriate MIME type
-            string fileName = Path.GetFileName(path);
-            content.Add(fileContent, "ontologyFile", fileName);
-
-            return content;
-        }
-
-        private async void deleteImportedOntology(string ontologyId)
-        {
-            await _dgraphService.DeleteByOntologyId(ontologyId);
-        }
 
         //The uploaded file is null
         [Fact]
@@ -661,30 +711,9 @@ public class OntologiesTest
         public async Task DeleteOntology_OntologyExists_200AndNoOntology()
         {
             //Import another ontology so it doesn't affect the other methods
-            string path = Path.Combine(AppContext.BaseDirectory, "ExampleFiles", "importingOntologyNQuads.txt");
+
             string ontologyId = "anotherTestOntology";
-            var nquads = new List<string>();
-            try
-            {
-
-                nquads.Add($"_:{ontologyId} <dgraph.type> \"Ontology\" .");
-                nquads.Add($"_:{ontologyId} <ontologyId> \"{ontologyId}\" .");
-                nquads.AddRange(File.ReadAllLines(path));
-            }
-            catch (System.IO.FileNotFoundException ex)
-            {
-                Console.WriteLine("File not found: " + ex.Message);
-                return;
-            }
-
-            try
-            {
-                var response = await _dgraphService.AddNQuadTripleAsync(nquads);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Something went wrong while uploading to DGraph: " + ex.Message);
-            }
+            await importSampleOntology(ontologyId);
 
             //Act
             var responseDelete = await _client.DeleteAsync($"http://localhost:5013/ontologies/{ontologyId}");
@@ -713,6 +742,52 @@ public class OntologiesTest
         }
     }
 
+    public class DeleteThingFromOntologyTest : OntologiesTest
+    {
+        public DeleteThingFromOntologyTest(OntologiesAPIFixture fixture) : base(fixture) { }
+
+        //The ontology and the Thing exists
+        [Fact]
+        public async Task DeleteThingFromOntology_OntologyAndThingExist_200AndNoThing()
+        {
+            string ontologyId = "anotherTestOntology";
+            string thingId = await importSampleOntology(ontologyId);
+            //Act
+            var responseDelete = await _client.DeleteAsync($"http://localhost:5013/ontologies/{ontologyId}/things/{thingId}");
+            var responseGet = await _client.GetAsync($"http://localhost:5013/ontologies/{ontologyId}/things/{thingId}");
+            //Assert
+            Assert.True(responseDelete.IsSuccessStatusCode);
+            Assert.False(responseGet.IsSuccessStatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, responseGet.StatusCode);
+
+            deleteImportedOntology(ontologyId);
+        }
+
+        //The Ontology exists but the Thing does not
+        [Fact]
+        public async Task DeleteThingFromOntology_ThingDoesNotExist_404()
+        {
+            string inexistentThingId = "INEXISTENTTHINGID";
+            //Act
+            var response = await _client.DeleteAsync($"http://localhost:5013/ontologies/{_ontologyId}/things/{inexistentThingId}");
+            //Assert
+            Assert.False(response.IsSuccessStatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+
+        //The Ontology does not exist
+        [Fact]
+        public async Task DeleteThingFromOntology_OntologyDoesNotExist_404()
+        {
+            string inexistentOntologyId = "INEXISTENTONTOLOGYID";
+            //Act
+            var response = await _client.DeleteAsync($"http://localhost:5013/ontologies/{inexistentOntologyId}/things/{_thingId}");
+            //Assert
+            Assert.False(response.IsSuccessStatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+    }
+    
     public class InstanciateThingFromOntologyTest : OntologiesTest
     {
         public InstanciateThingFromOntologyTest(OntologiesAPIFixture fixture) : base(fixture) { }
@@ -722,7 +797,7 @@ public class OntologiesTest
         public async Task InstanciateThingFromOntology_IdNotOnUse_200AndThing()
         {
             //Arrange
-            string uninstanciatedId = "newInstanciatedId"+Guid.NewGuid();
+            string uninstanciatedId = "newInstanciatedId" + Guid.NewGuid();
             //Act
             var responsePost = await _client.PostAsync($"http://localhost:5013/ontologies/{_ontologyId}/things/{_thingId}/instanciate/{uninstanciatedId}", null);
             await Task.Delay(500);
@@ -734,7 +809,7 @@ public class OntologiesTest
             Assert.True(responseGet.IsSuccessStatusCode);
             Assert.Equal(JsonValueKind.Object, jsonRoot.ValueKind);
 
-            //TODO delete thing from Things*****
+            await _thingsClient.DeleteAsync($"/things/{uninstanciatedId}");
         }
 
         //The ontology and the thing exists but the id is already on use

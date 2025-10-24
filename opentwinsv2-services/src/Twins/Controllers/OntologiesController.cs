@@ -25,6 +25,7 @@ using static Lucene.Net.Queries.Function.ValueSources.MultiFunction;
 using System.Globalization;
 using VDS.RDF.Query.Expressions.Functions.XPath.Cast;
 using System.Reflection.Metadata;
+using Json.More;
 
 
 namespace OpenTwinsV2.Twins.Controllers
@@ -68,31 +69,37 @@ namespace OpenTwinsV2.Twins.Controllers
             return (indx >= 0 && indx < uri.Length - 1) ? uri.Substring(indx + 1) : uri;
         }
 
-        private string GetLocalName(VDS.RDF.INode node, IGraph graph)
+        private (string Prefix, string LocalName) GetLocalName(VDS.RDF.INode node, IGraph graph, string ontologyId)
         {
             if(node is UriNode uriNode)
             {
                 string qname;
+                string prefix;
+                string localName;
                 if (graph.NamespaceMap.ReduceToQName(uriNode.Uri.ToString(), out qname))
                 {
                     //get the name right after the prefix
-                    return qname.Split(':')[1];
+                    var parts = qname.Split(':');
+                    prefix = parts[0];
+                    localName = parts[1];
                 }
                 else
                 {
                     //Get the last part of the URI
                     var uri = uriNode.Uri.ToString();
-
-                    return SanitizeTypeAndUIDValues(uri);
+                    localName = SanitizeTypeAndUIDValues(uri);
+                    prefix = $"pref{ontologyId}";
                 }
+                return (prefix, localName);
             }
-            return node.ToString();
+            return ($"pref{ontologyId}" ,node.ToString());
         }
 
         private string GetUid(VDS.RDF.INode node, IGraph graph)
         {
             //get the uid omiting all prefixes
-            string local = GetLocalName(node, graph) ?? "nameless"+Guid.NewGuid();
+            var (_, local) = GetLocalName(node, graph, "");
+            local ??= "nameless"+Guid.NewGuid();
             return $"_:{local}";
         }
 
@@ -111,7 +118,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
         
 
-        private List<string> GetNQuadAttributeTriples(string subject, string predicate, ILiteralNode literal)
+        private List<string> GetNQuadAttributeTriples(string subject, string predicate, ILiteralNode literal, string ontology, string prefix)
         {
 
             /*
@@ -131,10 +138,13 @@ namespace OpenTwinsV2.Twins.Controllers
             string dataType = literal.DataType?.ToString() ?? "string";
             var type = SanitizeTypeAndUIDValues(dataType) ?? "string";
 
+            var namespace_uid = $"_:{ontology}namespace_{prefix}";
+
             string attribute_uid = $"_:att_{predicate}_{Guid.NewGuid()}";
             nquads.Add($"{attribute_uid} <dgraph.type> \"Attribute\" .");
             nquads.Add($"{attribute_uid} <Attribute.key> \"{predicate}\" .");
             nquads.Add($"{attribute_uid} <Attribute.type> \"{type}\" .");
+            nquads.Add($"{attribute_uid} <Attribute.prefix> {namespace_uid} .");
             nquads.Add($"{attribute_uid} <Attribute.value> \"{value}\" .");
 
             //Link the node to the attribute
@@ -143,19 +153,20 @@ namespace OpenTwinsV2.Twins.Controllers
             return nquads;
         }
 
-        private List<string> GetNQuadRelationTriples(string subject, string predicate, string obj, string createdAt)
+        private List<string> GetNQuadRelationTriples(string subject, string predicate, string obj, string createdAt, string ontology, string prefix)
         {
             var nquads = new List<string>();
-
+            var namespace_uid = $"_:{ontology}namespace_{prefix}";
             //Relation node
             string relation_uid = $"_:rel_{predicate}_{Guid.NewGuid()}";
             nquads.Add($"{relation_uid} <dgraph.type> \"Relation\" .");
             nquads.Add($"{relation_uid} <Relation.name> \"{predicate}\" .");
             nquads.Add($"{relation_uid} <Relation.createdAt> \"{createdAt}\" .");
+            nquads.Add($"{relation_uid} <Relation.prefix> {namespace_uid} .");
             nquads.Add($"{relation_uid} <relatedTo> {subject} .");
 
             /*
-             type Relation {
+            type Relation {
                 Relation.name =============> Name of the original predicate
                 Relation.createdAt ========> timestamp
                 Relation.attributes =======> any additional info of the relation (thre's no example in the sample antology provided)
@@ -171,15 +182,17 @@ namespace OpenTwinsV2.Twins.Controllers
             return nquads;
         }
 
-        private List<string> GetNQuadNodeTriples(string uid, string thingId, string createdAt, string ontology)
+        private List<string> GetNQuadNodeTriples(string uid, string thingId, string createdAt, string ontology, string prefix)
         {
             var nquads = new List<string>();
             var ontology_uid = $"_:{ontology}";
+            var namespace_uid = $"_:{ontology}namespace_{prefix}";
 
             nquads.Add($"{uid} <dgraph.type> \"Thing\" .");
             nquads.Add($"{uid} <thingId> \"{ontology}:{thingId}\" .");
             nquads.Add($"{uid} <name> \"{thingId}\" .");
             nquads.Add($"{uid} <createdAt> \"{createdAt}\" .");
+            nquads.Add($"{uid} <Thing.prefix> {namespace_uid} .");
 
             //Associate the Thing node with the Ontology node
             nquads.Add($"{ontology_uid} <hasThing> {uid} .");
@@ -189,13 +202,38 @@ namespace OpenTwinsV2.Twins.Controllers
 
         private List<string> GetNQuadsOntologyTriples(string ontologyId, string createdAt)
         {
-            var nquads = new List<string> ();
+            var nquads = new List<string>();
 
             var ontology_uid = $"_:{ontologyId}";
             nquads.Add($"{ontology_uid} <dgraph.type> \"Ontology\" .");
             nquads.Add($"{ontology_uid} <createdAt> \"{createdAt}\" .");
             nquads.Add($"{ontology_uid} <ontologyId> \"{ontologyId}\" .");
             nquads.Add($"{ontology_uid} <Ontology.name> \"{ontologyId}\" .");
+            nquads.Add($"{ontology_uid} <Ontology.name> \"{ontologyId}\" .");
+            return nquads;
+        }
+        
+        private List<string> GetNQuadsNamespaceTriples(string ontologyId, string createdAt, string prefix, string uri)
+        {
+            var nquads = new List<string>();
+            
+            /*
+            namespaceId ===========> ontologyId:namespace
+            prefix ================> prefix of the type "rdf:"
+            uri ===================> uri that replaces the prefix (http://example.org/)
+            Namespace.name ========> ontologyId:namespace
+            */
+
+            var namespace_uid = $"_:{ontologyId}namespace_{prefix}";
+            nquads.Add($"{namespace_uid} <dgraph.type> \"Namespace\" .");
+            nquads.Add($"{namespace_uid} <Namespace.createdAt> \"{createdAt}\" .");
+            nquads.Add($"{namespace_uid} <namespaceId> \"{ontologyId}:namespace:{prefix}\" .");
+            nquads.Add($"{namespace_uid} <Namespace.name> \"{ontologyId}:namespace:{prefix}\" .");
+            nquads.Add($"{namespace_uid} <prefix> \"{prefix}\" .");
+            nquads.Add($"{namespace_uid} <uri> \"{uri}\" .");
+
+            //link namespace to the ontology
+            nquads.Add($"_:{ontologyId} <namespace> {namespace_uid} .");
 
             return nquads;
         }
@@ -254,22 +292,33 @@ namespace OpenTwinsV2.Twins.Controllers
                 try
                 {
                     var owlTypes = graph.Triples
-                .Where(t => t.Predicate.ToString().EndsWith("type") && t.Object.ToString().Contains("owl"))
-                .Select(t => t.Object.ToString())
-                .Distinct();
+                        .Where(t => t.Predicate.ToString().EndsWith("type") && t.Object.ToString().Contains("owl"))
+                        .Select(t => t.Object.ToString())
+                        .Distinct();
 
                     var ignoredPrefixes = new[] { "swrl:", "swrla:" }; //PROVISIONAL: Ignore the Blank Nodes
                                                                        //Ignore the property types so it will not create a node for a Relation
                     var ignoredTypes = owlTypes.ToList();
 
+                    //save the namespace mapping [(prefix,uri)] of the ontology, ignoring the previously defined prefixes in ignoredPrefixes
+                    var prefixList = graph.NamespaceMap.Prefixes
+                        .Where(p => !ignoredPrefixes.Contains(p))
+                        .Select(p => new
+                        {
+                            Prefix = p,
+                            NamespaceUri = graph.NamespaceMap.GetNamespaceUri(p).ToString()
+                        })
+                        .ToList();
+
+
                     var allNodes = graph.Triples
-                    .Select(t => t.Subject)
-                    .Where(s => s.NodeType == VDS.RDF.NodeType.Uri)
+                        .Select(t => t.Subject)
+                        .Where(s => s.NodeType == VDS.RDF.NodeType.Uri)
                     /*.Where(s =>
                     {
                         // Obtain the node type
                         var types = graph.GetTriplesWithSubjectPredicate(s, graph.CreateUriNode("rdf:type"))
-                                         .Select(tr => tr.Object.ToString());
+                                        .Select(tr => tr.Object.ToString());
                         // Exclude the ones with any excluded type
                         return !types.Any(t => ignoredTypes.Contains(t));
                     })*/
@@ -278,6 +327,14 @@ namespace OpenTwinsV2.Twins.Controllers
 
                     //Create the Ontology node
                     nquads.AddRange(GetNQuadsOntologyTriples(ontologyId, createdAt));
+
+                    //Create the Namespace nodes associated to the ontology
+                    foreach (var ns in prefixList)
+                    {
+                        nquads.AddRange(GetNQuadsNamespaceTriples(ontologyId, createdAt, ns.Prefix, ns.NamespaceUri));
+                    }
+                    //In case there is a node with no prefix, I set a fallback with a generic uri unique for the ontology
+                    nquads.AddRange(GetNQuadsNamespaceTriples(ontologyId, createdAt, $"pref{ontologyId}", $"http://example.org/ontology/{ontologyId}"));
 
                     foreach (var node in allNodes)
                     {
@@ -288,9 +345,9 @@ namespace OpenTwinsV2.Twins.Controllers
                         }
 
                         string uid = GetUid(node, graph);
-                        string thingId = GetLocalName(node, graph) ?? "thing"+Guid.NewGuid();
-    
-                        nquads.AddRange(GetNQuadNodeTriples(uid, thingId, createdAt, ontologyId));
+                        var (prefix, thingId) = GetLocalName(node, graph, ontologyId); //here it takes care of the no prefix fallback
+                        thingId ??= "thing" + Guid.NewGuid();
+                        nquads.AddRange(GetNQuadNodeTriples(uid, thingId, createdAt, ontologyId, prefix));
                         
                     }
 
@@ -300,8 +357,8 @@ namespace OpenTwinsV2.Twins.Controllers
                     {
                         //Get the subject, predicate and object of the triple
                         string subject = GetUid(triple.Subject, graph); //_:uid
-                        string predicate = GetLocalName(triple.Predicate, graph) ?? "predicate"+Guid.NewGuid(); //uri
-
+                        var (prefixPredicate, predicate) = GetLocalName(triple.Predicate, graph, "");  //uri
+                        predicate ??= "predicate"+Guid.NewGuid();
                         //as this includes the original type and uid of the ontology, we exclude them so as not to duplicate the existing ones
                         if (!ignoredPredicates.Contains(predicate))
                         {
@@ -310,13 +367,13 @@ namespace OpenTwinsV2.Twins.Controllers
                             {
                                 //Attribute of a node
                                 var literal = (ILiteralNode)triple.Object;
-                                nquads.AddRange(GetNQuadAttributeTriples(subject, predicate, literal));
+                                nquads.AddRange(GetNQuadAttributeTriples(subject, predicate, literal, ontologyId, prefixPredicate));
                             }
                             else
                             {
                                 //Relation between 2 nodes
                                 string obj = GetUid(triple.Object, graph);
-                                nquads.AddRange(GetNQuadRelationTriples(subject, predicate, obj, createdAt));
+                                nquads.AddRange(GetNQuadRelationTriples(subject, predicate, obj, createdAt, ontologyId, prefixPredicate));
                             }
                         }
 
@@ -340,6 +397,11 @@ namespace OpenTwinsV2.Twins.Controllers
         [HttpGet("{ontologyId}")]
         public async Task<IActionResult> GetThingsByOntologyId(string ontologyId)
         {
+            var check = await _dgraphService.ExistsOntologyByIdAsync(ontologyId);
+            if (!check)
+            {
+                return NotFound(new { message = $"Ontology '{ontologyId}' does not exist" });
+            }
             var response = await _dgraphService.GetThingsInOntologyAsync(ontologyId);
             return Ok(response);
         }
@@ -479,13 +541,34 @@ namespace OpenTwinsV2.Twins.Controllers
 
         }
 
-        [HttpPost("{ontologyId}/things/{thingId}/instanciate/{id}")]
-        public async Task<IActionResult> InstanciateThingOfAntology(string ontologyId, string thingId, string id) {
-            //Instance of a Thing which is part of an ontology
+        [HttpDelete("{ontologyId}/things/{thingId}")]
+        public async Task<IActionResult> DeleteThingFromOntology(string ontologyId, string thingId)
+        {
             if(!await _dgraphService.ExistsOntologyByIdAsync(ontologyId))
                 return NotFound($"The {ontologyId} ontology does not exist int DGraph");
 
-            if(!await _dgraphService.ExistsThingInOntologyByIdAsync(ontologyId, thingId))
+            if (!await _dgraphService.ExistsThingInOntologyByIdAsync(ontologyId, thingId))
+                return NotFound($"There is no {thingId} thing associated to the {ontologyId} ontology in DGraph, it cannot be deleted");
+
+            try
+            {
+                var result = await _dgraphService.DeleteByOntologyIdAndThingId(ontologyId, thingId);
+                return Ok(result);
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while deleting the {thingId} thing from the {ontologyId} ontology from DGraph");
+            }
+
+        }
+
+        [HttpPost("{ontologyId}/things/{thingId}/instanciate/{id}")]
+        public async Task<IActionResult> InstanciateThingOfAntology(string ontologyId, string thingId, string id)
+        {
+            //Instance of a Thing which is part of an ontology
+            if (!await _dgraphService.ExistsOntologyByIdAsync(ontologyId))
+                return NotFound($"The {ontologyId} ontology does not exist int DGraph");
+
+            if (!await _dgraphService.ExistsThingInOntologyByIdAsync(ontologyId, thingId))
                 return NotFound($"There is no {thingId} thing associated to the {ontologyId} ontology in DGraph, it cannot be instanciated");
 
             bool conflict = true;
@@ -494,7 +577,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 //Provisional: If it throws an exception, then the id is unused
                 await _thingsService.GetThingAsync(id);
             }
-            catch(KeyNotFoundException e)
+            catch (KeyNotFoundException e)
             {
                 conflict = false;
             }
@@ -503,7 +586,7 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 //Get and format the thing's attributes to WOT
                 var props = await GetWOTThingProperties(ontologyId, thingId);
-                
+
                 var payload = new JsonObject
                 {
                     ["@context"] = new JsonArray("https://www.w3.org/2019/wot/td/v1"),
@@ -515,7 +598,7 @@ namespace OpenTwinsV2.Twins.Controllers
                     ["events"] = new JsonObject { }
                 };
 
-               
+
                 var thingsResponse = await _thingsService.CreateThingAsync(payload);
                 if (!thingsResponse) return StatusCode(500, "Failed to create Thing in things service");
 
@@ -525,7 +608,329 @@ namespace OpenTwinsV2.Twins.Controllers
 
                 return Ok(new { message = "Thing created successfully" });
             }
-            return Conflict($"There is already an instanced thing with the id {id}");        
+            return Conflict($"There is already an instanced thing with the id {id}");
         }
+
+        private async Task<JsonObject?> GetFullOntologyJson(string ontologyId)
+        {
+            //We get the ontology info and its things uids and thingIds (GetThingsFromOntology in DGraph Service)
+            //then we get for each thing All related nodes (GetThingInOntologyByIdAsync in DGraph Service) now we don't get duplicates in relations
+            var ontologyThings = await _dgraphService.GetThingsInOntologyAsync(ontologyId);
+
+            //add namespaces
+            var namespaces = await _dgraphService.GetNamespacesInOntologyAsync(ontologyId);
+            
+            var ontologyNode = new JsonObject
+            {
+                ["ontologyId"] = ontologyId,
+                ["namespace"] = JsonNode.Parse(namespaces.Value.GetProperty("namespace").GetRawText()),
+                ["things"] = new JsonArray()
+            };
+
+            //add things
+            foreach (var thingKey in ontologyThings)
+            {
+                if (thingKey.TryGetProperty("thingId", out var thingId))
+                {
+                    //get all thing information by id
+                    var thingInfo = await _dgraphService.GetThingInOntologyByIdAsync(ontologyId, thingId.ToString());
+                    Console.WriteLine(thingInfo);
+
+                    if (thingInfo.HasValue)
+                    {
+                        string raw = thingInfo.Value.GetRawText();
+                        ontologyNode["things"]!.AsArray().Add(JsonNode.Parse(raw));
+                    }
+                }
+            }
+            return ontologyNode;
+        }
+
+        [HttpGet("{ontologyId}/export/Json")]
+        public async Task<IActionResult> GetAllOntologyNodes(string ontologyId)
+        {
+            var check = await _dgraphService.ExistsOntologyByIdAsync(ontologyId);
+            if (!check)
+            {
+                return NotFound(new { message = $"Ontology '{ontologyId}' does not exist" });
+            }
+            var json = await GetFullOntologyJson(ontologyId);
+            return Ok(json);
+        }
+
+        private JsonObject? GetJsonLDFromRegularJson(JsonObject ontologyJson)
+        {
+            var namespaces = ontologyJson["namespace"]?.AsArray() ?? new JsonArray();
+            var things = ontologyJson["things"]?.AsArray() ?? new JsonArray();
+
+            //initialize the context with the namespaces info
+            // prefix: uri
+
+            var context = new JsonObject();
+
+            foreach (var ns in namespaces)
+            {
+                if (ns == null)
+                {
+                    continue;
+                }
+                var prefix = ns["prefix"]?.GetValue<string>();
+                var uri = ns["uri"]?.GetValue<string>();
+
+                if (prefix is not null && uri is not null)
+                {
+                    context[prefix] = uri;
+                }
+            }
+
+            var finalThings = new JsonArray();
+
+            //iterate through the thing nodes 
+            foreach (var thingInfo in things)
+            {
+                var thing = new JsonObject();
+
+                //obtener prefijo
+                var prefix = thingInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
+                //@id -> name (it's the thing id but without the ontology name as prefix)
+                thing["@id"] = $"{prefix}:{thingInfo?["name"]}";
+                //TODO @type, when importing the existing types where ignored, do I store them or set them as default opentwins ones?
+
+                //Attributes:
+                var attributes = thingInfo?["hasAttribute"];
+                if ((attributes is not null) && attributes.AsArray().Count > 0)
+                {
+                    //this thing has attributes
+                    foreach (var attributeInfo in attributes.AsArray())
+                    {
+                        //TODO prefix support
+                        var key = attributeInfo?["Attribute.key"]?.GetValue<string>();
+                        var value = attributeInfo?["Attribute.value"]?.GetValue<string>();
+                        var attPrefix = attributeInfo?["Attribute.prefix"]?["prefix"]?.GetValue<string>();
+
+                        if ((key is not null) && (value is not null) && (key.Length > 0) && (value.Length > 0))
+                        {
+                            thing[$"{attPrefix}:{key}"] = value;
+                            // thing[key] = value;
+                        }
+                    }
+                }
+                var relations = thingInfo?["~relatedTo"];
+                if ((relations is not null) && relations.AsArray().Count > 0)
+                {
+                    //this thing has relations with other things
+                    foreach (var relationInfo in relations.AsArray())
+                    {
+                        //TODO prefix support
+                        var name = relationInfo?["Relation.name"]?.GetValue<string>();
+                        var relPrefix = relationInfo?["Relation.prefix"]?["prefix"]?.GetValue<string>();
+                        var relatedNode = relationInfo?["relatedTo"];
+                        if (relatedNode is null)
+                        {
+                            continue;
+                        }
+                        var relatedName = relatedNode.GetValueKind().Equals(JsonValueKind.Array) ? relatedNode?[0]?["name"]?.GetValue<string>() : relatedNode?["name"]?.GetValue<string>();
+                        var relatedPrefix = relatedNode.GetValueKind().Equals(JsonValueKind.Array) ? relatedNode?[0]?["Thing.prefix"]?["prefix"]?.GetValue<string>() : relatedNode?["Thing.prefix"]?["prefix"]?.GetValue<string>();
+
+                        if (name is not null && relatedName is not null && name.Length > 0 && relatedName.Length > 0)
+                        {
+                            thing[$"{relPrefix}:{name}"] = $"{relatedPrefix}:{relatedName}";
+                            // thing[name] = relatedName;
+                        }
+                    }
+                }
+                //add final thing to the things jsonArray
+                finalThings.Add(thing);
+            }
+
+            //assemble the final json
+            var jsonLd = new JsonObject
+            {
+                ["@context"] = context,
+                ["@graph"] = finalThings
+            };
+
+            return jsonLd;
+        } 
+
+        [HttpGet("{ontologyId}/export/JsonLd")]
+        public async Task<IActionResult> ExportOntologyInJsonLdFormat(string ontologyId)
+        {
+            var check = await _dgraphService.ExistsOntologyByIdAsync(ontologyId);
+            if (!check)
+            {
+                return NotFound(new { message = $"Ontology '{ontologyId}' does not exist" });
+            }
+            var ontologyJson = await GetFullOntologyJson(ontologyId);
+
+            if (ontologyJson == null)
+            {
+                return StatusCode(500, "Something wrong with the Ontology Json:\nNull json recieved");//error 500, json malformado
+            }
+
+            if (ontologyJson["namespace"] == null)
+            {
+                return StatusCode(500, "Something wrong with the Ontology Json:\nNo namespace found");//error 500, json malformado
+            }
+
+            var jsonLd = GetJsonLDFromRegularJson(ontologyJson);
+
+            if(jsonLd is null)
+            {
+                return StatusCode(500, "Something went wrong while parsing");//error 500, json malformado
+            }
+
+            return Ok(jsonLd);
+
+            //Example format:
+            /*
+            {
+                "@context": {
+                    "@vocab": "http://schema.org/",
+                    "ex": "http://example.org/university#",
+                    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+                    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+                    "owl": "http://www.w3.org/2002/07/owl#"
+                },
+                "@graph": [
+                    {
+                    "@id": "ex:Person",
+                    "@type": "rdfs:Class",
+                    "rdfs:label": "Person",
+                    "rdfs:comment": "A human being who is part of the university."
+                    },
+                    {
+                    "@id": "ex:Student",
+                    "@type": "rdfs:Class",
+                    "rdfs:subClassOf": { "@id": "ex:Person" },
+                    "rdfs:label": "Student",
+                    "rdfs:comment": "A person who is enrolled in one or more courses."
+                    },
+                    {
+                    "@id": "ex:Professor",
+                    "@type": "rdfs:Class",
+                    "rdfs:subClassOf": { "@id": "ex:Person" },
+                    "rdfs:label": "Professor",
+                    "rdfs:comment": "A person who teaches courses."
+                    }
+                ]
+            */
+        }
+        
+        private async void LoadNamespaceIntoGraph(JsonArray namespaces, IGraph graph)
+        {
+            foreach (var ns in namespaces)
+            {
+                if (ns == null)
+                {
+                    continue;
+                }
+
+                var prefix = ns["prefix"];
+                var uri = ns["uri"];
+
+                if (prefix == null || uri == null)
+                {
+                    continue;
+                }
+
+                graph.NamespaceMap.AddNamespace(prefix.ToString(), new Uri(uri.ToString()));
+            }
+        }
+
+        [HttpGet("{ontologyId}/export/TTL")]
+        public async Task<IActionResult> ExportOntologyInTTLFormat(string ontologyId)
+        {
+            var check = await _dgraphService.ExistsOntologyByIdAsync(ontologyId);
+            if (!check)
+            {
+                return NotFound(new { message = $"Ontology '{ontologyId}' does not exist" });
+            }
+            var ontologyJson = await GetFullOntologyJson(ontologyId);
+
+            if(ontologyJson == null)
+            {
+                return StatusCode(500, "Something wrong with the Ontology Json:\nNull json recieved");//error 500, json malformado
+            }
+
+            if(ontologyJson["namespace"] == null)
+            {
+                return StatusCode(500, $"Something wrong with the Ontology Json:\nNo namespace found");//error 500, json malformado
+            }
+            var ns = ontologyJson["namespace"]?.AsArray();
+
+            try
+            {
+                var store = new TripleStore();
+                var jsonLd = GetJsonLDFromRegularJson(ontologyJson);
+                var jsonString = JsonSerializer.Serialize(jsonLd);
+                var parser = new VDS.RDF.Parsing.JsonLdParser();
+                using var reader = new StringReader(jsonString);
+                parser.Load(store, reader);
+
+                var mergedGraph = new VDS.RDF.Graph();
+
+                //load namespaces into graph for eventual prefix parsing to uri
+                LoadNamespaceIntoGraph(ns, mergedGraph);
+
+                foreach (var g in store.Graphs)
+                {
+                    mergedGraph.Merge(g, true); // true = keep namespace mappings
+                }
+
+                var ttlWriter = new VDS.RDF.Writing.CompressingTurtleWriter();
+                using var sw = new StringWriter();
+                ttlWriter.Save(mergedGraph, sw);
+                string ttlString = sw.ToString();
+
+                //convert the string to bytes
+                var ttlBytes = Encoding.UTF8.GetBytes(ttlString);
+                var stream = new MemoryStream(ttlBytes);
+
+                //return it as a downloadable file
+                return Ok(File(stream, "text/turtle", "ontology.ttl"));
+            }catch(Exception e)
+            {
+                return StatusCode(500, $"Something wrong while parsing to TTL Format:{e}");
+            }
+
+            //Example format:
+            /*
+            @prefix ex: <http://example.org/> .
+            @prefix foaf: <http://xmlns.com/foaf/0.1/> .
+            @prefix schema: <http://schema.org/> .
+
+            ex:alice a foaf:Person ;
+                foaf:name "Alice" ;
+                foaf:age 30 ;
+                foaf:knows ex:bob, ex:carol ;
+                schema:memberOf ex:bookClub .
+
+            ex:bob a foaf:Person ;
+                foaf:name "Bob" ;
+                foaf:age 25 ;
+                foaf:knows ex:alice, ex:dave ;
+                schema:memberOf ex:chessClub .
+
+            ex:carol a foaf:Person ;
+                foaf:name "Carol" ;
+                foaf:age 28 ;
+                foaf:knows ex:alice ;
+                schema:memberOf ex:bookClub .
+
+            ex:dave a foaf:Person ;
+                foaf:name "Dave" ;
+                foaf:age 35 ;
+                foaf:knows ex:bob ;
+                schema:memberOf ex:chessClub .
+
+            ex:bookClub a schema:Organization ;
+                schema:name "Local Book Club" .
+
+            ex:chessClub a schema:Organization ;
+                schema:name "City Chess Club" .
+
+            */
+        } 
     }
 }

@@ -78,6 +78,7 @@ namespace OpenTwinsV2.Twins.Services
                 ontologyId: string @index(exact) .
                 Ontology.name: string @index(term) . 
                 hasThing: [uid] @reverse .
+                namespace: [uid] @reverse .
 
                 twins: [uid] @reverse .
                 domains: [uid] @reverse .
@@ -101,6 +102,7 @@ namespace OpenTwinsV2.Twins.Services
                 hasPart: [uid] @reverse .
                 hasChild: [uid] @reverse .
                 relatedTo: [uid] @reverse .
+                relatedFrom: [uid] @reverse .
 
                 domainId: string @index(exact) .
                 Domain.name: string @index(term) .
@@ -193,6 +195,7 @@ namespace OpenTwinsV2.Twins.Services
                     Relation.attributes
                     Relation.prefix
                     relatedTo
+                    relatedFrom
                     hasPart
                     hasChild
                 }
@@ -748,7 +751,7 @@ namespace OpenTwinsV2.Twins.Services
             var query = $@"
             {{
                 ontologies(func: eq(ontologyId, ""{ontologyId}"")) {{
-                    hasThing{{
+                    hasThing @filter(not has(~hasType)){{
                         uid
                         name
                         thingId
@@ -922,6 +925,15 @@ namespace OpenTwinsV2.Twins.Services
                     thingId
                     name
                     createdAt
+                    hasType{{
+                        thingId
+                        name
+                        Thing.prefix{{
+                            namespaceId
+                            prefix
+                            uri
+                        }}
+                    }}
                     Thing.prefix{{
                             namespaceId
                             prefix
@@ -936,7 +948,7 @@ namespace OpenTwinsV2.Twins.Services
                             uri
                         }}
                     }}
-                    ~relatedTo{{
+                    ~relatedTo @filter(not has(relatedFrom)){{
                         uid
                         Relation.name
                         Relation.prefix{{
@@ -948,10 +960,29 @@ namespace OpenTwinsV2.Twins.Services
                             name
                             thingId
                             Thing.prefix{{
+                                namespaceId
+                                prefix
+                                uri
+                            }}
+                        }}
+                    }}
+
+                    ~relatedFrom {{
+                        uid
+                        Relation.name
+                        Relation.prefix{{
                             namespaceId
                             prefix
                             uri
                         }}
+                        relatedTo{{
+                            name
+                            thingId
+                            Thing.prefix{{
+                                namespaceId
+                                prefix
+                                uri
+                            }}
                         }}
                     }}
                 }}
@@ -975,15 +1006,18 @@ namespace OpenTwinsV2.Twins.Services
 
             var query = $@"
             {{
-              relations(func: eq(Relation.name, ""{relationName}"")) {{
-                
-               things: relatedTo @filter(uid_in(~hasThing, uid(ontology))) {{
-                  uid
-                  thingId
+                relations(func: eq(Relation.name, ""{relationName}"")) {{
+                    relatedFrom @filter(uid_in(~hasThing, uid(ontology))) {{
+                        uid
+                        thingId
+                    }}
+                    relatedTo @filter(uid_in(~hasThing, uid(ontology))) {{
+                        uid
+                        thingId
+                    }}
                 }}
-            }}
 
-              ontology as var(func: eq(ontologyId, ""{ontologyId}""))
+                ontology as var(func: eq(ontologyId, ""{ontologyId}""))
             }}";
 
             var res = await txn.Query(query);

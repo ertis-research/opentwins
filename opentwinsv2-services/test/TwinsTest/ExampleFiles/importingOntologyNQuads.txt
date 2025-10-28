@@ -49,20 +49,20 @@ _:attr4 <Attribute.value> "35" .
 _:dave <hasAttribute> _:attr4 .
 
 # --- Relations (object links) ---
-_:rel1 <dgraph.type> "Relation" .
-_:rel1 <Relation.name> "foaf:knows" .
-_:rel1 <relatedTo> _:alice .
-_:rel1 <relatedTo> _:bob .
+_:rel_foaf:knows_234567876543 <dgraph.type> "Relation" .
+_:rel_foaf:knows_234567876543 <Relation.name> "foaf:knows" .
+_:rel_foaf:knows_234567876543 <relatedTo> _:alice .
+_:rel_foaf:knows_234567876543 <relatedTo> _:bob .
 
-_:rel2 <dgraph.type> "Relation" .
-_:rel2 <Relation.name> "foaf:knows" .
-_:rel2 <relatedTo> _:alice .
-_:rel2 <relatedTo> _:carol .
+_:rel_foaf:knows_987656787654 <dgraph.type> "Relation" .
+_:rel_foaf:knows_987656787654 <Relation.name> "foaf:knows" .
+_:rel_foaf:knows_987656787654 <relatedTo> _:alice .
+_:rel_foaf:knows_987656787654 <relatedTo> _:carol .
 
-_:rel3 <dgraph.type> "Relation" .
-_:rel3 <Relation.name> "foaf:knows" .
-_:rel3 <relatedTo> _:bob .
-_:rel3 <relatedTo> _:alice .
+_:rel_foaf:knows_456543456542 <dgraph.type> "Relation" .
+_:rel_foaf:knows_456543456542 <Relation.name> "foaf:knows" .
+_:rel_foaf:knows_456543456542 <relatedTo> _:bob .
+_:rel_foaf:knows_456543456542 <relatedTo> _:alice .
 
 _:rel4 <dgraph.type> "Relation" .
 _:rel4 <Relation.name> "foaf:knows" .

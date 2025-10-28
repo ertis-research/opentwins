@@ -10,6 +10,7 @@ ex:alice a foaf:Person ;
 
 ex:bob a foaf:Person ;
     foaf:name "Bob" ;
+    foaf:likes ex:alice;
     foaf:age 25 ;
     foaf:knows ex:alice, ex:dave ;
     schema:memberOf ex:chessClub .

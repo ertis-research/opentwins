@@ -9,7 +9,7 @@ ex:movie1 a schema:Movie ;
     schema:director ex:director1 ;
     schema:actor ex:actor1, ex:actor2 .
 
-ex:movie2 a schema:Movie ;
+ex:movie2 a schema:Movie, schema:Series ;
     schema:name "Mystery of the Lost City" ;
     schema:datePublished "2022-03-15" ;
     schema:director ex:director2 ;

@@ -26,6 +26,7 @@ using System.Globalization;
 using VDS.RDF.Query.Expressions.Functions.XPath.Cast;
 using System.Reflection.Metadata;
 using Json.More;
+using System.Text.RegularExpressions;
 
 
 namespace OpenTwinsV2.Twins.Controllers
@@ -153,8 +154,20 @@ namespace OpenTwinsV2.Twins.Controllers
             return nquads;
         }
 
-        private List<string> GetNQuadRelationTriples(string subject, string predicate, string obj, string createdAt, string ontology, string prefix)
+        private List<string> GetNQuadRelationTriples(string subject, string predicate, string obj, bool bidirectional, string createdAt, string ontology, string prefix)
         {
+            /*
+            type Relation {
+                Relation.name =============> Name of the original predicate
+                Relation.createdAt ========> timestamp
+                Relation.attributes =======> any additional info of the relation (thre's no example in the sample ontology provided)
+                hasPart ===================> ignore as of now
+                hasChild ==================> ignore as of now
+                relatedTo =================> The object of a relation. If bidirectional, also the subject
+                relatedFrom ===============> The subject of a relation only if it's unidirectional. If not, not defined
+            }
+            */
+            
             var nquads = new List<string>();
             var namespace_uid = $"_:{ontology}namespace_{prefix}";
             //Relation node
@@ -163,21 +176,8 @@ namespace OpenTwinsV2.Twins.Controllers
             nquads.Add($"{relation_uid} <Relation.name> \"{predicate}\" .");
             nquads.Add($"{relation_uid} <Relation.createdAt> \"{createdAt}\" .");
             nquads.Add($"{relation_uid} <Relation.prefix> {namespace_uid} .");
-            nquads.Add($"{relation_uid} <relatedTo> {subject} .");
-
-            /*
-            type Relation {
-                Relation.name =============> Name of the original predicate
-                Relation.createdAt ========> timestamp
-                Relation.attributes =======> any additional info of the relation (thre's no example in the sample antology provided)
-                relatedTo =================> each Realtion object has 2 relatedTo attribute (subject and object)
-                hasPart ===================> ignore as of now
-                hasChild ==================> ignore as of now
-            }
-             */
-
-            nquads.Add($"{relation_uid} <relatedTo> {obj} .");
-
+            nquads.Add($"{relation_uid} <relatedTo> {obj} ."); //always
+            nquads.Add($"{relation_uid} <{(bidirectional ? "relatedTo" : "relatedFrom")}> {subject} .");
 
             return nquads;
         }
@@ -212,11 +212,11 @@ namespace OpenTwinsV2.Twins.Controllers
             nquads.Add($"{ontology_uid} <Ontology.name> \"{ontologyId}\" .");
             return nquads;
         }
-        
+
         private List<string> GetNQuadsNamespaceTriples(string ontologyId, string createdAt, string prefix, string uri)
         {
             var nquads = new List<string>();
-            
+
             /*
             namespaceId ===========> ontologyId:namespace
             prefix ================> prefix of the type "rdf:"
@@ -237,6 +237,52 @@ namespace OpenTwinsV2.Twins.Controllers
 
             return nquads;
         }
+        
+        private (bool, bool) isRelationBidirectional(IGraph graph, Triple triple, string uidSubj, string uidObj, string predicate, List<string> nquads)
+        {
+            bool bid = false;
+            bool exists = false;
+
+            //check if in Object there's: uidObj <predicate> uidSubj
+            /*look specifically for:
+            relUid <relatedTo> objUid 
+            and then:
+            relUid <relatedTo> subjUid
+            to make sure, supposedly if the first nquad is present it means 
+            */
+
+            var reversedTriple = new Triple(triple.Object, triple.Predicate, triple.Subject);
+            bid = graph.ContainsTriple(triple) && graph.ContainsTriple(reversedTriple);
+
+            if (bid)
+            {
+                var pattern = @"^(?<subject>\S+)\s+<(?<predicate>[^>]+)>\s+(?:(?<objectUri>\S+)|""(?<objectLit>[^""]+)"")";
+                var relUid = $"_:rel_{predicate}_";
+
+                var parsed = nquads
+                    .Select(line => new { line, match = Regex.Match(line, pattern) })
+                    .Where(x => x.match.Success)
+                    .ToList();
+
+                var relationsNquads = parsed
+                    .Where(x =>
+                        x.match.Groups["subject"].Value.Contains(relUid) &&
+                        x.match.Groups["predicate"].Value.Equals("relatedTo") &&
+                        x.match.Groups["objectUri"].Value.Equals(uidSubj) &&
+                        parsed.Any(y =>
+                            y.match.Groups["subject"].Value == x.match.Groups["subject"].Value &&
+                            y.match.Groups["predicate"].Value.Equals("relatedTo") &&
+                            y.match.Groups["objectUri"].Value.Equals(uidObj)))
+                    .Select(x => x.line)
+                    .ToList();
+
+                exists = relationsNquads.Count > 0;
+            }
+
+            Console.WriteLine($"{(!bid ? "NO" : "")} es bidireccional");
+            Console.WriteLine($"{(!exists ? "NO" : "YA")} existia");
+            return (bid, exists);
+        }
 
         private void GetNquadsAsTxtFile(List<string> nquads)
         {
@@ -248,11 +294,55 @@ namespace OpenTwinsV2.Twins.Controllers
             }
         }
 
+        [HttpPost("/prueba/{ontologyId}")]
+        public async void prueba(IFormFile ontologyFile, string ontologyId)
+        {
+            var ttl = @"
+            @prefix : <http://example.org/> .
+
+            :alice :foaf:knows :bob .
+            :bob :foaf:knows: :alice .
+            ";
+
+            var g = new VDS.RDF.Graph();
+            StringParser.Parse(g, ttl);
+            Triple triple = null;
+            foreach(var t in g.Triples)
+            {
+                if (t.Subject.ToString().Equals(":alice"))
+                {
+                    triple = t;
+                    break;
+                }
+            }
+
+            var nquads = new List<string>();
+            using var stream = ontologyFile.OpenReadStream();
+            using var reader = new StreamReader(stream);
+            bool fin = false;
+            while (!fin)
+            {
+                var line = await reader.ReadLineAsync();
+                if(line is null)
+                {
+                    fin = true;
+                }
+                else if(line.Length>0)
+                {
+                    // Console.WriteLine("hola "+line);
+                    nquads.Add(line);
+                }
+            }
+
+            isRelationBidirectional(g, triple, "_:alice", "_:bob", "foaf:knows", nquads);
+        }
+
         [HttpPost("{ontologyId}")]
-        public async Task<IActionResult> UploadAntology(IFormFile ontologyFile, string ontologyId)
+        public async Task<IActionResult> UploadOntology(IFormFile ontologyFile, string ontologyId)
         {
             //Check if the file has been uploaded correctly
-            if (ontologyFile == null || ontologyFile.Length == 0) {
+            if (ontologyFile == null || ontologyFile.Length == 0)
+            {
                 return BadRequest("Something wrong with the uploaded file");
             }
 
@@ -260,10 +350,10 @@ namespace OpenTwinsV2.Twins.Controllers
             var extension = Path.GetExtension(ontologyFile.FileName);
             if (extension == null || extension.ToLower() != ".ttl")
             {
-                return BadRequest("File can only be of .ttl extension, instead recieved a "+extension.ToLower()+" file");
+                return BadRequest("File can only be of .ttl extension, instead recieved a " + extension.ToLower() + " file");
             }
 
-            if(!await _dgraphService.ExistsOntologyByIdAsync(ontologyId))
+            if (!await _dgraphService.ExistsOntologyByIdAsync(ontologyId))
             {
                 //Parse to rdf
                 //first we read the file data and save it in a IGraph variable
@@ -279,7 +369,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
                 //Parse to JSON
                 //The parsed node will be stored in a list of dictionaries
-                
+
                 var res = new List<Dictionary<string, object>>();
 
                 //Iterate over each Subject
@@ -348,22 +438,54 @@ namespace OpenTwinsV2.Twins.Controllers
                         var (prefix, thingId) = GetLocalName(node, graph, ontologyId); //here it takes care of the no prefix fallback
                         thingId ??= "thing" + Guid.NewGuid();
                         nquads.AddRange(GetNQuadNodeTriples(uid, thingId, createdAt, ontologyId, prefix));
-                        
+
                     }
 
-                    var ignoredPredicates = new List<string> { "domain", "range", "inverseOf", "type", "uid" };
+                    var ignoredPredicates = new List<string> { "domain", "range", "inverseOf", "uid" };
 
                     foreach (Triple triple in graph.Triples.Distinct())
                     {
                         //Get the subject, predicate and object of the triple
                         string subject = GetUid(triple.Subject, graph); //_:uid
                         var (prefixPredicate, predicate) = GetLocalName(triple.Predicate, graph, "");  //uri
-                        predicate ??= "predicate"+Guid.NewGuid();
+                        predicate ??= "predicate" + Guid.NewGuid();
                         //as this includes the original type and uid of the ontology, we exclude them so as not to duplicate the existing ones
                         if (!ignoredPredicates.Contains(predicate))
                         {
                             //Check if the object is a literal (Attribute) or the uid to another node (Relation)
-                            if (triple.Object.NodeType == VDS.RDF.NodeType.Literal)
+                            if (predicate.Equals("type") || predicate.Equals("a"))
+                            {
+                                //Support for "type" and "a" predicate
+                                //create or find a thing whose thingId is the name of the type, and with this subject, relate it to the type Thing through hasType relation
+                                var (typePrefix, typeOfNode) = GetLocalName(triple.Object, graph, ontologyId);
+                                Console.WriteLine("PREFIX: " + typePrefix + ", TYPE: " + typeOfNode);
+                                // var typeOfNode = ((ILiteralNode)triple.Object).ToString();
+                                string match = nquads.FirstOrDefault(nquad => nquad.Contains($"<thingId> {typeOfNode}")); //null manegement ahead
+                                string typeUid = "";
+                                //find out if it is already a Thing
+                                if (match != null)
+                                {
+                                    //the Thing already exists
+                                    //first we get the uid of the Type Thing
+                                    typeUid = match.Split('<')[0];
+                                    Console.WriteLine("UID de Type: " + typeUid);
+                                }
+                                else
+                                {
+                                    //the Thing doesn't exist, we have to create it
+                                    //typeOfNode is the thingId, but we need the prefix too
+                                    typeUid = $"_:typeThing{typeOfNode}";
+                                    nquads.AddRange(GetNQuadNodeTriples($"_:typeThing{typeOfNode}", typeOfNode, createdAt, ontologyId, typePrefix));
+                                }
+                                if (typeUid.Equals(""))
+                                {
+                                    //typeUid has nit been instanciated correctly, something has gone wrong
+                                    return StatusCode(500, $"Something wrong happened while importing the Ontology to DGraph:\nType Uid of ${subject} node not instanciated");
+                                }
+
+                                //instanciate hasType relation
+                                nquads.Add($"{subject} <hasType> {typeUid} .");
+                            }else if (triple.Object.NodeType == VDS.RDF.NodeType.Literal)
                             {
                                 //Attribute of a node
                                 var literal = (ILiteralNode)triple.Object;
@@ -373,7 +495,12 @@ namespace OpenTwinsV2.Twins.Controllers
                             {
                                 //Relation between 2 nodes
                                 string obj = GetUid(triple.Object, graph);
-                                nquads.AddRange(GetNQuadRelationTriples(subject, predicate, obj, createdAt, ontologyId, prefixPredicate));
+                                Console.WriteLine($"SUBJECT: {subject} OBJECT: {obj}");
+                                //check if the relation is bidirectional or not
+                                //if yes, check if the relation object has already been added to the nquads
+                                var (bid, existent) = isRelationBidirectional(graph, triple, subject, obj, predicate, nquads);
+                                if(!existent)
+                                    nquads.AddRange(GetNQuadRelationTriples(subject, predicate, obj, bid, createdAt, ontologyId, prefixPredicate));
                             }
                         }
 
@@ -388,7 +515,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 }
                 catch (Exception ex)
                 {
-                    return StatusCode(500, $"Something wrong happened while importing the Antology to DGraph:\n{ex.GetType}: {ex.Message}");
+                    return StatusCode(500, $"Something wrong happened while importing the Ontology to DGraph:\n{ex.GetType}: {ex.Message}");
                 }
             }
             return Conflict("There is already an ontology with this id");
@@ -562,7 +689,7 @@ namespace OpenTwinsV2.Twins.Controllers
         }
 
         [HttpPost("{ontologyId}/things/{thingId}/instanciate/{id}")]
-        public async Task<IActionResult> InstanciateThingOfAntology(string ontologyId, string thingId, string id)
+        public async Task<IActionResult> InstanciateThingOfOntology(string ontologyId, string thingId, string id)
         {
             //Instance of a Thing which is part of an ontology
             if (!await _dgraphService.ExistsOntologyByIdAsync(ontologyId))
@@ -639,10 +766,81 @@ namespace OpenTwinsV2.Twins.Controllers
                     if (thingInfo.HasValue)
                     {
                         string raw = thingInfo.Value.GetRawText();
-                        ontologyNode["things"]!.AsArray().Add(JsonNode.Parse(raw));
+                        var thing = JsonNode.Parse(raw)!.AsObject();
+                        //Merge Unidirectional and Bidirectional relations, each in ~relatedTo and ~relatedFrom
+                        var relatedTo = thing["~relatedTo"]?.AsArray() ?? [];
+                        var relatedFrom = thing["~relatedFrom"]?.AsArray() ?? [];
+
+                        // merge both arrays
+                        var relations = new JsonArray();
+                        foreach (var item in relatedTo) relations.Add(item!.DeepClone());
+                        foreach (var item in relatedFrom) relations.Add(item!.DeepClone());
+
+                        var grouped = relations
+                            .Where(r => r?["Relation.name"] != null)
+                            .GroupBy(r => r!["Relation.name"]!.ToString());
+
+                        var groupedArray = new JsonArray();
+
+                        foreach (var group in grouped)
+                        {
+                            // Create the grouped object with the group key
+                            var groupObj = new JsonObject
+                            {
+                                ["Relation.name"] = group.Key
+                            };
+
+                            // Pick a sample relation from the group to copy metadata from (except "relatedTo")
+                            var sample = group.FirstOrDefault();
+                            if (sample is JsonObject sampleObj)
+                            {
+                                foreach (var kvp in sampleObj)
+                                {
+                                    var propName = kvp.Key;
+                                    // Skip relatedTo because we'll flatten those separately
+                                    if (string.Equals(propName, "relatedTo", StringComparison.OrdinalIgnoreCase))
+                                        continue;
+
+                                    // If the grouped object doesn't already have this property, copy it
+                                    if (!groupObj.ContainsKey(propName))
+                                    {
+                                        // clone the value to avoid shared references
+                                        groupObj[propName] = kvp.Value is JsonNode node ? node.DeepClone() : null;
+                                    }
+                                }
+                            }
+
+                            // Flatten all relatedTo arrays in the group into one array
+                            var flattened = new JsonArray();
+                            foreach (var item in group)
+                            {
+                                var arr = item?["relatedTo"]?.AsArray();
+                                if (arr is not null)
+                                {
+                                    foreach (var entry in arr)
+                                    {
+                                        flattened.Add(entry!.DeepClone());
+                                    }
+                                }
+                            }
+
+                            groupObj["relatedTo"] = flattened;
+                            groupedArray.Add(groupObj);
+                        }
+
+                        // attach merged array
+                        thing["relations"] = groupedArray;
+                        thing.Remove("~relatedTo");
+                        thing.Remove("~relatedFrom");
+
+                        var mergedElement = JsonDocument.Parse(thing.ToJsonString()).RootElement;
+                        ontologyNode["things"]!.AsArray().Add(JsonNode.Parse(mergedElement.GetRawText()));
                     }
+                    
                 }
             }
+                
+            
             return ontologyNode;
         }
 
@@ -694,7 +892,37 @@ namespace OpenTwinsV2.Twins.Controllers
                 var prefix = thingInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
                 //@id -> name (it's the thing id but without the ontology name as prefix)
                 thing["@id"] = $"{prefix}:{thingInfo?["name"]}";
-                //TODO @type, when importing the existing types where ignored, do I store them or set them as default opentwins ones?
+                //type of node is stored via hasType relation between Things (The Things that represent Types are ignored in the GetOntologyThings method) 
+                //depending on the ontology, one thing may have more than one type´
+                //if 1 -> JsonValue, if more -> JsonLD
+
+                //Type(s):
+                var types = thingInfo?["hasType"];
+                if((types is not null) && (types.AsArray().Count > 0))
+                {
+                    //this thing has at least one type
+                    foreach(var typeInfo in types.AsArray())
+                    {
+                        var typeName = typeInfo?["name"]?.GetValue<string>();
+                        var typePrefix = typeInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
+
+                        if(typeName is not null && (typeName.Length > 0) )
+                        {
+                            if (types.AsArray().Count == 1)
+                            {
+                                //only one type
+                                thing["@type"] = $"{((typePrefix == null || typePrefix.Length == 0) ? "" : typePrefix)}:{typeName}";
+                            }
+                            else
+                            {
+                                if (thing["@type"] is null)
+                                    thing["@type"] = new JsonArray();
+                                //more than one type
+                                thing["@type"]?.AsArray().Add($"{((typePrefix == null || typePrefix.Length == 0) ? "" : typePrefix)}:{typeName}");
+                            }
+                        }
+                    }
+                }
 
                 //Attributes:
                 var attributes = thingInfo?["hasAttribute"];
@@ -715,7 +943,7 @@ namespace OpenTwinsV2.Twins.Controllers
                         }
                     }
                 }
-                var relations = thingInfo?["~relatedTo"];
+                var relations = thingInfo?["relations"];
                 if ((relations is not null) && relations.AsArray().Count > 0)
                 {
                     //this thing has relations with other things
@@ -729,13 +957,37 @@ namespace OpenTwinsV2.Twins.Controllers
                         {
                             continue;
                         }
-                        var relatedName = relatedNode.GetValueKind().Equals(JsonValueKind.Array) ? relatedNode?[0]?["name"]?.GetValue<string>() : relatedNode?["name"]?.GetValue<string>();
-                        var relatedPrefix = relatedNode.GetValueKind().Equals(JsonValueKind.Array) ? relatedNode?[0]?["Thing.prefix"]?["prefix"]?.GetValue<string>() : relatedNode?["Thing.prefix"]?["prefix"]?.GetValue<string>();
-
-                        if (name is not null && relatedName is not null && name.Length > 0 && relatedName.Length > 0)
+                        //check if there is only one lement or more
+                        if(name is not null && name.Length > 0)
                         {
-                            thing[$"{relPrefix}:{name}"] = $"{relatedPrefix}:{relatedName}";
-                            // thing[name] = relatedName;
+                            List<string> relatedThingstr = new List<string>();
+                            foreach(var relatedThing in relatedNode.AsArray())
+                            {
+                                var relatedName = relatedThing?["name"]?.GetValue<string>();
+                                var relatedPrefix = relatedThing?["Thing.prefix"]?["prefix"]?.GetValue<string>();
+                                if(relatedName is not null && relatedName.Length>0)
+                                    relatedThingstr.Add($"{relatedPrefix}:{relatedName}");
+                            }
+                            if (relatedThingstr.Count > 1)
+                            {
+                                //array
+                                var jsonArray = new JsonArray();
+
+                                foreach (var id in relatedThingstr)
+                                {
+                                    var node = new JsonObject
+                                    {
+                                        ["@id"] = id
+                                    };
+                                    jsonArray.Add(node);
+                                }
+                                thing[$"{relPrefix}:{name}"] = jsonArray;
+                            }
+                            else
+                            {
+                                //element
+                                thing[$"{relPrefix}:{name}"] = relatedThingstr[0];
+                            }
                         }
                     }
                 }

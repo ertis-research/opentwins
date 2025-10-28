@@ -228,6 +228,8 @@ This method is ideal for development and testing.
         dapr run --app-id twins-service --app-port 5013 --resources-path ./Infrastructure/DaprComponentsLocal -- dotnet run --urls=http://localhost:5013/
         ```
 
+---
+
 ## Running the Validation
 
 Each Research Question (RQ) test suite is contained in its own directory at the root of this project.

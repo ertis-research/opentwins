@@ -37,13 +37,6 @@ SCENARIOS_MEDIUM_LOAD = [
     (5000, 0.2, 15),     # 5000 dispositivos, 5 msg/s (~25k msg/s), 15s
 ]
 
-# SCENARIOS_STRESS = [
-#     (10000, 1.0, 20),    # 10,000 dispositivos, 1 msg/s (~10k msg/s), 20s
-#     (15000, 1.0, 20),    # 15,000 dispositivos, 1 msg/s (~15k msg/s), 20s
-#     (20000, 0.5, 25),    # 20,000 dispositivos, 2 msg/s (~40k msg/s), 25s
-#     (25000, 0.2, 30),    # 25,000 dispositivos, 5 msg/s (~125k msg/s), 30s (burst)
-# ]
-
 
 def get_ntp_offset():
     try:
@@ -152,12 +145,10 @@ if __name__ == "__main__":
         run_test(SCENARIOS_BASELINE, "baseline", 15)
         figure.generate_plots_from_csv("baseline.csv", "Baseline")
         
-        print("[Main] SCENARIOS MEDIUM LOAD")
-        run_test(SCENARIOS_MEDIUM_LOAD, "medium_load", 45)
-        figure.generate_plots_from_csv("medium_load.csv", "Medium Load")
-        
-        #print("[Main] SCENARIOS STRESS")
-        #run_test(SCENARIOS_STRESS, "Stress", 75)
+        print("[Main] SCENARIOS INCREASED LOAD")
+        run_test(SCENARIOS_MEDIUM_LOAD, "increased_load", 45)
+        figure.generate_plots_from_csv("increased_load.csv", "Increased Load")
+
         
     except KeyboardInterrupt:
         print("\n[Main] KeyboardInterrupt detected. Exiting gracefully.")

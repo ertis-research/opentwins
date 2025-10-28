@@ -97,15 +97,15 @@ def plot_results(summary_df, output_dir):
     ax1.grid(True, linestyle="--", alpha=0.6)
 
     # Line plot for success rate
-    ax2 = ax1.twinx()
-    ax2.plot(summary_df["scenario"], summary_df["success_rate"] * 100, color="red",
-                marker="o", linewidth=2, label="Success Rate")
-    ax2.set_ylabel("Success Rate (%)", color="red", fontsize=12)
-    ax2.tick_params(axis="y", labelcolor="red")
-    ax2.set_ylim(0, 100)
+    # ax2 = ax1.twinx()
+    # ax2.plot(summary_df["scenario"], summary_df["success_rate"] * 100, color="red",
+    #             marker="o", linewidth=2, label="Success Rate")
+    # ax2.set_ylabel("Success Rate (%)", color="red", fontsize=12)
+    # ax2.tick_params(axis="y", labelcolor="red")
+    # ax2.set_ylim(0, 100)
 
     plt.tight_layout()
-    fig_path = os.path.join(output_dir, "rq3_results_plot.png")
+    fig_path = os.path.join(output_dir, "rq3_results_plot.pdf")
     plt.savefig(fig_path, dpi=300)
     plt.show()
     logger.info(f"Saved plot to {fig_path}")

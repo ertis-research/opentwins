@@ -1,5 +1,6 @@
 using VDS.RDF;
 using VDS.RDF.Parsing;
+using VDS.RDF.Query;
 using Microsoft.AspNetCore.Mvc;
 using OpenTwinsV2.Shared.Constants;
 using OpenTwinsV2.Twins.Services;
@@ -72,7 +73,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
         private (string Prefix, string LocalName) GetLocalName(VDS.RDF.INode node, IGraph graph, string ontologyId)
         {
-            if(node is UriNode uriNode)
+            if (node is UriNode uriNode)
             {
                 string qname;
                 string prefix;
@@ -93,14 +94,14 @@ namespace OpenTwinsV2.Twins.Controllers
                 }
                 return (prefix, localName);
             }
-            return ($"pref{ontologyId}" ,node.ToString());
+            return ($"pref{ontologyId}", node.ToString());
         }
 
         private string GetUid(VDS.RDF.INode node, IGraph graph)
         {
             //get the uid omiting all prefixes
             var (_, local) = GetLocalName(node, graph, "");
-            local ??= "nameless"+Guid.NewGuid();
+            local ??= "nameless" + Guid.NewGuid();
             return $"_:{local}";
         }
 
@@ -117,7 +118,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 .Replace("\t", "\\t");   // omit \t
         }
 
-        
+
 
         private List<string> GetNQuadAttributeTriples(string subject, string predicate, ILiteralNode literal, string ontology, string prefix)
         {
@@ -167,7 +168,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 relatedFrom ===============> The subject of a relation only if it's unidirectional. If not, not defined
             }
             */
-            
+
             var nquads = new List<string>();
             var namespace_uid = $"_:{ontology}namespace_{prefix}";
             //Relation node
@@ -237,7 +238,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
             return nquads;
         }
-        
+
         private (bool, bool) isRelationBidirectional(IGraph graph, Triple triple, string uidSubj, string uidObj, string predicate, List<string> nquads)
         {
             bool bid = false;
@@ -294,47 +295,29 @@ namespace OpenTwinsV2.Twins.Controllers
             }
         }
 
-        [HttpPost("/prueba/{ontologyId}")]
-        public async void prueba(IFormFile ontologyFile, string ontologyId)
+        private bool IsRelevantBlankNode(IGraph g, VDS.RDF.INode node)
         {
-            var ttl = @"
-            @prefix : <http://example.org/> .
+            var interestingPredicates = new[] {
+                "owl:oneOf", "owl:intersectionOf", "owl:unionOf",
+                "owl:someValuesFrom", "owl:allValuesFrom",
+                "rdf:first", "rdf:rest"
+            };
 
-            :alice :foaf:knows :bob .
-            :bob :foaf:knows: :alice .
-            ";
+            return g.GetTriplesWithSubject(node)
+                .Any(t => t.Predicate is IUriNode p &&
+                        interestingPredicates.Any(ip => p.ToString().Contains(ip)));
+        }
 
-            var g = new VDS.RDF.Graph();
-            StringParser.Parse(g, ttl);
-            Triple triple = null;
-            foreach(var t in g.Triples)
+        [HttpGet("")]
+        public async Task<IActionResult> GetAllOntologiesId()
+        {
+            try
             {
-                if (t.Subject.ToString().Equals(":alice"))
-                {
-                    triple = t;
-                    break;
-                }
-            }
-
-            var nquads = new List<string>();
-            using var stream = ontologyFile.OpenReadStream();
-            using var reader = new StreamReader(stream);
-            bool fin = false;
-            while (!fin)
+                return Ok(await _dgraphService.GetAllOntologiesIdsAsync());
+            }catch(Exception ex)
             {
-                var line = await reader.ReadLineAsync();
-                if(line is null)
-                {
-                    fin = true;
-                }
-                else if(line.Length>0)
-                {
-                    // Console.WriteLine("hola "+line);
-                    nquads.Add(line);
-                }
+                return StatusCode(500, $"Something wrong happened while looking for ontologies in Dgraph:\n{ex.GetType}: {ex.Message}");
             }
-
-            isRelationBidirectional(g, triple, "_:alice", "_:bob", "foaf:knows", nquads);
         }
 
         [HttpPost("{ontologyId}")]
@@ -403,7 +386,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
                     var allNodes = graph.Triples
                         .Select(t => t.Subject)
-                        .Where(s => s.NodeType == VDS.RDF.NodeType.Uri)
+                        .Where(s => s.NodeType == VDS.RDF.NodeType.Uri || (s.NodeType == VDS.RDF.NodeType.Blank && IsRelevantBlankNode(graph, s)))
                     /*.Where(s =>
                     {
                         // Obtain the node type
@@ -485,7 +468,8 @@ namespace OpenTwinsV2.Twins.Controllers
 
                                 //instanciate hasType relation
                                 nquads.Add($"{subject} <hasType> {typeUid} .");
-                            }else if (triple.Object.NodeType == VDS.RDF.NodeType.Literal)
+                            }
+                            else if (triple.Object.NodeType == VDS.RDF.NodeType.Literal)
                             {
                                 //Attribute of a node
                                 var literal = (ILiteralNode)triple.Object;
@@ -499,7 +483,7 @@ namespace OpenTwinsV2.Twins.Controllers
                                 //check if the relation is bidirectional or not
                                 //if yes, check if the relation object has already been added to the nquads
                                 var (bid, existent) = isRelationBidirectional(graph, triple, subject, obj, predicate, nquads);
-                                if(!existent)
+                                if (!existent)
                                     nquads.AddRange(GetNQuadRelationTriples(subject, predicate, obj, bid, createdAt, ontologyId, prefixPredicate));
                             }
                         }
@@ -551,7 +535,7 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 return NotFound(new { message = ex.Message });
             }
-            
+
         }
 
         [HttpGet("{ontologyId}/relations/{relationName}")]
@@ -573,7 +557,7 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 return NotFound(new { message = ex.Message });
             }
-            
+
         }
 
         [HttpGet("{ontologyId}/attributes/{attributeName}")]
@@ -597,20 +581,20 @@ namespace OpenTwinsV2.Twins.Controllers
             }
         }
 
-        
+
 
         private async Task<JsonObject?> GetWOTThingProperties(string ontologyId, string thingId)
         {
             var json = await _dgraphService.GetThingAttributesByIdAsync(ontologyId, thingId);
             var res = new JsonObject();
-            if(json != null && json.Value.ValueKind.Equals(JsonValueKind.Array))
+            if (json != null && json.Value.ValueKind.Equals(JsonValueKind.Array))
             {
-                foreach(var att in json.Value.EnumerateArray().ToArray())
+                foreach (var att in json.Value.EnumerateArray().ToArray())
                 {
                     var key = att.GetProperty("Attribute.key").ToString()!;
                     var type = att.GetProperty("Attribute.type").ToString()!;
                     //var value = att.GetProperty("Attribute.value").ValueKind == JsonValueKind.Number ? att.GetProperty("Attribute.value") : att.GetProperty("Attribute.value").ToString();
-                    
+
                     var valueElement = att.GetProperty("Attribute.value").ToString();
                     object? value;
 
@@ -618,7 +602,7 @@ namespace OpenTwinsV2.Twins.Controllers
                     {
                         case "int":
                         case "integer":
-                            value= int.TryParse(valueElement, NumberStyles.Integer, CultureInfo.InvariantCulture, out _) ? int.Parse(valueElement) : valueElement;
+                            value = int.TryParse(valueElement, NumberStyles.Integer, CultureInfo.InvariantCulture, out _) ? int.Parse(valueElement) : valueElement;
                             break;
                         case "float":
                         case "double":
@@ -637,15 +621,15 @@ namespace OpenTwinsV2.Twins.Controllers
                         ["type"] = type
                     };
 
-                    if(value is not null)
+                    if (value is not null)
                     {
                         obj["default"] = JsonValue.Create(value);
-                    }                   
+                    }
 
                     res.Add($"{key}", obj);
                 }
             }
-            return res.Count>0 ? res : null;
+            return res.Count > 0 ? res : null;
         }
 
         [HttpDelete("{ontologyId}")]
@@ -671,7 +655,7 @@ namespace OpenTwinsV2.Twins.Controllers
         [HttpDelete("{ontologyId}/things/{thingId}")]
         public async Task<IActionResult> DeleteThingFromOntology(string ontologyId, string thingId)
         {
-            if(!await _dgraphService.ExistsOntologyByIdAsync(ontologyId))
+            if (!await _dgraphService.ExistsOntologyByIdAsync(ontologyId))
                 return NotFound($"The {ontologyId} ontology does not exist int DGraph");
 
             if (!await _dgraphService.ExistsThingInOntologyByIdAsync(ontologyId, thingId))
@@ -681,7 +665,8 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 var result = await _dgraphService.DeleteByOntologyIdAndThingId(ontologyId, thingId);
                 return Ok(result);
-            }catch(Exception ex)
+            }
+            catch (Exception ex)
             {
                 return StatusCode(500, $"Something went wrong while deleting the {thingId} thing from the {ontologyId} ontology from DGraph");
             }
@@ -746,7 +731,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
             //add namespaces
             var namespaces = await _dgraphService.GetNamespacesInOntologyAsync(ontologyId);
-            
+
             var ontologyNode = new JsonObject
             {
                 ["ontologyId"] = ontologyId,
@@ -836,11 +821,11 @@ namespace OpenTwinsV2.Twins.Controllers
                         var mergedElement = JsonDocument.Parse(thing.ToJsonString()).RootElement;
                         ontologyNode["things"]!.AsArray().Add(JsonNode.Parse(mergedElement.GetRawText()));
                     }
-                    
+
                 }
             }
-                
-            
+
+
             return ontologyNode;
         }
 
@@ -898,15 +883,15 @@ namespace OpenTwinsV2.Twins.Controllers
 
                 //Type(s):
                 var types = thingInfo?["hasType"];
-                if((types is not null) && (types.AsArray().Count > 0))
+                if ((types is not null) && (types.AsArray().Count > 0))
                 {
                     //this thing has at least one type
-                    foreach(var typeInfo in types.AsArray())
+                    foreach (var typeInfo in types.AsArray())
                     {
                         var typeName = typeInfo?["name"]?.GetValue<string>();
                         var typePrefix = typeInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
 
-                        if(typeName is not null && (typeName.Length > 0) )
+                        if (typeName is not null && (typeName.Length > 0))
                         {
                             if (types.AsArray().Count == 1)
                             {
@@ -958,18 +943,24 @@ namespace OpenTwinsV2.Twins.Controllers
                             continue;
                         }
                         //check if there is only one lement or more
-                        if(name is not null && name.Length > 0)
+                        if (name is not null && name.Length > 0)
                         {
                             List<string> relatedThingstr = new List<string>();
-                            foreach(var relatedThing in relatedNode.AsArray())
+                            foreach (var relatedThing in relatedNode.AsArray())
                             {
                                 var relatedName = relatedThing?["name"]?.GetValue<string>();
                                 var relatedPrefix = relatedThing?["Thing.prefix"]?["prefix"]?.GetValue<string>();
-                                if(relatedName is not null && relatedName.Length>0)
+                                if (relatedName is not null && relatedName.Length > 0)
                                     relatedThingstr.Add($"{relatedPrefix}:{relatedName}");
                             }
-                            if (relatedThingstr.Count > 1)
+                            if (relatedThingstr.Count == 1)
                             {
+                                //element
+                                thing[$"{relPrefix}:{name}"] = relatedThingstr[0];
+                            }
+                            else if(relatedThingstr.Count > 1)
+                            {
+                                
                                 //array
                                 var jsonArray = new JsonArray();
 
@@ -982,11 +973,6 @@ namespace OpenTwinsV2.Twins.Controllers
                                     jsonArray.Add(node);
                                 }
                                 thing[$"{relPrefix}:{name}"] = jsonArray;
-                            }
-                            else
-                            {
-                                //element
-                                thing[$"{relPrefix}:{name}"] = relatedThingstr[0];
                             }
                         }
                     }
@@ -1003,7 +989,7 @@ namespace OpenTwinsV2.Twins.Controllers
             };
 
             return jsonLd;
-        } 
+        }
 
         [HttpGet("{ontologyId}/export/JsonLd")]
         public async Task<IActionResult> ExportOntologyInJsonLdFormat(string ontologyId)
@@ -1027,7 +1013,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
             var jsonLd = GetJsonLDFromRegularJson(ontologyJson);
 
-            if(jsonLd is null)
+            if (jsonLd is null)
             {
                 return StatusCode(500, "Something went wrong while parsing");//error 500, json malformado
             }
@@ -1068,7 +1054,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 ]
             */
         }
-        
+
         private async void LoadNamespaceIntoGraph(JsonArray namespaces, IGraph graph)
         {
             foreach (var ns in namespaces)
@@ -1100,12 +1086,12 @@ namespace OpenTwinsV2.Twins.Controllers
             }
             var ontologyJson = await GetFullOntologyJson(ontologyId);
 
-            if(ontologyJson == null)
+            if (ontologyJson == null)
             {
                 return StatusCode(500, "Something wrong with the Ontology Json:\nNull json recieved");//error 500, json malformado
             }
 
-            if(ontologyJson["namespace"] == null)
+            if (ontologyJson["namespace"] == null)
             {
                 return StatusCode(500, $"Something wrong with the Ontology Json:\nNo namespace found");//error 500, json malformado
             }
@@ -1141,7 +1127,8 @@ namespace OpenTwinsV2.Twins.Controllers
 
                 //return it as a downloadable file
                 return Ok(File(stream, "text/turtle", "ontology.ttl"));
-            }catch(Exception e)
+            }
+            catch (Exception e)
             {
                 return StatusCode(500, $"Something wrong while parsing to TTL Format:{e}");
             }

@@ -286,6 +286,38 @@ namespace OpenTwinsV2.Twins.Services
             }
         }
 
+        public async Task<List<JsonElement>> GetAllOntologiesIdsAsync()
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var query = $@"
+                    {{
+                        ontologies(func: has(ontologyId)){{
+                            ontologyId
+                        }}
+                    }}     
+                ";
+
+                var res = await txn.Query(query);
+                var json = res.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if (!root.TryGetProperty("ontologies", out JsonElement ontologyArray) || ontologyArray.GetArrayLength() == 0)
+                    return null;
+
+                var ontologies = JsonSerializer.Deserialize<List<JsonElement>>(ontologyArray.GetRawText());
+                return ontologies ?? [];                
+            }
+            catch
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        } 
+
         private string ListNQuadsToMutationFormat(List<string> nquads)
         {
             StringBuilder res = new StringBuilder();

@@ -28,6 +28,8 @@ using VDS.RDF.Query.Expressions.Functions.XPath.Cast;
 using System.Reflection.Metadata;
 using Json.More;
 using System.Text.RegularExpressions;
+using VDS.RDF.Query.Datasets;
+using Microsoft.AspNetCore.Mvc.ViewFeatures;
 
 
 namespace OpenTwinsV2.Twins.Controllers
@@ -841,7 +843,7 @@ namespace OpenTwinsV2.Twins.Controllers
             return Ok(json);
         }
 
-        private JsonObject? GetJsonLDFromRegularJson(JsonObject ontologyJson)
+        private JsonObject? GetJsonLDFromRegularJson(JsonObject ontologyJson, string ontologyId)
         {
             var namespaces = ontologyJson["namespace"]?.AsArray() ?? new JsonArray();
             var things = ontologyJson["things"]?.AsArray() ?? new JsonArray();
@@ -857,7 +859,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 {
                     continue;
                 }
-                var prefix = ns["prefix"]?.GetValue<string>();
+                var prefix = string.IsNullOrWhiteSpace(ns["prefix"]?.GetValue<string>()) ? $"blankNodePrefix_{ontologyId}" : ns["prefix"]?.ToString();
                 var uri = ns["uri"]?.GetValue<string>();
 
                 if (prefix is not null && uri is not null)
@@ -875,6 +877,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
                 //obtener prefijo
                 var prefix = thingInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
+                prefix = string.IsNullOrWhiteSpace(prefix) ? $"blankNodePrefix_{ontologyId}" : prefix;
                 //@id -> name (it's the thing id but without the ontology name as prefix)
                 thing["@id"] = $"{prefix}:{thingInfo?["name"]}";
                 //type of node is stored via hasType relation between Things (The Things that represent Types are ignored in the GetOntologyThings method) 
@@ -890,6 +893,7 @@ namespace OpenTwinsV2.Twins.Controllers
                     {
                         var typeName = typeInfo?["name"]?.GetValue<string>();
                         var typePrefix = typeInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
+                        typePrefix = string.IsNullOrWhiteSpace(typePrefix) ? $"blankNodePrefix_{ontologyId}" : typePrefix;
 
                         if (typeName is not null && (typeName.Length > 0))
                         {
@@ -920,6 +924,7 @@ namespace OpenTwinsV2.Twins.Controllers
                         var key = attributeInfo?["Attribute.key"]?.GetValue<string>();
                         var value = attributeInfo?["Attribute.value"]?.GetValue<string>();
                         var attPrefix = attributeInfo?["Attribute.prefix"]?["prefix"]?.GetValue<string>();
+                        attPrefix = string.IsNullOrWhiteSpace(attPrefix) ? $"blankNodePrefix_{ontologyId}" : attPrefix;
 
                         if ((key is not null) && (value is not null) && (key.Length > 0) && (value.Length > 0))
                         {
@@ -937,6 +942,7 @@ namespace OpenTwinsV2.Twins.Controllers
                         //TODO prefix support
                         var name = relationInfo?["Relation.name"]?.GetValue<string>();
                         var relPrefix = relationInfo?["Relation.prefix"]?["prefix"]?.GetValue<string>();
+                        relPrefix = string.IsNullOrWhiteSpace(relPrefix) ? $"blankNodePrefix_{ontologyId}" : relPrefix;
                         var relatedNode = relationInfo?["relatedTo"];
                         if (relatedNode is null)
                         {
@@ -950,18 +956,12 @@ namespace OpenTwinsV2.Twins.Controllers
                             {
                                 var relatedName = relatedThing?["name"]?.GetValue<string>();
                                 var relatedPrefix = relatedThing?["Thing.prefix"]?["prefix"]?.GetValue<string>();
+                                relatedPrefix = string.IsNullOrWhiteSpace(relatedPrefix) ? $"blankNodePrefix_{ontologyId}" : relatedPrefix;
                                 if (relatedName is not null && relatedName.Length > 0)
                                     relatedThingstr.Add($"{relatedPrefix}:{relatedName}");
                             }
-                            if (relatedThingstr.Count == 1)
+                            if (relatedThingstr.Count >= 1)
                             {
-                                //element
-                                thing[$"{relPrefix}:{name}"] = relatedThingstr[0];
-                            }
-                            else if(relatedThingstr.Count > 1)
-                            {
-                                
-                                //array
                                 var jsonArray = new JsonArray();
 
                                 foreach (var id in relatedThingstr)
@@ -972,7 +972,8 @@ namespace OpenTwinsV2.Twins.Controllers
                                     };
                                     jsonArray.Add(node);
                                 }
-                                thing[$"{relPrefix}:{name}"] = jsonArray;
+                                
+                                thing[$"{relPrefix}:{name}"] = jsonArray.Count==1 ? jsonArray[0]!.DeepClone() : jsonArray;
                             }
                         }
                     }
@@ -1011,7 +1012,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 return StatusCode(500, "Something wrong with the Ontology Json:\nNo namespace found");//error 500, json malformado
             }
 
-            var jsonLd = GetJsonLDFromRegularJson(ontologyJson);
+            var jsonLd = GetJsonLDFromRegularJson(ontologyJson, ontologyId);
 
             if (jsonLd is null)
             {
@@ -1055,7 +1056,7 @@ namespace OpenTwinsV2.Twins.Controllers
             */
         }
 
-        private async void LoadNamespaceIntoGraph(JsonArray namespaces, IGraph graph)
+        private void LoadNamespaceIntoGraph(JsonArray namespaces, IGraph graph, string ontologyId)
         {
             foreach (var ns in namespaces)
             {
@@ -1072,8 +1073,34 @@ namespace OpenTwinsV2.Twins.Controllers
                     continue;
                 }
 
-                graph.NamespaceMap.AddNamespace(prefix.ToString(), new Uri(uri.ToString()));
+
+                graph.NamespaceMap.AddNamespace(string.IsNullOrWhiteSpace(prefix.ToString()) ? $"blankNodePrefix_{ontologyId}": prefix.ToString(), new Uri(uri.ToString()));
             }
+        }
+
+        private VDS.RDF.Graph GetOntologyRDFGraph(JsonObject ontologyJson, JsonArray ns, string ontologyId)
+        {
+            
+                
+            var store = new TripleStore();
+            var jsonLd = GetJsonLDFromRegularJson(ontologyJson, ontologyId);
+            var jsonString = JsonSerializer.Serialize(jsonLd);
+            var parser = new VDS.RDF.Parsing.JsonLdParser();
+            using var reader = new StringReader(jsonString);
+            parser.Load(store, reader);
+
+            var mergedGraph = new VDS.RDF.Graph();
+
+            //load namespaces into graph for eventual prefix parsing to uri
+            LoadNamespaceIntoGraph(ns, mergedGraph, ontologyId);
+
+            foreach (var g in store.Graphs)
+            {
+                mergedGraph.Merge(g, true); // true = keep namespace mappings
+            }
+
+            return mergedGraph;
+            
         }
 
         [HttpGet("{ontologyId}/export/TTL")]
@@ -1099,34 +1126,18 @@ namespace OpenTwinsV2.Twins.Controllers
 
             try
             {
-                var store = new TripleStore();
-                var jsonLd = GetJsonLDFromRegularJson(ontologyJson);
-                var jsonString = JsonSerializer.Serialize(jsonLd);
-                var parser = new VDS.RDF.Parsing.JsonLdParser();
-                using var reader = new StringReader(jsonString);
-                parser.Load(store, reader);
-
-                var mergedGraph = new VDS.RDF.Graph();
-
-                //load namespaces into graph for eventual prefix parsing to uri
-                LoadNamespaceIntoGraph(ns, mergedGraph);
-
-                foreach (var g in store.Graphs)
-                {
-                    mergedGraph.Merge(g, true); // true = keep namespace mappings
-                }
-
+                var mergedGraph = GetOntologyRDFGraph(ontologyJson, ns, ontologyId);
+                
                 var ttlWriter = new VDS.RDF.Writing.CompressingTurtleWriter();
                 using var sw = new StringWriter();
                 ttlWriter.Save(mergedGraph, sw);
                 string ttlString = sw.ToString();
-
+                
                 //convert the string to bytes
                 var ttlBytes = Encoding.UTF8.GetBytes(ttlString);
                 var stream = new MemoryStream(ttlBytes);
-
                 //return it as a downloadable file
-                return Ok(File(stream, "text/turtle", "ontology.ttl"));
+                return File(stream, "text/turtle", $"{ontologyId}_ontology.ttl");
             }
             catch (Exception e)
             {
@@ -1170,6 +1181,85 @@ namespace OpenTwinsV2.Twins.Controllers
                 schema:name "City Chess Club" .
 
             */
-        } 
+        }
+
+        [HttpPost("{ontologyId}/query")]
+        public async Task<IActionResult> SparQLQueryInOntology(string ontologyId, [FromForm] string stringQuery)
+        {
+            //check if the stringQuery is empty
+            if (string.IsNullOrWhiteSpace(stringQuery))
+            {
+                return BadRequest($"The SparQL query cannot be empty");
+            }
+            //check if the ontology exists
+            var check = await _dgraphService.ExistsOntologyByIdAsync(ontologyId);
+            if (!check)
+            {
+                return NotFound(new { message = $"Ontology '{ontologyId}' does not exist" });
+            }
+            //parse the query
+            var parser = new SparqlQueryParser();
+            try
+            {
+                var query = parser.ParseFromString(stringQuery);
+
+                //only select queries are supported, anything else is blockes
+                if (!(query.QueryType.ToString().StartsWith("Select", StringComparison.OrdinalIgnoreCase) || query.QueryType.Equals(SparqlQueryType.Ask))) //the are severlat select type queries
+                {
+                    return BadRequest($"Only SELECT queries are available, \"{stringQuery}\" is a \n{query.QueryType.ToString()} query");
+                }
+
+                //get the ontologyJson, the namespaces and the RDF graph
+                var ontologyJson = await GetFullOntologyJson(ontologyId);
+
+                if (ontologyJson == null)
+                {
+                    return StatusCode(500, "Something wrong with the Ontology Json:\nNull json recieved");//error 500, json malformado
+                }
+
+                if (ontologyJson["namespace"] == null)
+                {
+                    return StatusCode(500, $"Something wrong with the Ontology Json:\nNo namespace found");//error 500, json malformado
+                }
+                var ns = ontologyJson["namespace"]?.AsArray();
+                VDS.RDF.Graph graph;
+                try
+                {
+                    graph = GetOntologyRDFGraph(ontologyJson, ns, ontologyId);
+                }
+                catch (Exception e)
+                {
+                    return StatusCode(500, $"Something wrong while getting the RDF Graph:\n{e.GetType}: {e.Message}");
+                }
+
+                //once we have the graph, we can run queries on it
+                var store = new TripleStore();
+                store.Add(graph);
+                var dataset = new InMemoryDataset(store, true);
+                var processor = new LeviathanQueryProcessor(dataset);
+                var results = (SparqlResultSet)processor.ProcessQuery(query);
+
+                //parse results format so it is readable
+                if (query.QueryType == SparqlQueryType.Ask)
+                    return Ok(results.Result);
+
+                if (results.IsEmpty)
+                    return Ok(new List<object>());
+
+                var jsonResults = results.Select(r =>
+                    r.Variables.ToDictionary(v => v, v => r[v]?.ToString())
+                );
+
+                return Ok(jsonResults);
+            }
+            catch (RdfParseException ex)
+            {
+                return BadRequest($"The format of the SparQL query \"{stringQuery}\" is wrong:\n{ex}");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Something wrong while processing the SparQl query:\n{ex.GetType}: {ex.Message}");
+            }
+        }
     }
 }

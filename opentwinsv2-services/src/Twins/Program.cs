@@ -1,5 +1,5 @@
 // dapr run --app-id twins-service --app-port 5013 --resources-path ./Infrastructure/DaprComponentsLocal -- dotnet run --urls=http://localhost:5013/
-
+// dapr run --app-id things-service --app-port 5001 --resources-path ./Infrastructure/DaprComponentsLocal  -- dotnet run --urls=http://localhost:5001  
 using System.Text.Json;
 using Dapr;
 using Dapr.Messaging.PublishSubscribe;
@@ -16,6 +16,7 @@ builder.Services.AddScoped<IJsonNquadsConverter, JsonNquadsConverter>();
 builder.Services.AddScoped<LinkEventsHandler>();
 builder.Services.AddScoped<DGraphService>();
 builder.Services.AddScoped<ThingsService>();
+builder.Services.AddScoped<ConverterService>();
 builder.Services.AddControllers().AddDapr();
 
 builder.Services.AddEndpointsApiExplorer();

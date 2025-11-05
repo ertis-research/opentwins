@@ -943,6 +943,96 @@ namespace OpenTwinsV2.Twins.Services
             return JsonSerializer.Deserialize<JsonElement>(thingArray[0].GetRawText());
         }
 
+        //TODO refactor
+        public async Task<JsonElement?> GetThingInTwinByIdForJsonAsync(string twinId, string thingId)
+        {
+            using var txn = _client.NewTransaction();
+
+            var query = $@"
+            {{
+                things as var(func: eq(thingId, ""{thingId}"")) @cascade {{
+                    twins @filter(eq(thingId, ""{twinId}""))
+                }}
+
+                thing(func: uid(things)){{
+                    thingId
+                    name
+                    createdAt
+                    hasType{{
+                        thingId
+                        name
+                        Thing.prefix{{
+                            namespaceId
+                            prefix
+                            uri
+                        }}
+                    }}
+                    Thing.prefix{{
+                            namespaceId
+                            prefix
+                            uri
+                        }}
+                    hasAttribute{{
+                        Attribute.key
+                        Attribute.value
+                        Attribute.prefix{{
+                            namespaceId
+                            prefix
+                            uri
+                        }}
+                    }}
+                    ~relatedTo @filter(not has(relatedFrom)){{
+                        uid
+                        Relation.name
+                        Relation.prefix{{
+                            namespaceId
+                            prefix
+                            uri
+                        }}
+                        relatedTo @filter(NOT uid(things)){{
+                            name
+                            thingId
+                            Thing.prefix{{
+                                namespaceId
+                                prefix
+                                uri
+                            }}
+                        }}
+                    }}
+
+                    ~relatedFrom {{
+                        uid
+                        Relation.name
+                        Relation.prefix{{
+                            namespaceId
+                            prefix
+                            uri
+                        }}
+                        relatedTo{{
+                            name
+                            thingId
+                            Thing.prefix{{
+                                namespaceId
+                                prefix
+                                uri
+                            }}
+                        }}
+                    }}
+                }}
+            }}";
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("thing", out JsonElement twinArray) || twinArray.GetArrayLength() == 0)
+                return null;
+
+            return JsonSerializer.Deserialize<JsonElement>(twinArray[0].GetRawText());
+        }
+
         public async Task<JsonElement?> GetThingInOntologyByIdAsync(string ontologyId, string thingId)
         {
             using var txn = _client.NewTransaction();

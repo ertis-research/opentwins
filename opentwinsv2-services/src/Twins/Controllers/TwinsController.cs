@@ -5,6 +5,9 @@ using System.Text.Json.Nodes;
 using OpenTwinsV2.Twins.Builders;
 using System.Text;
 using System.Text.Json;
+using System.Configuration;
+using Json.More;
+using VDS.RDF;
 
 namespace OpenTwinsV2.Twins.Controllers
 {
@@ -14,15 +17,17 @@ namespace OpenTwinsV2.Twins.Controllers
     {
         private readonly DGraphService _dgraphService;
         private readonly ThingsService _thingsService;
+        private readonly ConverterService _converterService;
         private readonly IJsonNquadsConverter _converter;
         private readonly ILogger<TwinsController> _logger;
 
-        public TwinsController(DGraphService dgraphService, ThingsService thingsService, IJsonNquadsConverter converter, ILogger<TwinsController> logger)
+        public TwinsController(DGraphService dgraphService, ThingsService thingsService, IJsonNquadsConverter converter, ILogger<TwinsController> logger, ConverterService converterService)
         {
             _dgraphService = dgraphService;
             _thingsService = thingsService;
             _converter = converter;
             _logger = logger;
+            _converterService = converterService;
         }
 
         [HttpPost("{twinId}")]
@@ -207,6 +212,85 @@ namespace OpenTwinsV2.Twins.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, $"Unexpected error: {ex.Message}");
+            }
+        }
+
+        [HttpGet("{twinId}/export/Json")]
+        public async Task<IActionResult> ExportTwinInJsonFormat(string twinId)
+        {
+            var check = await _dgraphService.ExistsThingByIdAsync(twinId);
+            if (!check)
+            {
+                return NotFound(new { message = $"Twin '{twinId}' does not exist" });
+            }
+            try
+            {
+                var json = await _converterService.getJsonWithoutNamespace(twinId);
+                return Ok(json);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while getting the Twin JSON:\n {ex.Message}");
+            }
+
+        }
+
+        [HttpGet("{twinId}/export/JsonLd")]
+        public async Task<IActionResult> ExportTwinInJsonLdFormat(string twinId)
+        {
+            var check = await _dgraphService.ExistsThingByIdAsync(twinId);
+            if (!check)
+            {
+                return NotFound(new { message = $"Twin '{twinId}' does not exist" });
+            }
+            JsonObject json = null;
+            try
+            {
+                json = await _converterService.getJsonWithoutNamespace(twinId);
+                if (json is null)
+                    return StatusCode(500, $"Something went wrong while getting the Twin JSON:\n Obtained null value ");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while getting the Twin JSON:\n {ex.Message}");
+            }
+            try
+            {
+                return Ok(await _converterService.GetJsonLDFromRegularJson(json, twinId));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while getting the Twin JsonLd:\n {ex.Message}");
+            }
+        }
+
+        [HttpGet("{twinId}/export/TTL")]
+        public async Task<IActionResult> ExportTwinInTTLFormat(string twinId)
+        {
+            var check = await _dgraphService.ExistsThingByIdAsync(twinId);
+            if (!check)
+            {
+                return NotFound(new { message = $"Twin '{twinId}' does not exist" });
+            }
+            JsonObject json = null;
+            try
+            {
+                json = await _converterService.getJsonWithoutNamespace(twinId);
+                if (json is null)
+                    throw new Exception("Obtained null value");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while getting the Twin JSON:\n {ex.Message}");
+            }
+
+            try
+            {
+                return File(await _converterService.GetTTLFileFromRegularJson(twinId, json), "text/turtle", $"{twinId}.ttl");
+            }
+            catch (Exception e)
+            {
+                return StatusCode(500, $"Something wrong while parsing to TTL Format:{e}");
             }
         }
     }

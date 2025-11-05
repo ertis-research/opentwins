@@ -40,12 +40,14 @@ namespace OpenTwinsV2.Twins.Controllers
     {
         private readonly DGraphService _dgraphService;
         private readonly ThingsService _thingsService;
-        private const string ActorType = Actors.ThingActor;
+        private readonly ConverterService _converterService;
+        // private const string ActorType = Actors.ThingActor;
 
-        public OntologiesController(DGraphService dgraphService, ThingsService thingsService)
+        public OntologiesController(DGraphService dgraphService, ThingsService thingsService, ConverterService converterService)
         {
             _dgraphService = dgraphService;
             _thingsService = thingsService;
+            _converterService = converterService;
         }
 
         private string SanitizeTypeAndUIDValues(string uri)
@@ -725,112 +727,6 @@ namespace OpenTwinsV2.Twins.Controllers
             return Conflict($"There is already an instanced thing with the id {id}");
         }
 
-        private async Task<JsonObject?> GetFullOntologyJson(string ontologyId)
-        {
-            //We get the ontology info and its things uids and thingIds (GetThingsFromOntology in DGraph Service)
-            //then we get for each thing All related nodes (GetThingInOntologyByIdAsync in DGraph Service) now we don't get duplicates in relations
-            var ontologyThings = await _dgraphService.GetThingsInOntologyAsync(ontologyId);
-
-            //add namespaces
-            var namespaces = await _dgraphService.GetNamespacesInOntologyAsync(ontologyId);
-
-            var ontologyNode = new JsonObject
-            {
-                ["ontologyId"] = ontologyId,
-                ["namespace"] = JsonNode.Parse(namespaces.Value.GetProperty("namespace").GetRawText()),
-                ["things"] = new JsonArray()
-            };
-
-            //add things
-            foreach (var thingKey in ontologyThings)
-            {
-                if (thingKey.TryGetProperty("thingId", out var thingId))
-                {
-                    //get all thing information by id
-                    var thingInfo = await _dgraphService.GetThingInOntologyByIdAsync(ontologyId, thingId.ToString());
-                    Console.WriteLine(thingInfo);
-
-                    if (thingInfo.HasValue)
-                    {
-                        string raw = thingInfo.Value.GetRawText();
-                        var thing = JsonNode.Parse(raw)!.AsObject();
-                        //Merge Unidirectional and Bidirectional relations, each in ~relatedTo and ~relatedFrom
-                        var relatedTo = thing["~relatedTo"]?.AsArray() ?? [];
-                        var relatedFrom = thing["~relatedFrom"]?.AsArray() ?? [];
-
-                        // merge both arrays
-                        var relations = new JsonArray();
-                        foreach (var item in relatedTo) relations.Add(item!.DeepClone());
-                        foreach (var item in relatedFrom) relations.Add(item!.DeepClone());
-
-                        var grouped = relations
-                            .Where(r => r?["Relation.name"] != null)
-                            .GroupBy(r => r!["Relation.name"]!.ToString());
-
-                        var groupedArray = new JsonArray();
-
-                        foreach (var group in grouped)
-                        {
-                            // Create the grouped object with the group key
-                            var groupObj = new JsonObject
-                            {
-                                ["Relation.name"] = group.Key
-                            };
-
-                            // Pick a sample relation from the group to copy metadata from (except "relatedTo")
-                            var sample = group.FirstOrDefault();
-                            if (sample is JsonObject sampleObj)
-                            {
-                                foreach (var kvp in sampleObj)
-                                {
-                                    var propName = kvp.Key;
-                                    // Skip relatedTo because we'll flatten those separately
-                                    if (string.Equals(propName, "relatedTo", StringComparison.OrdinalIgnoreCase))
-                                        continue;
-
-                                    // If the grouped object doesn't already have this property, copy it
-                                    if (!groupObj.ContainsKey(propName))
-                                    {
-                                        // clone the value to avoid shared references
-                                        groupObj[propName] = kvp.Value is JsonNode node ? node.DeepClone() : null;
-                                    }
-                                }
-                            }
-
-                            // Flatten all relatedTo arrays in the group into one array
-                            var flattened = new JsonArray();
-                            foreach (var item in group)
-                            {
-                                var arr = item?["relatedTo"]?.AsArray();
-                                if (arr is not null)
-                                {
-                                    foreach (var entry in arr)
-                                    {
-                                        flattened.Add(entry!.DeepClone());
-                                    }
-                                }
-                            }
-
-                            groupObj["relatedTo"] = flattened;
-                            groupedArray.Add(groupObj);
-                        }
-
-                        // attach merged array
-                        thing["relations"] = groupedArray;
-                        thing.Remove("~relatedTo");
-                        thing.Remove("~relatedFrom");
-
-                        var mergedElement = JsonDocument.Parse(thing.ToJsonString()).RootElement;
-                        ontologyNode["things"]!.AsArray().Add(JsonNode.Parse(mergedElement.GetRawText()));
-                    }
-
-                }
-            }
-
-
-            return ontologyNode;
-        }
-
         [HttpGet("{ontologyId}/export/Json")]
         public async Task<IActionResult> GetAllOntologyNodes(string ontologyId)
         {
@@ -839,157 +735,11 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 return NotFound(new { message = $"Ontology '{ontologyId}' does not exist" });
             }
-            var json = await GetFullOntologyJson(ontologyId);
+
+            var ns = await _dgraphService.GetNamespacesInOntologyAsync(ontologyId);
+            var json = await _converterService.getJsonWithNamespace(ontologyId, ns);
+
             return Ok(json);
-        }
-
-        private JsonObject? GetJsonLDFromRegularJson(JsonObject ontologyJson, string ontologyId)
-        {
-            var namespaces = ontologyJson["namespace"]?.AsArray() ?? new JsonArray();
-            var things = ontologyJson["things"]?.AsArray() ?? new JsonArray();
-
-            //initialize the context with the namespaces info
-            // prefix: uri
-
-            var context = new JsonObject();
-
-            foreach (var ns in namespaces)
-            {
-                if (ns == null)
-                {
-                    continue;
-                }
-                var prefix = string.IsNullOrWhiteSpace(ns["prefix"]?.GetValue<string>()) ? $"blankNodePrefix_{ontologyId}" : ns["prefix"]?.ToString();
-                var uri = ns["uri"]?.GetValue<string>();
-
-                if (prefix is not null && uri is not null)
-                {
-                    context[prefix] = uri;
-                }
-            }
-
-            var finalThings = new JsonArray();
-
-            //iterate through the thing nodes 
-            foreach (var thingInfo in things)
-            {
-                var thing = new JsonObject();
-
-                //obtener prefijo
-                var prefix = thingInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
-                prefix = string.IsNullOrWhiteSpace(prefix) ? $"blankNodePrefix_{ontologyId}" : prefix;
-                //@id -> name (it's the thing id but without the ontology name as prefix)
-                thing["@id"] = $"{prefix}:{thingInfo?["name"]}";
-                //type of node is stored via hasType relation between Things (The Things that represent Types are ignored in the GetOntologyThings method) 
-                //depending on the ontology, one thing may have more than one type´
-                //if 1 -> JsonValue, if more -> JsonLD
-
-                //Type(s):
-                var types = thingInfo?["hasType"];
-                if ((types is not null) && (types.AsArray().Count > 0))
-                {
-                    //this thing has at least one type
-                    foreach (var typeInfo in types.AsArray())
-                    {
-                        var typeName = typeInfo?["name"]?.GetValue<string>();
-                        var typePrefix = typeInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
-                        typePrefix = string.IsNullOrWhiteSpace(typePrefix) ? $"blankNodePrefix_{ontologyId}" : typePrefix;
-
-                        if (typeName is not null && (typeName.Length > 0))
-                        {
-                            if (types.AsArray().Count == 1)
-                            {
-                                //only one type
-                                thing["@type"] = $"{((typePrefix == null || typePrefix.Length == 0) ? "" : typePrefix)}:{typeName}";
-                            }
-                            else
-                            {
-                                if (thing["@type"] is null)
-                                    thing["@type"] = new JsonArray();
-                                //more than one type
-                                thing["@type"]?.AsArray().Add($"{((typePrefix == null || typePrefix.Length == 0) ? "" : typePrefix)}:{typeName}");
-                            }
-                        }
-                    }
-                }
-
-                //Attributes:
-                var attributes = thingInfo?["hasAttribute"];
-                if ((attributes is not null) && attributes.AsArray().Count > 0)
-                {
-                    //this thing has attributes
-                    foreach (var attributeInfo in attributes.AsArray())
-                    {
-                        //TODO prefix support
-                        var key = attributeInfo?["Attribute.key"]?.GetValue<string>();
-                        var value = attributeInfo?["Attribute.value"]?.GetValue<string>();
-                        var attPrefix = attributeInfo?["Attribute.prefix"]?["prefix"]?.GetValue<string>();
-                        attPrefix = string.IsNullOrWhiteSpace(attPrefix) ? $"blankNodePrefix_{ontologyId}" : attPrefix;
-
-                        if ((key is not null) && (value is not null) && (key.Length > 0) && (value.Length > 0))
-                        {
-                            thing[$"{attPrefix}:{key}"] = value;
-                            // thing[key] = value;
-                        }
-                    }
-                }
-                var relations = thingInfo?["relations"];
-                if ((relations is not null) && relations.AsArray().Count > 0)
-                {
-                    //this thing has relations with other things
-                    foreach (var relationInfo in relations.AsArray())
-                    {
-                        //TODO prefix support
-                        var name = relationInfo?["Relation.name"]?.GetValue<string>();
-                        var relPrefix = relationInfo?["Relation.prefix"]?["prefix"]?.GetValue<string>();
-                        relPrefix = string.IsNullOrWhiteSpace(relPrefix) ? $"blankNodePrefix_{ontologyId}" : relPrefix;
-                        var relatedNode = relationInfo?["relatedTo"];
-                        if (relatedNode is null)
-                        {
-                            continue;
-                        }
-                        //check if there is only one lement or more
-                        if (name is not null && name.Length > 0)
-                        {
-                            List<string> relatedThingstr = new List<string>();
-                            foreach (var relatedThing in relatedNode.AsArray())
-                            {
-                                var relatedName = relatedThing?["name"]?.GetValue<string>();
-                                var relatedPrefix = relatedThing?["Thing.prefix"]?["prefix"]?.GetValue<string>();
-                                relatedPrefix = string.IsNullOrWhiteSpace(relatedPrefix) ? $"blankNodePrefix_{ontologyId}" : relatedPrefix;
-                                if (relatedName is not null && relatedName.Length > 0)
-                                    relatedThingstr.Add($"{relatedPrefix}:{relatedName}");
-                            }
-                            if (relatedThingstr.Count >= 1)
-                            {
-                                var jsonArray = new JsonArray();
-
-                                foreach (var id in relatedThingstr)
-                                {
-                                    var node = new JsonObject
-                                    {
-                                        ["@id"] = id
-                                    };
-                                    jsonArray.Add(node);
-                                }
-                                
-                                thing[$"{relPrefix}:{name}"] = jsonArray.Count==1 ? jsonArray[0]!.DeepClone() : jsonArray;
-                            }
-                        }
-                    }
-                }
-                //add final thing to the things jsonArray
-                finalThings.Add(thing);
-            }
-
-            //assemble the final json
-            var jsonLd = new JsonObject
-            {
-                ["@context"] = context,
-                ["@graph"] = finalThings
-            };
-
-            return jsonLd;
         }
 
         [HttpGet("{ontologyId}/export/JsonLd")]
@@ -1000,7 +750,9 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 return NotFound(new { message = $"Ontology '{ontologyId}' does not exist" });
             }
-            var ontologyJson = await GetFullOntologyJson(ontologyId);
+
+            var ns = await _dgraphService.GetNamespacesInOntologyAsync(ontologyId);
+            var ontologyJson = await _converterService.getJsonWithNamespace(ontologyId, ns);
 
             if (ontologyJson == null)
             {
@@ -1012,7 +764,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 return StatusCode(500, "Something wrong with the Ontology Json:\nNo namespace found");//error 500, json malformado
             }
 
-            var jsonLd = GetJsonLDFromRegularJson(ontologyJson, ontologyId);
+            var jsonLd = _converterService.GetJsonLDFromRegularJson(ontologyJson, ontologyId);
 
             if (jsonLd is null)
             {
@@ -1056,53 +808,6 @@ namespace OpenTwinsV2.Twins.Controllers
             */
         }
 
-        private void LoadNamespaceIntoGraph(JsonArray namespaces, IGraph graph, string ontologyId)
-        {
-            foreach (var ns in namespaces)
-            {
-                if (ns == null)
-                {
-                    continue;
-                }
-
-                var prefix = ns["prefix"];
-                var uri = ns["uri"];
-
-                if (prefix == null || uri == null)
-                {
-                    continue;
-                }
-
-
-                graph.NamespaceMap.AddNamespace(string.IsNullOrWhiteSpace(prefix.ToString()) ? $"blankNodePrefix_{ontologyId}": prefix.ToString(), new Uri(uri.ToString()));
-            }
-        }
-
-        private VDS.RDF.Graph GetOntologyRDFGraph(JsonObject ontologyJson, JsonArray ns, string ontologyId)
-        {
-            
-                
-            var store = new TripleStore();
-            var jsonLd = GetJsonLDFromRegularJson(ontologyJson, ontologyId);
-            var jsonString = JsonSerializer.Serialize(jsonLd);
-            var parser = new VDS.RDF.Parsing.JsonLdParser();
-            using var reader = new StringReader(jsonString);
-            parser.Load(store, reader);
-
-            var mergedGraph = new VDS.RDF.Graph();
-
-            //load namespaces into graph for eventual prefix parsing to uri
-            LoadNamespaceIntoGraph(ns, mergedGraph, ontologyId);
-
-            foreach (var g in store.Graphs)
-            {
-                mergedGraph.Merge(g, true); // true = keep namespace mappings
-            }
-
-            return mergedGraph;
-            
-        }
-
         [HttpGet("{ontologyId}/export/TTL")]
         public async Task<IActionResult> ExportOntologyInTTLFormat(string ontologyId)
         {
@@ -1111,7 +816,9 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 return NotFound(new { message = $"Ontology '{ontologyId}' does not exist" });
             }
-            var ontologyJson = await GetFullOntologyJson(ontologyId);
+            
+            var ns = await _dgraphService.GetNamespacesInOntologyAsync(ontologyId);
+            var ontologyJson = await _converterService.getJsonWithNamespace(ontologyId, ns);
 
             if (ontologyJson == null)
             {
@@ -1122,22 +829,10 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 return StatusCode(500, $"Something wrong with the Ontology Json:\nNo namespace found");//error 500, json malformado
             }
-            var ns = ontologyJson["namespace"]?.AsArray();
 
             try
             {
-                var mergedGraph = GetOntologyRDFGraph(ontologyJson, ns, ontologyId);
-                
-                var ttlWriter = new VDS.RDF.Writing.CompressingTurtleWriter();
-                using var sw = new StringWriter();
-                ttlWriter.Save(mergedGraph, sw);
-                string ttlString = sw.ToString();
-                
-                //convert the string to bytes
-                var ttlBytes = Encoding.UTF8.GetBytes(ttlString);
-                var stream = new MemoryStream(ttlBytes);
-                //return it as a downloadable file
-                return File(stream, "text/turtle", $"{ontologyId}_ontology.ttl");
+                return File(await _converterService.GetTTLFileFromRegularJson(ontologyId, ontologyJson), "text/turtle", $"{ontologyId}_ontology.ttl");
             }
             catch (Exception e)
             {
@@ -1210,7 +905,8 @@ namespace OpenTwinsV2.Twins.Controllers
                 }
 
                 //get the ontologyJson, the namespaces and the RDF graph
-                var ontologyJson = await GetFullOntologyJson(ontologyId);
+                var ns = await _dgraphService.GetNamespacesInOntologyAsync(ontologyId);
+                var ontologyJson = await _converterService.getJsonWithNamespace(ontologyId, ns);
 
                 if (ontologyJson == null)
                 {
@@ -1221,11 +917,11 @@ namespace OpenTwinsV2.Twins.Controllers
                 {
                     return StatusCode(500, $"Something wrong with the Ontology Json:\nNo namespace found");//error 500, json malformado
                 }
-                var ns = ontologyJson["namespace"]?.AsArray();
+                var namespaces = ontologyJson["namespace"]?.AsArray();
                 VDS.RDF.Graph graph;
                 try
                 {
-                    graph = GetOntologyRDFGraph(ontologyJson, ns, ontologyId);
+                    graph = await _converterService.GetRDFGraphFromRegularJson(ontologyJson, namespaces, ontologyId);
                 }
                 catch (Exception e)
                 {

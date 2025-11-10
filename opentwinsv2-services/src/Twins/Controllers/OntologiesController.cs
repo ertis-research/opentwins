@@ -50,31 +50,6 @@ namespace OpenTwinsV2.Twins.Controllers
             _converterService = converterService;
         }
 
-        private string SanitizeTypeAndUIDValues(string uri)
-        {
-            //Check which character is last
-            char[] separators = { '#', '/', '&' };
-
-            // Remove trailing separator if present at the end
-            while (uri.Length > 0 && separators.Contains(uri.Last()))
-            {
-                //Delete illegal characters at the end
-                uri = uri.Substring(0, uri.Length - 1);
-            }
-
-            //in case the whole uri were illegal characters (unlikely but possible)
-            if (uri.Length == 0)
-            {
-                return null;
-            }
-
-            // Find last separator after removing trailing char
-            int indx = uri.LastIndexOfAny(separators);
-
-            //return the substring or the whole uri in case none of the characters are present
-            return (indx >= 0 && indx < uri.Length - 1) ? uri.Substring(indx + 1) : uri;
-        }
-
         private (string Prefix, string LocalName) GetLocalName(VDS.RDF.INode node, IGraph graph, string ontologyId)
         {
             if (node is UriNode uriNode)
@@ -84,17 +59,11 @@ namespace OpenTwinsV2.Twins.Controllers
                 string localName;
                 if (graph.NamespaceMap.ReduceToQName(uriNode.Uri.ToString(), out qname))
                 {
-                    //get the name right after the prefix
-                    var parts = qname.Split(':');
-                    prefix = parts[0];
-                    localName = parts[1];
+                    (prefix, localName) = _converterService.GetLocalName(qname, ontologyId);
                 }
                 else
                 {
-                    //Get the last part of the URI
-                    var uri = uriNode.Uri.ToString();
-                    localName = SanitizeTypeAndUIDValues(uri);
-                    prefix = $"pref{ontologyId}";
+                    (prefix, localName) = _converterService.GetLocalName(uriNode.Uri.ToString(), ontologyId);
                 }
                 return (prefix, localName);
             }
@@ -142,7 +111,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
             //string type by default
             string dataType = literal.DataType?.ToString() ?? "string";
-            var type = SanitizeTypeAndUIDValues(dataType) ?? "string";
+            var type = _converterService.SanitizeTypeAndUIDValues(dataType) ?? "string";
 
             var namespace_uid = $"_:{ontology}namespace_{prefix}";
 

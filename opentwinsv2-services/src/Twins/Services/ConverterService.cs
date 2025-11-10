@@ -25,7 +25,7 @@ namespace OpenTwinsV2.Twins.Services
             _thingsService = thingsService;
         }
 
-        private string SanitizeTypeAndUIDValues(string uri)
+        public string SanitizeTypeAndUIDValues(string uri)
         {
             //Check which character is last
             char[] separators = { '#', '/', '&', ':' };
@@ -50,6 +50,31 @@ namespace OpenTwinsV2.Twins.Services
             return (indx >= 0 && indx < uri.Length - 1) ? uri.Substring(indx + 1) : uri;
         }
 
+        public (string Prefix, string LocalName) GetLocalName(string nodeUri, string parentId)
+        {
+
+            string prefix = null;
+            string localName = null;
+            //get the name right after the prefix
+            var parts = nodeUri.Split(':');
+            if (parts.Length >= 2)
+            {
+                prefix = parts[0];
+                localName = parts[1];
+            }
+
+            if (prefix is null || prefix.Length == 0)
+            {
+                //Get the last part of the URI
+                prefix = $"pref{parentId}";
+            }
+            if(localName is null || localName.Length == 0)
+            {
+                localName = SanitizeTypeAndUIDValues(nodeUri);
+            }
+            return (prefix, localName);
+        }
+
         private JsonNode checkPrefixes(JsonNode node, Dictionary<string, string> ns, string twinPrefix, string twinUri)
         {
             if (node is JsonObject obj)
@@ -67,11 +92,30 @@ namespace OpenTwinsV2.Twins.Services
                 }
                 else
                 {
-                    //it doesn't have one, so we create the attribute with the info from the twin's context
-                    obj["Thing.prefix"] = new JsonObject //sample context prefix node
+                    //it doesn't have one
+                    string propertyName = type.Equals("Thing") ? "thingId" : (type.Equals("Relation") ? "Relation.name" : "Attribute.key");
+                    string newName = null;
+                    if (obj.TryGetPropertyValue(propertyName, out var name) && name is not null)
+                        (pref, newName) = GetLocalName(name.GetValue<string>(), twinPrefix);
+                    
+
+                    if (pref.Equals("otv2"))
                     {
-                        ["prefix"] = twinPrefix,
-                        ["uri"] = twinUri
+                        uri = "http://opentwinsv2.org/"; //otv2 placeholder uri!!!!!!!!!
+                        if (newName is not null)
+                            obj[propertyName] = newName;
+                    }
+                    else
+                    {
+                        pref = twinPrefix;
+                    }
+                        
+                    //first, check if it has the otv2 prefix
+                    //if not, we create the attribute with the info from the twin's context
+                    obj[$"{type}.prefix"] = new JsonObject //sample context prefix node
+                    {
+                        ["prefix"] = pref.Equals("otv2") ? pref : twinPrefix,
+                        ["uri"] = pref.Equals("otv2") ? uri : twinUri 
                     };
                 }
                 if (!ns.ContainsKey(pref))
@@ -81,6 +125,43 @@ namespace OpenTwinsV2.Twins.Services
 
             }
             return node.DeepClone();
+        }
+
+        private async Task<string?> GetTwinRawJson(string twinId)
+        {
+            var rawJson = await _dgraphService.GetThingsInTwinNQUADSAsync(twinId);
+
+            if (string.IsNullOrWhiteSpace(rawJson))
+                return null;
+            return string.IsNullOrWhiteSpace(rawJson) ? null : rawJson;
+        }
+
+        private async Task<Dictionary<string, JsonElement>?> GetTwinDict(string twinId)
+        {
+            var rawJson = await GetTwinRawJson(twinId);
+            if (rawJson is null)
+                return null;
+
+            Console.WriteLine(rawJson);
+
+            using var doc = JsonDocument.Parse(rawJson);
+            var json = doc.RootElement;
+
+            var thingIds = json.GetProperty("things").EnumerateArray().SelectMany(t => t.GetProperty("~twins").EnumerateArray())
+                .Where(t => t.TryGetProperty("thingId", out var id) && id.ValueKind == JsonValueKind.String)
+                .Select(t => t.GetProperty("thingId").GetString()!).Distinct().ToList();
+
+            if (thingIds is null)
+                return null;
+
+            var states = await _thingsService.GetThingsStatesAsync(thingIds);
+            return states;
+        }
+        
+        private async Task<JsonObject?> GetTwinJson(string twinId)
+        {
+            var dict = await GetTwinDict(twinId);
+            return dict is null ? null : dict.AsJsonElement().AsNode()!.AsObject();
         }
 
         public async Task<JsonObject?> getJsonWithNamespace(string id, JsonElement? ns)
@@ -100,7 +181,15 @@ namespace OpenTwinsV2.Twins.Services
             };
 
             var things = ns is null ? await _dgraphService.GetThingsInTwinAsync(id) : await _dgraphService.GetThingsInOntologyAsync(id);
-            Console.WriteLine(things.Count);
+
+            var thingStates = new JsonObject();
+            if(ns is null)
+            {
+                //load thing states if it's a twin, better to load them all at once
+                thingStates = await GetTwinJson(id);
+                Console.WriteLine(thingStates!.ToString());
+                Console.WriteLine($"STATES:\n{thingStates}");
+            }
             foreach (var thingKey in things)
             {
                 if (thingKey.TryGetProperty("thingId", out var thingId))
@@ -113,14 +202,59 @@ namespace OpenTwinsV2.Twins.Services
                         if (ns is null)
                         {
                             thing = checkPrefixes(thing, nsDic, defaultPrefix, defaultUri);
-                            if (thing["hasAttribute"] is not null)
+                            
+                            //ATTRIBUTES
+                            JsonArray attrs = new JsonArray();
+                            JsonNode state = new JsonObject();
+                            if(thingStates is not null)
                             {
-                                JsonArray attrs = new JsonArray();
+                                //load states of the thing
+                                thingStates.TryGetPropertyValue(thingId.ToString(), out state);
+                            }
+                            if(thing["hasAttribute"] is not null)
+                            {
                                 foreach (var attr in thing["hasAttribute"]!.AsArray())
                                 {
-                                    attrs.Add(checkPrefixes(attr, nsDic, defaultPrefix, defaultUri).AsObject());
+                                    var newAttr = checkPrefixes(attr, nsDic, defaultPrefix, defaultUri).AsObject();
+                                    //TODO add states
+                                    if (state is not null && state is JsonObject stateObj && stateObj.Count > 0 && attr.AsObject().TryGetPropertyValue("Attribute.key", out var attrKey) && stateObj.TryGetPropertyValue(attrKey!.GetValue<string>(), out var stateInfo))
+                                    {
+                                        //it only enters here if state is not null, it has something and has something on the attribute we are in
+                                        if (stateInfo!.AsObject().TryGetPropertyValue("value", out var stateValue))
+                                            newAttr.Add("value", stateValue is null ? null : stateValue.ToString());
+                                        if (stateInfo!.AsObject().TryGetPropertyValue("lastUpdate", out var stateUpdate))
+                                            newAttr.Add("lastUpdate", stateUpdate);
+
+                                        //change Attribute.value into Attribute.default
+                                        if (attr.AsObject().TryGetPropertyValue("Attribute.value", out var attrValue))
+                                        {
+                                            newAttr.Remove("Attribute.value");
+                                            newAttr.Add("Attribute.default", attrValue!.AsValue().DeepClone());
+                                        }
+
+                                        //delete the state of this attribute, so when i finish iterating through the dgraph attributes i am left with the ones that are not
+                                        state.AsObject().Remove(attrKey!.GetValue<string>());
+                                    }
+                                    attrs.Add(newAttr);
                                 }
-                                thing["hasAttribute"] = attrs;
+                            }
+                            Console.WriteLine($"DELETED: \n {state.AsJsonString()}");
+                            if(state is not null && state is JsonObject stateObj2 && stateObj2.Count > 0)
+                            {
+                                //there are states remaining -> Add attributes
+                                Console.WriteLine($"ENTRO: {stateObj2.AsJsonString()}");
+                                foreach((string key, JsonNode stateInfo) in stateObj2)
+                                {
+                                    Console.WriteLine($"ENTRO: {key}");
+                                    if(stateInfo is not null)
+                                    {
+                                        var stateNode = stateInfo.DeepClone();
+                                        stateNode.AsObject().Add("Attribute.key", key);
+                                        attrs.Add(checkPrefixes(stateNode, nsDic, defaultPrefix, defaultUri));
+                                    }
+                                }
+                            
+                            thing["hasAttribute"] = attrs;
                             }
                             thing = thing.AsObject();
                         }
@@ -168,7 +302,8 @@ namespace OpenTwinsV2.Twins.Services
                             }
 
                             // Flatten all relatedTo arrays in the group into one array
-                            var flattened = new JsonArray();
+                            var flattenedRel = new JsonArray();
+                            var flattenedChild = new JsonArray();
                             foreach (var item in group)
                             {
                                 var arr = item?["relatedTo"]?.AsArray();
@@ -176,12 +311,23 @@ namespace OpenTwinsV2.Twins.Services
                                 {
                                     foreach (var entry in arr)
                                     {
-                                        flattened.Add((ns is not null) ? entry!.DeepClone() : checkPrefixes(entry, nsDic, defaultPrefix, defaultUri));
+                                        flattenedRel.Add((ns is not null) ? entry!.DeepClone() : checkPrefixes(entry, nsDic, defaultPrefix, defaultUri));
+                                    }
+                                }
+                                var arrChild = item?["hasChild"]?.AsArray();
+                                if(arrChild is not null)
+                                {
+                                    foreach (var entry in arrChild)
+                                    {
+                                        flattenedChild.Add((ns is not null) ? entry!.DeepClone() : checkPrefixes(entry, nsDic, defaultPrefix, defaultUri));
                                     }
                                 }
                             }
-
-                            groupObj["relatedTo"] = flattened;
+                            if (flattenedRel.Count > 0)
+                                groupObj["relatedTo"] = flattenedRel;
+                                
+                            if(flattenedChild.Count>0)
+                                groupObj["hasChild"] = flattenedChild;
                             JsonNode groupNode = groupObj;
 
                             if (ns is null)
@@ -261,7 +407,7 @@ namespace OpenTwinsV2.Twins.Services
                 var prefix = thingInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
                 prefix = string.IsNullOrWhiteSpace(prefix) ? $"blankNodePrefix_{idSanitized}" : prefix;
                 //@id -> name (it's the thing id but without the ontology name as prefix)
-                thing["@id"] = $"{prefix}:{thingInfo?["name"]}";
+                thing["@id"] = $"{prefix}:{thingInfo?[string.IsNullOrWhiteSpace(thingInfo?["name"]?.GetValue<string>()) ? "thingId" : "name"]}";
                 //type of node is stored via hasType relation between Things (The Things that represent Types are ignored in the GetOntologyThings method) 
                 //depending on the ontology, one thing may have more than one type´
                 //if 1 -> JsonValue, if more -> JsonLD
@@ -308,10 +454,32 @@ namespace OpenTwinsV2.Twins.Services
                         var attPrefix = attributeInfo?["Attribute.prefix"]?["prefix"]?.GetValue<string>();
                         attPrefix = string.IsNullOrWhiteSpace(attPrefix) ? $"blankNodePrefix_{idSanitized}" : attPrefix;
 
-                        if ((key is not null) && (value is not null) && (key.Length > 0) && (value.Length > 0))
+                        if ((key is not null) && (key.Length > 0))
                         {
-                            thing[$"{attPrefix}:{key}"] = value;
-                            // thing[key] = value;
+                            //Look for state data in the json (value is null, as it is now Attribute.default):
+                            //Attribute.default ---> Previous Attribute.value
+                            //value ---------------> Value of actual state (can be null)
+                            //lastUpdate ----------> Date of the last time the state changed (can be null)
+                            
+                            if(value == null)
+                            {
+                                //it has a state
+                                // atr.lastUpdate: "...",
+                                // atr.value =  value,
+                                value = attributeInfo?["value"]?.AsValue().ToString();
+                                var defaultValue = attributeInfo?["Attribute.default"]?.GetValue<string>();
+                                var lastUpdate = attributeInfo?["lastUpdate"]?.GetValue<string>();
+
+                                if (defaultValue is not null)
+                                    thing[$"{attPrefix}:{key}.default"] = defaultValue;
+                                    
+                                thing[$"{attPrefix}:{key}.value"] = value;
+                                thing[$"{attPrefix}:{key}.lastUpdate"] = lastUpdate;
+                            }
+                            else
+                            {
+                                thing[$"{attPrefix}:{key}"] = value;
+                            }
                         }
                     }
                 }
@@ -325,7 +493,7 @@ namespace OpenTwinsV2.Twins.Services
                         var name = relationInfo?["Relation.name"]?.GetValue<string>();
                         var relPrefix = relationInfo?["Relation.prefix"]?["prefix"]?.GetValue<string>();
                         relPrefix = string.IsNullOrWhiteSpace(relPrefix) ? $"blankNodePrefix_{idSanitized}" : relPrefix;
-                        var relatedNode = relationInfo?["relatedTo"];
+                        var relatedNode = relationInfo?["relatedTo"] ?? relationInfo?["hasChild"];
                         if (relatedNode is null)
                         {
                             continue;

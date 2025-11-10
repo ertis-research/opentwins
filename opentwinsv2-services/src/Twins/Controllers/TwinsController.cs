@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Configuration;
 using Json.More;
 using VDS.RDF;
+using AngleSharp.Dom;
 
 namespace OpenTwinsV2.Twins.Controllers
 {
@@ -256,6 +257,29 @@ namespace OpenTwinsV2.Twins.Controllers
             }
             try
             {
+                //TODO get twin's thingIds
+                //From that, call ThingService and get all things states and save them in a list
+                //Pass that list as a parameter to JsonLD (add new method that calls that with always an empty list)
+                //Edit all attributes to add the info of the state
+
+                /*
+                Example of cinema:movie1 state, it returns a dictionary, we can pass that directly
+                {
+                    "name": {
+                        "value": null,
+                        "lastUpdate": null
+                    },
+                    "datePublished": {
+                        "value": null,
+                        "lastUpdate": null
+                    }
+                }
+                */
+
+                //get thingIds from the twin
+                // var twinJson = GetTwinJson(twinId);
+                // if(twinJson is null)
+                //     return NotFound($"No things found for twin {twinId}");
                 return Ok(await _converterService.GetJsonLDFromRegularJson(json, twinId));
             }
             catch (Exception ex)

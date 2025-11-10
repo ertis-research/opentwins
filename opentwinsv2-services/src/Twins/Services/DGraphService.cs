@@ -998,6 +998,15 @@ namespace OpenTwinsV2.Twins.Services
                                 uri
                             }}
                         }}
+                        hasChild{{
+                            name
+                            thingId
+                            Thing.prefix{{
+                                namespaceId
+                                prefix
+                                uri
+                            }}
+                        }}
                     }}
 
                     ~relatedFrom {{

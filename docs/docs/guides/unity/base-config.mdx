@@ -96,7 +96,7 @@ To load your 3D model, you must provide the four exported WebGL files. Refer to 
 The plugin supports three methods:
 
 - **External links (recommended)**: Provide direct file URLs. Por ejemplo, puedes utilizar un Minio para subir los archivos.
-- **Grafana public folder**: Place files in Grafana’s /public directory and reference relative paths. Por ejemplo, el directorio de Windows para Grafana suele ser C:\Program Files\GrafanaLabs\grafana\public. En contenedores, habria que añadir un initContainer que añada los archivos... (explicalo tu chatgpt).
+- **Grafana public folder**: Place files in Grafana’s `/public` directory and reference relative paths. For example, on Windows the path is usually: `C:\Program Files\GrafanaLabs\grafana\public`. In containerized environments, you can use an initContainer to copy the files into the `/public` directory before Grafana starts. This makes the assets available at runtime without modifying the base Grafana image.
 - **Drag and drop (not recommended for production)**: Upload files directly into the panel configuration.
 
 Once the four files are provided, click `Apply` (blue button) to return to the dashboard.

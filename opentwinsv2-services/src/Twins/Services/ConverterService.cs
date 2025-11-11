@@ -10,6 +10,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.VisualBasic;
 using OpenTwinsV2.Shared.Constants;
 using VDS.RDF;
+using VDS.RDF.Query;
+using VDS.RDF.Query.Datasets;
 
 namespace OpenTwinsV2.Twins.Services
 {
@@ -174,7 +176,7 @@ namespace OpenTwinsV2.Twins.Services
             };
             var idSanitized = SanitizeTypeAndUIDValues(id);
             var defaultPrefix = $"pref{idSanitized}";
-            var defaultUri = $"http://example.org/twin/{idSanitized}";
+            var defaultUri = $"http://example.org/twin/{idSanitized}/";
             var nsDic = new Dictionary<string, string>
             {
                 { defaultPrefix, defaultUri }
@@ -187,8 +189,6 @@ namespace OpenTwinsV2.Twins.Services
             {
                 //load thing states if it's a twin, better to load them all at once
                 thingStates = await GetTwinJson(id);
-                Console.WriteLine(thingStates!.ToString());
-                Console.WriteLine($"STATES:\n{thingStates}");
             }
             foreach (var thingKey in things)
             {
@@ -238,14 +238,12 @@ namespace OpenTwinsV2.Twins.Services
                                     attrs.Add(newAttr);
                                 }
                             }
-                            Console.WriteLine($"DELETED: \n {state.AsJsonString()}");
+
                             if(state is not null && state is JsonObject stateObj2 && stateObj2.Count > 0)
                             {
                                 //there are states remaining -> Add attributes
-                                Console.WriteLine($"ENTRO: {stateObj2.AsJsonString()}");
                                 foreach((string key, JsonNode stateInfo) in stateObj2)
                                 {
-                                    Console.WriteLine($"ENTRO: {key}");
                                     if(stateInfo is not null)
                                     {
                                         var stateNode = stateInfo.DeepClone();
@@ -564,7 +562,7 @@ namespace OpenTwinsV2.Twins.Services
             }
         }
 
-        public async Task<VDS.RDF.Graph> GetRDFGraphFromRegularJson(JsonObject json, JsonArray ns, string id)
+        public async Task<VDS.RDF.Graph> GetRDFGraphFromRegularJson(JsonObject json, string id)
         {
             var idSanitized = SanitizeTypeAndUIDValues(id);
             var store = new TripleStore();
@@ -575,7 +573,12 @@ namespace OpenTwinsV2.Twins.Services
             parser.Load(store, reader);
 
             var mergedGraph = new VDS.RDF.Graph();
-
+            //extract the namespaces from the Json
+            
+            JsonArray nsArr = new JsonArray();
+            json.TryGetPropertyValue("namespace", out var nsJson);
+            var ns = (nsJson ?? new JsonArray()).AsArray();
+            
             //load namespaces into graph for eventual prefix parsing to uri
             LoadNamespaceIntoGraph(ns, mergedGraph, idSanitized);
 
@@ -590,19 +593,36 @@ namespace OpenTwinsV2.Twins.Services
 
         public async Task<MemoryStream> GetTTLFileFromRegularJson(string id, JsonObject json)
         {
-            var ns = json["namespace"]?.AsArray() ?? new JsonArray();
-            var mergedGraph = await GetRDFGraphFromRegularJson(json, ns, id);
-                
+            // var ns = json["namespace"]?.AsArray() ?? new JsonArray();
+            var mergedGraph = await GetRDFGraphFromRegularJson(json, id);
+
             var ttlWriter = new VDS.RDF.Writing.CompressingTurtleWriter();
             using var sw = new StringWriter();
             ttlWriter.Save(mergedGraph, sw);
             string ttlString = sw.ToString();
-            
+
             //convert the string to bytes
             var ttlBytes = System.Text.Encoding.UTF8.GetBytes(ttlString);
             var stream = new MemoryStream(ttlBytes);
 
             return stream;
+        }
+        
+        public async Task<SparqlResultSet?> RunSparQLQuery(string id, JsonElement? ns, SparqlQuery query)
+        {
+            var json = ns is null ? await getJsonWithoutNamespace(id) : await getJsonWithNamespace(id, ns);
+            if (json is null)
+                return null;
+            var graph = await GetRDFGraphFromRegularJson(json, id);
+            if(graph is null)
+                return null;
+            var store = new TripleStore();
+            store.Add(graph);
+            var dataset = new InMemoryDataset(store, true);
+            var processor = new LeviathanQueryProcessor(dataset);
+            var results = (SparqlResultSet)processor.ProcessQuery(query);
+
+            return results;
         }
     }
 }

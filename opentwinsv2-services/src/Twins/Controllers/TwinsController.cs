@@ -9,6 +9,9 @@ using System.Configuration;
 using Json.More;
 using VDS.RDF;
 using AngleSharp.Dom;
+using VDS.RDF.Parsing;
+using VDS.RDF.Query;
+using VDS.RDF.Query.Datasets;
 
 namespace OpenTwinsV2.Twins.Controllers
 {
@@ -257,29 +260,6 @@ namespace OpenTwinsV2.Twins.Controllers
             }
             try
             {
-                //TODO get twin's thingIds
-                //From that, call ThingService and get all things states and save them in a list
-                //Pass that list as a parameter to JsonLD (add new method that calls that with always an empty list)
-                //Edit all attributes to add the info of the state
-
-                /*
-                Example of cinema:movie1 state, it returns a dictionary, we can pass that directly
-                {
-                    "name": {
-                        "value": null,
-                        "lastUpdate": null
-                    },
-                    "datePublished": {
-                        "value": null,
-                        "lastUpdate": null
-                    }
-                }
-                */
-
-                //get thingIds from the twin
-                // var twinJson = GetTwinJson(twinId);
-                // if(twinJson is null)
-                //     return NotFound($"No things found for twin {twinId}");
                 return Ok(await _converterService.GetJsonLDFromRegularJson(json, twinId));
             }
             catch (Exception ex)
@@ -315,6 +295,56 @@ namespace OpenTwinsV2.Twins.Controllers
             catch (Exception e)
             {
                 return StatusCode(500, $"Something wrong while parsing to TTL Format:{e}");
+            }
+        }
+
+        [HttpPost("{twinId}/query")]
+        public async Task<IActionResult> SparQLQueryInTwin(string twinId, [FromForm] string stringQuery)
+        {
+            //check if the stringQuery is empty
+            if (string.IsNullOrWhiteSpace(stringQuery))
+            {
+                return BadRequest($"The SparQL query cannot be empty");
+            }
+            var check = await _dgraphService.ExistsThingByIdAsync(twinId);
+            if (!check)
+            {
+                return NotFound(new { message = $"Twin '{twinId}' does not exist" });
+            }
+            var parser = new SparqlQueryParser();
+            try
+            {
+                var query = parser.ParseFromString(stringQuery);
+
+                //only select queries are supported, anything else is blockes
+                if (!(query.QueryType.ToString().StartsWith("Select", StringComparison.OrdinalIgnoreCase) || query.QueryType.Equals(SparqlQueryType.Ask))) //the are severlat select type queries
+                {
+                    return BadRequest($"Only SELECT queries are available, \"{stringQuery}\" is a \n{query.QueryType.ToString()} query");
+                }
+                var results = await _converterService.RunSparQLQuery(twinId, null, query);
+                if(results is null)
+                    throw new Exception("Either the Json or the Graph are null");
+                
+                //parse results format so it is readable
+                if (query.QueryType == SparqlQueryType.Ask)
+                    return Ok(results.Result);
+
+                if (results.IsEmpty)
+                    return Ok(new List<object>());
+
+                var jsonResults = results.Select(r =>
+                    r.Variables.ToDictionary(v => v, v => r[v]?.ToString())
+                );
+
+                return Ok(jsonResults);
+                
+            }catch (RdfParseException ex)
+            {
+                return BadRequest($"The format of the SparQL query \"{stringQuery}\" is wrong:\n{ex}");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Something wrong while processing the SparQl query:\n{ex.GetType}: {ex.Message}");
             }
         }
     }

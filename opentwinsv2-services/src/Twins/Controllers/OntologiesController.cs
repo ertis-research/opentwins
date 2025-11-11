@@ -875,35 +875,10 @@ namespace OpenTwinsV2.Twins.Controllers
 
                 //get the ontologyJson, the namespaces and the RDF graph
                 var ns = await _dgraphService.GetNamespacesInOntologyAsync(ontologyId);
-                var ontologyJson = await _converterService.getJsonWithNamespace(ontologyId, ns);
-
-                if (ontologyJson == null)
-                {
-                    return StatusCode(500, "Something wrong with the Ontology Json:\nNull json recieved");//error 500, json malformado
-                }
-
-                if (ontologyJson["namespace"] == null)
-                {
-                    return StatusCode(500, $"Something wrong with the Ontology Json:\nNo namespace found");//error 500, json malformado
-                }
-                var namespaces = ontologyJson["namespace"]?.AsArray();
-                VDS.RDF.Graph graph;
-                try
-                {
-                    graph = await _converterService.GetRDFGraphFromRegularJson(ontologyJson, namespaces, ontologyId);
-                }
-                catch (Exception e)
-                {
-                    return StatusCode(500, $"Something wrong while getting the RDF Graph:\n{e.GetType}: {e.Message}");
-                }
-
-                //once we have the graph, we can run queries on it
-                var store = new TripleStore();
-                store.Add(graph);
-                var dataset = new InMemoryDataset(store, true);
-                var processor = new LeviathanQueryProcessor(dataset);
-                var results = (SparqlResultSet)processor.ProcessQuery(query);
-
+                var results = await _converterService.RunSparQLQuery(ontologyId, ns, query);
+                if(results is null)
+                    throw new Exception("Either the Json or the Graph are null");
+                
                 //parse results format so it is readable
                 if (query.QueryType == SparqlQueryType.Ask)
                     return Ok(results.Result);

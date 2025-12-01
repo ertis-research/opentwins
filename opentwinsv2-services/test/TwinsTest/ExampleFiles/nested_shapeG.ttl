@@ -1,0 +1,58 @@
+@prefix ex: <http://example.org/> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
+
+ex:UltimateShape
+    a sh:NodeShape ;
+    sh:targetClass ex:Person ;
+
+    sh:and (
+        # First AND element
+        [
+            sh:or (
+                # OR element 1
+                ex:AdultShape
+
+                # OR element 2 - nested property shape
+                [
+                    sh:property [
+                        sh:path ex:hasAge ;
+                        sh:datatype xsd:integer ;
+                        sh:minInclusive 18 ;
+                    ] ;
+                ]
+            ) 
+        ]
+
+        # Second AND element
+        [
+            sh:xone (
+                # Option 1
+                ex:EmployeeShape
+
+                # Option 2
+                [
+                    sh:not [
+                        sh:property [
+                            sh:path ex:hasLicense ;
+                            sh:hasValue "Suspended" ;
+                        ] ;
+                    ] ;
+                ]
+            )
+        ]
+
+        # Third AND element
+        [
+            sh:property [
+                sh:path ex:hasChildren ;
+                sh:qualifiedValueShape [
+                    sh:and (
+                        ex:ChildShape
+                        [ sh:node ex:LivingBeingShape ]
+                    )
+                ] ;
+                sh:qualifiedMinCount 1 ;
+            ] ;
+        ]
+    ) .

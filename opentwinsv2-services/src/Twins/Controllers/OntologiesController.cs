@@ -50,49 +50,6 @@ namespace OpenTwinsV2.Twins.Controllers
             _converterService = converterService;
         }
 
-        private (string Prefix, string LocalName) GetLocalName(VDS.RDF.INode node, IGraph graph, string ontologyId)
-        {
-            if (node is UriNode uriNode)
-            {
-                string qname;
-                string prefix;
-                string localName;
-                if (graph.NamespaceMap.ReduceToQName(uriNode.Uri.ToString(), out qname))
-                {
-                    (prefix, localName) = _converterService.GetLocalName(qname, ontologyId);
-                }
-                else
-                {
-                    (prefix, localName) = _converterService.GetLocalName(uriNode.Uri.ToString(), ontologyId);
-                }
-                return (prefix, localName);
-            }
-            return ($"pref{ontologyId}", node.ToString());
-        }
-
-        private string GetUid(VDS.RDF.INode node, IGraph graph)
-        {
-            //get the uid omiting all prefixes
-            var (_, local) = GetLocalName(node, graph, "");
-            local ??= "nameless" + Guid.NewGuid();
-            return $"_:{local}";
-        }
-
-        private string SanitizeAttributeValue(string value)
-        {
-            if (string.IsNullOrEmpty(value))
-                return value;
-
-            return value
-                .Replace("\\", "\\\\")   // omit \
-                .Replace("\"", "\\\"")   // omit "
-                .Replace("\n", "\\n")    // omit \n
-                .Replace("\r", "\\r")    // omit \r
-                .Replace("\t", "\\t");   // omit \t
-        }
-
-
-
         private List<string> GetNQuadAttributeTriples(string subject, string predicate, ILiteralNode literal, string ontology, string prefix)
         {
 
@@ -106,12 +63,14 @@ namespace OpenTwinsV2.Twins.Controllers
 
             var nquads = new List<string>();
 
-            string value = SanitizeAttributeValue(literal.Value);
-            //There's the possibility of the value containing " characters
+            // string value = _converterService.SanitizeAttributeValue(literal.Value);
+            // //There's the possibility of the value containing " characters
 
-            //string type by default
-            string dataType = literal.DataType?.ToString() ?? "string";
-            var type = _converterService.SanitizeTypeAndUIDValues(dataType) ?? "string";
+            // //string type by default
+            // string dataType = literal.DataType?.ToString() ?? "string";
+            // var type = _converterService.SanitizeTypeAndUIDValues(dataType) ?? "string";
+
+            var(type, value) = _converterService.GetLiteralCleanData(literal);
 
             var namespace_uid = $"_:{ontology}namespace_{prefix}";
 
@@ -390,8 +349,8 @@ namespace OpenTwinsV2.Twins.Controllers
                             continue;
                         }
 
-                        string uid = GetUid(node, graph);
-                        var (prefix, thingId) = GetLocalName(node, graph, ontologyId); //here it takes care of the no prefix fallback
+                        string uid = _converterService.GetUid(node, graph);
+                        var (prefix, thingId) = _converterService.GetLocalName(node, graph, ontologyId); //here it takes care of the no prefix fallback
                         thingId ??= "thing" + Guid.NewGuid();
                         nquads.AddRange(GetNQuadNodeTriples(uid, thingId, createdAt, ontologyId, prefix));
 
@@ -402,8 +361,8 @@ namespace OpenTwinsV2.Twins.Controllers
                     foreach (Triple triple in graph.Triples.Distinct())
                     {
                         //Get the subject, predicate and object of the triple
-                        string subject = GetUid(triple.Subject, graph); //_:uid
-                        var (prefixPredicate, predicate) = GetLocalName(triple.Predicate, graph, "");  //uri
+                        string subject = _converterService.GetUid(triple.Subject, graph); //_:uid
+                        var (prefixPredicate, predicate) = _converterService.GetLocalName(triple.Predicate, graph, "");  //uri
                         predicate ??= "predicate" + Guid.NewGuid();
                         //as this includes the original type and uid of the ontology, we exclude them so as not to duplicate the existing ones
                         if (!ignoredPredicates.Contains(predicate))
@@ -413,7 +372,7 @@ namespace OpenTwinsV2.Twins.Controllers
                             {
                                 //Support for "type" and "a" predicate
                                 //create or find a thing whose thingId is the name of the type, and with this subject, relate it to the type Thing through hasType relation
-                                var (typePrefix, typeOfNode) = GetLocalName(triple.Object, graph, ontologyId);
+                                var (typePrefix, typeOfNode) = _converterService.GetLocalName(triple.Object, graph, ontologyId);
                                 Console.WriteLine("PREFIX: " + typePrefix + ", TYPE: " + typeOfNode);
                                 // var typeOfNode = ((ILiteralNode)triple.Object).ToString();
                                 string match = nquads.FirstOrDefault(nquad => nquad.Contains($"<thingId> {typeOfNode}")); //null manegement ahead
@@ -451,7 +410,7 @@ namespace OpenTwinsV2.Twins.Controllers
                             else
                             {
                                 //Relation between 2 nodes
-                                string obj = GetUid(triple.Object, graph);
+                                string obj = _converterService.GetUid(triple.Object, graph);
                                 Console.WriteLine($"SUBJECT: {subject} OBJECT: {obj}");
                                 //check if the relation is bidirectional or not
                                 //if yes, check if the relation object has already been added to the nquads

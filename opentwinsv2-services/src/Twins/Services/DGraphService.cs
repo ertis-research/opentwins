@@ -107,6 +107,142 @@ namespace OpenTwinsV2.Twins.Services
                 domainId: string @index(exact) .
                 Domain.name: string @index(term) .
 
+                shapeId: string @index(exact) .
+                Shape.name: string @index(term) .
+                Shape.createdAt: datetime .
+                shapes: [uid] @reverse .
+
+                targetId: string @index(exact) .
+                Target.prefix: uid .
+                Target.name: string @index(term) .
+
+                valueId: string @index(exact) .
+                Value.type: string .
+                value: string .
+
+                nodeShapeId: string @index(exact) .
+                NodeShape.name: string @index(term) .
+                NodeShape.createdAt: datetime .
+                NodeShape.prefix: uid .
+                target: [uid] @reverse .
+                properties: [uid] @reverse .
+                defaultProperty: uid .
+                description: string .
+
+                path: uid .
+                ShapeProperty.prefix: uid .
+                constraints: [uid] @reverse .
+
+                constraintId: string @index(exact) .
+                ShapeConstraint.prefix: uid .
+
+                minCount: [int] .
+                maxCount: [int] .
+
+                datatype: [uid] .
+                nodeKind: [uid] .
+                class: [uid] .
+                node: [uid] .    
+
+                in: [uid] .
+                hasValue: [uid] .
+
+                and: [uid] .
+                or: [uid] .
+                not: uid .
+                xone: [uid] .
+
+                equals: [uid] .
+                disjoint: [uid] .    
+                lessThan: [uid] .
+                lessThanOrEquals: [uid] .
+
+                GenericConstraint.value: [uid] .
+
+                type Shape{
+                    shapeId
+                    name
+                    createdAt
+                    shapes
+                }
+
+                type Reference{
+                    targetId
+                    Target.prefix
+                    Target.name
+                }
+
+                type Value{
+                    valueId
+                    Value.type
+                    value
+                }
+
+                type NodeShape{
+                    nodeShapeId
+                    NodeShape.name
+                    NodeShape.createdAt
+                    NodeShape.prefix
+                    target
+                    properties
+                    defaultProperty
+                    description
+                }
+
+                type ShapeProperty{
+                    path
+                    description
+                    constraints
+                    ShapeProperty.prefix
+                }
+
+                type CardinalityConstraint {
+                    constraintId
+                    ShapeConstraint.prefix
+                    minCount
+                    maxCount
+                }
+
+                type StructureConstraint{
+                    constraintId
+                    ShapeConstraint.prefix
+                    datatype
+                    nodeKind
+                    class
+                    node
+                }
+
+                type SetConstraint{
+                    constraintId
+                    ShapeConstraint.prefix
+                    in
+                    hasValue
+                }
+
+                type LogicalConstraint{
+                    constraintId
+                    ShapeConstraint.prefix
+                    and
+                    or
+                    not
+                    xone
+                }
+
+                type ValueConstraint{
+                    constraintId
+                    ShapeConstraint.prefix
+                    equals
+                    disjoint
+                    lessThan
+                    lessThanOrEquals
+                }
+
+                type GenericConstraint{
+                    constraintId
+                    ShapeConstraint.prefix
+                    GenericConstraint.value
+                }
+
                 type Namespace {
                     namespaceId
                     prefix
@@ -1382,7 +1518,29 @@ namespace OpenTwinsV2.Twins.Services
             return null;
         }
 
-        
+        // ------------------------ Specific Methods for Shape Graphs ------------------------
+
+        public async Task<bool> ExistsShapeGraphByIdAsync(string shapeId)
+        {
+            var query = $@"{{
+                exists(func: eq(shapeId, ""{shapeId}"")){{
+                    uid
+                }}
+            }}";
+
+            var response = await _client.NewTransaction().Query(query);
+            var json = response.Json.ToStringUtf8();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("exists", out var existsArray) && existsArray.ValueKind == JsonValueKind.Array)
+            {
+                return existsArray.GetArrayLength() > 0;
+            }
+
+            return false;
+        }
     }
 }
 

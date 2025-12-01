@@ -1,0 +1,91 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+ex:SuperDeepPersonShape
+    a sh:NodeShape ;
+    sh:targetClass ex:Person ;
+
+    sh:and (
+        # Must satisfy BOTH of these
+        [
+            sh:property [
+                sh:path ex:hasName ;
+                sh:datatype xsd:string ;
+                sh:minLength 1 ;
+                sh:maxLength 200 ;
+            ] ;
+        ]
+        [
+            sh:property [
+                sh:path ex:hasAge ;
+                sh:datatype xsd:integer ;
+                sh:minInclusive 0 ;
+                sh:maxInclusive 130 ;
+            ] ;
+
+            sh:or (
+                [
+                    sh:property [
+                        sh:path ex:isRetired ;
+                        sh:datatype xsd:boolean ;
+                        sh:hasValue true ;
+                    ]
+                ]
+                [
+                    sh:property [
+                        sh:path ex:isStudent ;
+                        sh:datatype xsd:boolean ;
+                        sh:hasValue true ;
+                    ]
+                ]
+            ) ;
+        ]
+    ) ;
+
+    sh:xone (
+        [
+            sh:node ex:ChildShape ;
+        ]
+        [
+            sh:node ex:AdultShape ;
+        ]
+        [
+            sh:node ex:ElderlyShape ;
+        ]
+    ) ;
+
+    sh:or (
+        # GROUP A
+        [
+            sh:property [
+                sh:path ex:hasAddress ;
+                sh:node ex:AddressShape ;
+            ] ;
+        ]
+        # GROUP B
+        [
+            sh:property [
+                sh:path ex:hasContactInfo ;
+                sh:node [
+                    sh:property [
+                        sh:path ex:hasPhoneNumber ;
+                        sh:datatype xsd:string ;
+                    ] ;
+                    sh:property [
+                        sh:path ex:hasEmail ;
+                        sh:pattern "^[^@]+@[^@]+$" ;
+                    ] ;
+                ] ;
+            ] ;
+        ]
+    ) ;
+
+    sh:not [
+        sh:property [
+            sh:path ex:hasCriminalRecord ;
+            sh:datatype xsd:boolean ;
+            sh:hasValue true ;
+        ] ;
+    ] .

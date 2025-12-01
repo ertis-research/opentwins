@@ -70,11 +70,72 @@ namespace OpenTwinsV2.Twins.Services
                 //Get the last part of the URI
                 prefix = $"pref{parentId}";
             }
-            if(localName is null || localName.Length == 0)
+            if (localName is null || localName.Length == 0)
             {
                 localName = SanitizeTypeAndUIDValues(nodeUri);
             }
             return (prefix, localName);
+        }
+
+        public (string Prefix, string LocalName) GetLocalName(VDS.RDF.INode node, IGraph graph, string parentId)
+        {
+            if (node is UriNode uriNode)
+            {
+                string qname;
+                string prefix;
+                string localName;
+                if (graph.NamespaceMap.ReduceToQName(uriNode.Uri.ToString(), out qname))
+                {
+                    (prefix, localName) = GetLocalName(qname, parentId);
+                }
+                else
+                {
+                    (prefix, localName) = GetLocalName(uriNode.Uri.ToString(), parentId);
+                }
+                return (prefix, localName);
+            }
+            return ($"pref{parentId}", node.ToString());
+        }
+
+        public string GetUid(VDS.RDF.INode node, IGraph graph)
+        {
+            //get the uid omiting all prefixes
+            var (_, local) = GetLocalName(node, graph, "");
+            local ??= "nameless" + Guid.NewGuid();
+            return $"_:{local}";
+        }
+        
+        public string SanitizeAttributeValue(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return value;
+
+            return value
+                .Replace("\\", "\\\\")   // omit \
+                .Replace("\"", "\\\"")   // omit "
+                .Replace("\n", "\\n")    // omit \n
+                .Replace("\r", "\\r")    // omit \r
+                .Replace("\t", "\\t");   // omit \t
+        }
+
+        public (string datatype, string value) GetLiteralCleanData(ILiteralNode literal)
+        {
+            string value = SanitizeAttributeValue(literal.Value);
+            string dataType = literal.DataType?.ToString() ?? "string";
+            dataType = SanitizeTypeAndUIDValues(dataType) ?? "string";
+
+            return (dataType, value);
+        }
+
+        public (string datatype, string value) GetLiteralCleanData(string literalString)
+        {
+            if (!literalString.Contains("^^"))
+                return ("string", literalString);
+
+            var parts = literalString.Split("^^");
+            var value = parts[0];
+            var (_, dataType) = GetLocalName(SanitizeTypeAndUIDValues(parts[1]), "");
+            return (dataType, value);
         }
 
         private JsonNode checkPrefixes(JsonNode node, Dictionary<string, string> ns, string twinPrefix, string twinUri)

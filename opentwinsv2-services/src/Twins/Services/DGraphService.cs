@@ -1541,6 +1541,226 @@ namespace OpenTwinsV2.Twins.Services
 
             return false;
         }
+
+        public async Task<List<JsonElement>> GetAllShapeGraphsAsync()
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var query = $@"
+                    {{
+                        shapegraphs(func: has(shapeId)){{
+                            shapeId
+                            shapes{{
+                                nodeShapeId
+                            }}
+                        }}
+                    }}     
+                ";
+
+                var res = await txn.Query(query);
+                var json = res.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if (!root.TryGetProperty("shapegraphs", out JsonElement shapesArray) || shapesArray.GetArrayLength() == 0)
+                    return [];
+
+                var shapeGraphs = JsonSerializer.Deserialize<List<JsonElement>>(shapesArray.GetRawText());
+                return shapeGraphs ?? [];                
+            }
+            catch
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+    
+        public async Task<List<JsonElement>> GetShapesFromShapeGraph(string shapeId)
+        {
+            using var txn = _client.NewTransaction();
+
+            var query = $@"
+            {{
+                shapeGraphs(func: eq(shapeId, ""{shapeId}"")) @recurse(depth: 100, loop: true) {{
+                    uid
+                    dgraph.type
+                    expand(_all_)
+                    ~*
+                }}
+            }}";
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8(); ;
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            // Acceder a things[0]["~twins"]
+            if (!root.TryGetProperty("shapeGraphs", out JsonElement shapeGraphsArray) || shapeGraphsArray.GetArrayLength() == 0)
+            {
+                return [];
+            }
+
+
+            var shapeProp = shapeGraphsArray[0].GetProperty("shapes");
+            var shapes = JsonSerializer.Deserialize<List<JsonElement>>(shapeProp.GetRawText());
+            return shapes ?? [];
+        }
+
+        public async Task<bool> ExistsNodeShapeInShapeGraphAsync (string shapeId, string nodeShapeId){
+            var query = $@"
+            {{
+                shapeGraph as var(func: eq(shapeId, ""{shapeId}""))
+
+                exists(func: eq(nodeShapeId, ""{nodeShapeId}"")) @cascade{{
+                    uid
+                    nodeShapeId
+                    ~shapes @filter(uid(shapeGraph))
+                }}
+            }}";
+
+            var response = await _client.NewTransaction().Query(query);
+            var json = response.Json.ToStringUtf8();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("exists", out var existsArray) && existsArray.ValueKind == JsonValueKind.Array)
+            {
+                return existsArray.GetArrayLength() > 0;
+            }
+
+            return false;
+        }
+
+        public async Task<JsonElement?> GetNodeShapeFromShapeGraphByIdAsync (string shapeId, string nodeShapeId)
+        {
+            using var txn = _client.NewTransaction();
+
+            var query = $@"
+            {{
+                nodeshapes as var(func: eq(shapeId, ""{shapeId}"")) @cascade {{
+                    ~hasThing @filter(eq(nodeShapeId, ""{nodeShapeId}""))
+                }}
+
+                nodeshape(func: uid(nodeshapes)) @recurse(depth: 100, loop: true) {{
+                    uid
+                    dgraph.type
+                    expand(_all_)
+                    ~*
+                }}
+            }}";
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("nodeshape", out JsonElement nodeshapeArray) || nodeshapeArray.GetArrayLength() == 0)
+                return null;
+
+            return JsonSerializer.Deserialize<JsonElement>(nodeshapeArray[0].GetRawText());
+        }
+
+        private static IEnumerable<string> GetUidFromJsonElement(JsonElement element)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    foreach (var prop in element.EnumerateObject())
+                    {
+                        if (prop.NameEquals("uid") && prop.Value.ValueKind == JsonValueKind.String)
+                            yield return prop.Value.GetString();
+
+                        foreach (var value in GetUidFromJsonElement(prop.Value))
+                            yield return value;
+                    }
+                    break;
+
+                case JsonValueKind.Array:
+                    foreach (var item in element.EnumerateArray())
+                    {
+                        foreach (var value in GetUidFromJsonElement(item))
+                            yield return value;
+                    }
+                    break;
+            }
+        }
+
+
+        private async Task<List<string>> GetAllShapeGraphRelatedNodesUidAsync(string shapeId)
+        {
+            var uids = new List<string>();
+
+            using var txn = _client.NewTransaction();
+
+            var query = $@"
+            {{
+                shapeGraphs(func: eq(shapeId, ""{shapeId}"")) @recurse(depth: 100, loop: true) {{
+                    uid
+                    dgraph.type
+                    expand(_all_)
+                    ~*
+                }}
+            }}";
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8(); ;
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            //TODO: iterate through elements to get all node uids
+            //check out how to do that (different types of constraints, subNodeShapes, etc...)
+
+            return [.. GetUidFromJsonElement(root)];
+        }
+
+        public async Task<Response> DeleteShapeGraphByIdAsync(string shapeId)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var uids = GetAllShapeGraphRelatedNodesUidAsync(shapeId).Result;
+                Console.WriteLine(uids.Count);
+
+                var deleteObjects = new List<Dictionary<string, string>>();
+
+                foreach (var uid in uids)
+                {
+                    // Each object = one node to delete
+                    deleteObjects.Add(new Dictionary<string, string> { { "uid", uid } });
+                }
+
+                // Serialize to JSON
+                var deleteJson = JsonSerializer.Serialize(deleteObjects);
+                var mutation = new Mutation
+                {
+                    DeleteJson = ByteString.CopyFromUtf8(deleteJson)
+                };
+
+                try
+                {
+                    var response = await txn.Mutate(mutation);
+                    await txn.Commit();
+                    return response;
+                }
+                catch (Exception ex)
+                {
+                    await txn.DisposeAsync();
+                    throw new Exception("Error removing shape graph: " + ex.Message);
+                }
+
+            }
+            catch
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
     }
 }
 

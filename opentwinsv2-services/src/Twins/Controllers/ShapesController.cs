@@ -22,6 +22,18 @@ namespace OpenTwinsV2.Twins.Controllers
             _converterService = converterService;
         }
 
+        [HttpGet("")]
+        public async Task<IActionResult> GetAllShapeGraphs()
+        {
+            try
+            {
+                return Ok(await _dgraphService.GetAllShapeGraphsAsync());
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something wrong happened while looking for Shape Graphs in Dgraph:\n{ex.GetType}: {ex.Message}");
+            }
+        }
+
         // -------------------------- Import auxiliary Methods --------------------------
 
         private void GetNquadsAsTxtFile(List<string> nquads)
@@ -570,6 +582,59 @@ namespace OpenTwinsV2.Twins.Controllers
                 }
             }
             return Conflict($"There is already a Shape Graph with the id {shapeId}");
+        }
+
+        [HttpGet("{shapeId}")]
+        public async Task<IActionResult> GetShapeGraphByID(string shapeId)
+        {
+            var check = await _dgraphService.ExistsShapeGraphByIdAsync(shapeId);
+            if (check)
+            {
+                return Ok(await _dgraphService.GetShapesFromShapeGraph(shapeId));
+            }
+            return NotFound($"{shapeId} Shape Graph does not exist");
+        }
+
+        [HttpGet("{shapeId}/shapes/{nodeShapeId}")]
+        public async Task<IActionResult> GetNodeShapeFromShapeGraphById(string shapeId, string nodeShapeId)
+        {
+            var check = await _dgraphService.ExistsNodeShapeInShapeGraphAsync(shapeId, nodeShapeId);
+            if (!check)
+            {
+                return NotFound($"{nodeShapeId} NodeShape does not belong to {shapeId} ShapeGraph or {shapeId} Shape Graph does not exist");
+            }
+            try
+            {
+                var response = await _dgraphService.GetNodeShapeFromShapeGraphByIdAsync(shapeId, nodeShapeId);
+                if(response is null)
+                {
+                    return StatusCode(500, $"Something went wrong while getting the {nodeShapeId} NodeShape from DGraph");
+                }
+                return Ok(response);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
+
+        [HttpDelete("{shapeId}")]
+        public async Task<IActionResult> DeleteShapeGraphByID(string shapeId)
+        {
+            var check = await _dgraphService.ExistsShapeGraphByIdAsync(shapeId);
+            if (!check)
+            {
+                return NotFound($"{shapeId} Shape Graph does not exist");
+            }
+            try
+            {
+                var response = await _dgraphService.DeleteShapeGraphByIdAsync(shapeId);
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while deleting the {shapeId} Shape Graph from DGraph: {ex.GetType}: {ex}");
+            }
         }
 
 

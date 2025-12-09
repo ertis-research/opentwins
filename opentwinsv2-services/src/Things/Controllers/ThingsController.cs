@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Mvc;
 using OpenTwinsV2.Shared.Models;
 using OpenTwinsV2.Shared.Constants;
 using OpenTwinsV2.Shared.Utilities;
+using OpenTwinsV2.Things.Services;
+using OpenTwinsV2.Things.Models;
 
 [ApiController]
 [Route("things")]
@@ -13,11 +15,57 @@ public class ThingsController : ControllerBase
     private const string ActorType = Actors.ThingActor;
     private readonly IActorProxyFactory _actorProxyFactory;
     private readonly ILogger<ThingsController> _logger;
+    private readonly ThingsQueryService _thingsQueryService; // <--- Nuevo servicio
 
-    public ThingsController(IActorProxyFactory actorProxyFactory, ILogger<ThingsController> logger)
+    public ThingsController(IActorProxyFactory actorProxyFactory, ThingsQueryService thingsQueryService, ILogger<ThingsController> logger)
     {
         _actorProxyFactory = actorProxyFactory;
+        _thingsQueryService = thingsQueryService;
         _logger = logger;
+    }
+
+    [HttpGet("")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(PagedResult<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAllThings(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null) // <--- Nuevo parámetro opcional
+    {
+        try
+        {
+            // Pasamos el search al servicio
+            var result = await _thingsQueryService.GetAllThingsAsync(page, pageSize, search);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve things list.");
+            return StatusCode(500, "Internal server error.");
+        }
+    }
+
+    /// <summary>
+    /// Returns a lightweight list of things (ID and Title only), optimized for dropdowns/lists.
+    /// </summary>
+    [HttpGet("summary")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(PagedResult<ThingSummary>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetThingsSummary(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50, // Default más alto para listas
+        [FromQuery] string? search = null)
+    {
+        try
+        {
+            var result = await _thingsQueryService.GetThingsSummaryAsync(page, pageSize, search);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve things summary.");
+            return StatusCode(500, "Internal server error.");
+        }
     }
 
     /// <summary>

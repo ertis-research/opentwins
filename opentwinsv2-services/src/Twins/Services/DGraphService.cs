@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using AngleSharp.Dom;
 using Api;
 using Dapr;
 using Dgraph4Net;
@@ -136,8 +137,8 @@ namespace OpenTwinsV2.Twins.Services
                 constraintId: string @index(exact) .
                 ShapeConstraint.prefix: uid .
 
-                minCount: [int] .
-                maxCount: [int] .
+                minCount: [uid] .
+                maxCount: [uid] .
 
                 datatype: [uid] .
                 nodeKind: [uid] .
@@ -1579,6 +1580,42 @@ namespace OpenTwinsV2.Twins.Services
     
         public async Task<List<JsonElement>> GetShapesFromShapeGraph(string shapeId)
         {
+            // using var txn = _client.NewTransaction();
+
+            // var query = $@"
+            // {{
+            //     shapeGraphs(func: eq(shapeId, ""{shapeId}"")) @recurse(depth: 100, loop: true) {{
+            //         uid
+            //         dgraph.type
+            //         expand(_all_)
+            //         ~*
+            //     }}
+            // }}";
+
+            // var res = await txn.Query(query);
+            // var json = res.Json.ToStringUtf8(); ;
+
+            // using var doc = JsonDocument.Parse(json);
+            // var root = doc.RootElement;
+
+            // if (!root.TryGetProperty("shapeGraphs", out JsonElement shapeGraphsArray) || shapeGraphsArray.GetArrayLength() == 0)
+            // {
+            //     return [];
+            // }
+
+            var fullJson = await GetShapeGraphNestedFullJson(shapeId);
+            if(fullJson is null)
+                return [];
+
+            
+            if(fullJson.Value.TryGetProperty("shapes", out var shapes))
+                return JsonSerializer.Deserialize<List<JsonElement>>(shapes.GetRawText()) ?? [];
+            return [];
+            
+        }
+
+        public async Task<JsonElement?> GetShapeGraphNestedFullJson(string shapeId)
+        {
             using var txn = _client.NewTransaction();
 
             var query = $@"
@@ -1600,14 +1637,14 @@ namespace OpenTwinsV2.Twins.Services
             // Acceder a things[0]["~twins"]
             if (!root.TryGetProperty("shapeGraphs", out JsonElement shapeGraphsArray) || shapeGraphsArray.GetArrayLength() == 0)
             {
-                return [];
+                return null;
             }
 
 
-            var shapeProp = shapeGraphsArray[0].GetProperty("shapes");
-            var shapes = JsonSerializer.Deserialize<List<JsonElement>>(shapeProp.GetRawText());
-            return shapes ?? [];
-        }
+            var shapeProp = shapeGraphsArray[0];
+            var shapes = JsonSerializer.Deserialize<JsonElement>(shapeProp.GetRawText());
+            return shapes;
+        } 
 
         public async Task<bool> ExistsNodeShapeInShapeGraphAsync (string shapeId, string nodeShapeId){
             var query = $@"

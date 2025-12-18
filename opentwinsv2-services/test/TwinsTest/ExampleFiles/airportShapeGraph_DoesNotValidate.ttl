@@ -1,0 +1,40 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix prefairport: <http://example.org/twin/airport/> .
+@prefix otv2: <http://opentwinsv2.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Gate must have a boolean occupied.value
+prefairport:GateShape_strict a sh:NodeShape ;
+    sh:targetSubjectsOf prefairport:occupied.value ;
+    sh:property [
+        sh:path prefairport:occupied.value ;
+        sh:datatype xsd:boolean ;
+        sh:minCount 1 ;      # required!
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path otv2:tiene ;
+        sh:node prefairport:TerminalShape_strict ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] .
+
+# Terminal must have exactly 2 child gates
+prefairport:TerminalShape_strict a sh:NodeShape ;
+    sh:targetSubjectsOf otv2:hasChild ;
+    sh:property [
+        sh:path otv2:hasChild ;
+        sh:node prefairport:GateShape_strict ;
+        sh:minCount 2 ;
+        sh:maxCount 2 ;
+    ] .
+
+# Terminal2 must have EXACTLY ONE gate
+prefairport:Terminal2Shape_strict a sh:NodeShape ;
+    sh:targetSubjectsOf otv2:tiene ;
+    sh:property [
+        sh:path otv2:tiene ;
+        sh:node prefairport:GateShape_strict ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] .

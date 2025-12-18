@@ -1,0 +1,38 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix prefairport: <http://example.org/twin/airport/> .
+@prefix otv2: <http://opentwinsv2.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Shape for Gate
+prefairport:GateShape a sh:NodeShape ;
+    sh:targetSubjectsOf prefairport:occupied.value ;
+    sh:property [
+        sh:path prefairport:occupied.value ;
+        sh:datatype xsd:string ;
+        sh:minCount 0 ;   # allow null or missing
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path otv2:tiene ;
+        sh:node prefairport:TerminalShape ;
+        sh:minCount 0 ;
+        sh:maxCount 1 ;
+    ] .
+
+# Shape for Terminal
+prefairport:TerminalShape a sh:NodeShape ;
+    sh:targetSubjectsOf otv2:hasChild ;
+    sh:property [
+        sh:path otv2:hasChild ;
+        sh:node prefairport:GateShape ;
+        sh:minCount 0 ;
+    ] .
+
+# Shape for Terminal2
+prefairport:Terminal2Shape a sh:NodeShape ;
+    sh:targetSubjectsOf otv2:tiene ;
+    sh:property [
+        sh:path otv2:tiene ;
+        sh:node prefairport:GateShape ;
+        sh:minCount 1 ;
+    ] .

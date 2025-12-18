@@ -2,16 +2,21 @@
 Class that reunites all export functions common to Ontologies and Twins controllers.
 */
 
+using System.Net;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using Api;
 using Json.More;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.VisualBasic;
+using Newtonsoft.Json;
 using OpenTwinsV2.Shared.Constants;
 using VDS.RDF;
 using VDS.RDF.Query;
 using VDS.RDF.Query.Datasets;
+using VDS.RDF.Query.Expressions.Functions.XPath.Cast;
 
 namespace OpenTwinsV2.Twins.Services
 {
@@ -94,7 +99,7 @@ namespace OpenTwinsV2.Twins.Services
                 }
                 return (prefix, localName);
             }
-            return ($"pref{parentId}", node.ToString());
+            return ($"pref{parentId}", $"{(node.NodeType.Equals(NodeType.Blank) ? "blank_" : "")}{ node.ToString()}");
         }
 
         public string GetUid(VDS.RDF.INode node, IGraph graph)
@@ -138,13 +143,13 @@ namespace OpenTwinsV2.Twins.Services
             return (dataType, value);
         }
 
-        private JsonNode checkPrefixes(JsonNode node, Dictionary<string, string> ns, string twinPrefix, string twinUri)
+        private JsonNode checkPrefixes(JsonNode node, Dictionary<string, string> ns, string defaultPrefix, string defaultUri, string pType = "", string pName = "")
         {
             if (node is JsonObject obj)
             {
-                var pref = twinPrefix;
-                var uri = twinUri;
-                var type = node["Relation.name"] is not null ? "Relation" : (node["Attribute.key"] is not null ? "Attribute" : "Thing");
+                var pref = defaultPrefix;
+                var uri = defaultUri;
+                var type = string.IsNullOrWhiteSpace(pType) ? node["Relation.name"] is not null ? "Relation" : (node["Attribute.key"] is not null ? "Attribute" : "Thing") : pType;
                 if (obj.TryGetPropertyValue($"{type}.prefix", out var existing))
                 {
                     if (existing is not null)
@@ -156,10 +161,10 @@ namespace OpenTwinsV2.Twins.Services
                 else
                 {
                     //it doesn't have one
-                    string propertyName = type.Equals("Thing") ? "thingId" : (type.Equals("Relation") ? "Relation.name" : "Attribute.key");
+                    string propertyName = string.IsNullOrWhiteSpace(pName) ? type.Equals("Thing") ? "thingId" : (type.Equals("Relation") ? "Relation.name" : "Attribute.key") : pName;
                     string newName = null;
                     if (obj.TryGetPropertyValue(propertyName, out var name) && name is not null)
-                        (pref, newName) = GetLocalName(name.GetValue<string>(), twinPrefix);
+                        (pref, newName) = GetLocalName(name.GetValue<string>(), defaultPrefix);
                     
 
                     if (pref.Equals("otv2"))
@@ -170,15 +175,15 @@ namespace OpenTwinsV2.Twins.Services
                     }
                     else
                     {
-                        pref = twinPrefix;
+                        pref = defaultPrefix;
                     }
                         
                     //first, check if it has the otv2 prefix
-                    //if not, we create the attribute with the info from the twin's context
+                    //if not, we create the attribute with the info from the default's context
                     obj[$"{type}.prefix"] = new JsonObject //sample context prefix node
                     {
-                        ["prefix"] = pref.Equals("otv2") ? pref : twinPrefix,
-                        ["uri"] = pref.Equals("otv2") ? uri : twinUri 
+                        ["prefix"] = pref.Equals("otv2") ? pref : defaultPrefix,
+                        ["uri"] = pref.Equals("otv2") ? uri : defaultUri 
                     };
                 }
                 if (!ns.ContainsKey(pref))
@@ -429,15 +434,283 @@ namespace OpenTwinsV2.Twins.Services
             return await getJsonWithNamespace(id, null);
         }
 
-        public async Task<JsonObject?> GetJsonLDFromRegularJson(JsonObject json, string id)
+        private JsonNode? GetConstraintValue(string[] types, JsonObject node)
         {
-            string idSanitized = SanitizeTypeAndUIDValues(id);
+            JsonNode res = null;
+            int i=0;
+            while(res is null && i<types.Length)
+            {
+                node.TryGetPropertyValue(types[i], out res);
+                i++;
+            }
+            return res;
+        }
+
+        private JsonNode? GetConstraintValueFromParentNode(JsonObject cons, string type)
+        {
+            JsonNode? res = null;
+            switch (type)
+            {
+                case "CardinalityConstraint":
+                    res = GetConstraintValue(["minCount", "maxCount"], cons);
+                    break;
+                case "StructureConstraint":
+                    res = GetConstraintValue(["datatype", "nodeKind", "class", "node"], cons);
+                    break;
+                case "SetConstraint":
+                    res = GetConstraintValue(["in", "hasValue"], cons);
+                    break;
+                case "LogicalConstraint":
+                    res = GetConstraintValue(["and", "or", "xone", "not"], cons);
+                    break;
+                case "ValueConstraint":
+                    res = GetConstraintValue(["equals", "disjoint", "lessThan", "lessThanOrEquals"], cons);
+                    break;
+                case "GenericConstraint":                    
+                default:
+                    cons.TryGetPropertyValue("GenericConstraint.value", out res);
+                    break;
+            }
+            return res;
+        }
+
+        private JsonObject GetCastedValue(JsonNode value, JsonNode parent, string key)
+        {
+            (_, var val) = GetLocalName(value["value"]!.ToString(), "");
+                        //parse
+            if(value["Value.type"]!.GetValue<string>() is var valType )
+            {
+                switch (valType.ToLower())
+                {
+                    case "integer":
+                    case "int":
+                        parent[key] = Convert.ToInt32(val);
+                        break;
+                    case "double":
+                        parent[key] = Convert.ToDouble(val);
+                        break;
+                    case "bool":
+                    case "boolean":
+                        parent[key] = Convert.ToBoolean(val);
+                        break;
+                    case "string":
+                    default:
+                        parent[key] = val;
+                        break;
+                }
+            }
+            return parent.DeepClone().AsObject();
+        }
+
+        //TODO: Auxiliar method for flattening constraints
+        private JsonObject GetFlattenedShapeConstraint(JsonObject parent, JsonObject og,  Dictionary<string, string> nsDic, string defaultPrefix, string defaultUri){
+            if (og.TryGetPropertyValue("constraintId", out var constraintId) && constraintId is not null)
+            {
+                var constraintIdStr = constraintId.GetValue<string>();
+                var cons = checkPrefixes(og, nsDic, defaultPrefix, defaultUri, "ShapeConstraint", constraintIdStr);
+                
+                //build constraint key with prefix and constraintId
+                var key = $"{(cons.AsObject().TryGetPropertyValue("ShapeConstraint.prefix", out var consPrefix) ? consPrefix["prefix"] : defaultPrefix)}:{constraintIdStr}";
+                
+                //value -> we need to check the type
+                var type = cons["dgraph.type"]!.AsArray()[0]!.GetValue<string>();
+                var value = GetConstraintValueFromParentNode(cons.AsObject(), type);
+
+                if(value is null)
+                    return parent;
+
+                //Here it can be:
+                //Value
+                //Reference
+                //Property
+                //Array (With elements of any type of the above)
+            
+                //TODO: if it's an array
+                if(value is JsonArray && value.AsArray().Count>1)
+                {
+                    var newValueArray = new JsonArray();
+                    foreach(var valueElement in value.AsArray())
+                    {
+                        var valueType = valueElement!["dgraph.type"]!.AsArray()[0]!.GetValue<string>();
+                        if (valueType.Equals("NodeShape"))
+                        {
+                            newValueArray.Add(GetFlattenedNodeShape(valueElement, nsDic, defaultPrefix, defaultUri));
+                        }else if (valueType.Equals("ShapeProperty"))
+                        {
+                            newValueArray.Add(GetFlattenedShapeProperty(valueElement!.AsObject(), nsDic, defaultPrefix, defaultUri));
+                        }else if (valueType.Equals("Value"))
+                        {
+                            parent = GetCastedValue(value, parent, key);
+                        }
+                        
+                    }
+                    
+                    parent[key] = JsonNode.Parse(newValueArray.ToJsonString());
+
+                }else if(value is not null && value is JsonObject || (value is JsonArray && value.AsArray().Count == 1))
+                {
+                    //if it's reference -> prefix:id
+                    //if it's value -> value
+                    string nodeValType;
+                    if(value is JsonArray)
+                    {
+                        value = value[0]; //we know it only has 1 element so this is fine
+                        // nodeValType = value.AsArray()[0]!["dgraph.type"]!.AsArray()[0]!.GetValue<string>();
+                    }
+                    // else
+                    // {
+                    nodeValType = value!["dgraph.type"]!.AsArray()[0]!.GetValue<string>();
+                    // }
+
+                    if (nodeValType.Equals("Value"))
+                    {
+                        parent = GetCastedValue(value, parent, key);
+                        
+                    }else if (nodeValType.Equals("Reference"))
+                    {
+                        var valueName = value["Target.name"]!.GetValue<string>();
+                        value = checkPrefixes(value, nsDic, defaultPrefix, defaultUri, "Target", valueName);
+                        var valuePrefix = value["Target.prefix"]!["prefix"]!.GetValue<string>();
+                        parent[key] = $"{valuePrefix}:{valueName}";
+                    }else if (nodeValType.Equals("NodeShape"))
+                    {
+                        //recursive call to flattened Node Shape
+                        parent[key] = JsonNode.Parse(GetFlattenedNodeShape(value, nsDic, defaultPrefix, defaultUri).ToJsonString());
+                    }else if (nodeValType.Equals("ShapeProperty"))
+                    {
+                        parent[key] = JsonNode.Parse(GetFlattenedShapeProperty(value.AsObject(), nsDic, defaultPrefix, defaultUri).ToJsonString());
+                    }
+                }     
+            }
+            return parent;
+        }
+
+        //TODO: iterate through both methods with recursivity
+
+        //TODO: Auxiliar method for flattening properties
+
+        private JsonObject GetFlattenedShapeProperty(JsonObject og, Dictionary<string,string> nsDic, string defaultPrefix, string defaultUri)
+        {
+            
+            /*iterate through its contents
+                path
+                description (optional)
+                constraints (call to GetFlattenedConstraint)
+                ShapeProperty.prefix (check if it's there, if not -> desfault)
+            */
+
+            og = checkPrefixes(og, nsDic, defaultPrefix, defaultUri, "ShapeProperty", "property").AsObject();
+            var prop = new JsonObject();
+
+            //Get path
+            if(og.TryGetPropertyValue("path", out var pathValue))
+                prop["sh:path"] = $"{(pathValue!.AsObject().TryGetPropertyValue("Target.prefix", out var pathPrefix) ? pathPrefix!["prefix"] : defaultPrefix)}:{(pathValue.AsObject().TryGetPropertyValue("Target.name", out var pathName) ? pathName : $"path")}";
+
+            //we leave description as it is (if it exists it will show up, if not, it won't)
+
+            //constraints
+            if(og.TryGetPropertyValue("constraints", out var constraintsList) && constraintsList is not null)
+            {
+                foreach(var constraintNode in constraintsList.AsArray())
+                    prop = GetFlattenedShapeConstraint(prop, constraintNode!.AsObject(), nsDic, defaultPrefix, defaultUri);
+                //in each call, it returns a deep cloned prop node but with the new constraint added as a first level field
+            }
+
+            // prop["SG_typeOfNode"] = "Property";
+
+            return prop.DeepClone().AsObject();
+        }
+
+        private JsonObject GetFlattenedNodeShape(JsonNode nodeShape, Dictionary<string,string> nsDic, string defaultPrefix, string defaultUri)
+        {
+            //save the uid of the defaultProperty so we don't add a duplicate
+            var defaultPropertyUid = nodeShape!["defaultProperty"]!["uid"]!.GetValue<string>();
+
+            //check namespace so we add it or not in the dictionary
+            //we'll use the method checkPrefix (now adapted so it recieves the type)
+            JsonObject flattenedNodeShape = checkPrefixes(nodeShape, nsDic, defaultPrefix, defaultUri, "NodeShape").AsObject();
+            flattenedNodeShape["properties"] = new JsonArray();
+            //then we iterate through the properties
+            foreach(var propertyNode in nodeShape!["properties"]!.AsArray())
+            {
+                // Console.WriteLine($"PROP NODE: {propertyNode.ToSafeString()}");
+                if(propertyNode is null)
+                    continue;
+                if (propertyNode["uid"]!.GetValue<string>().Equals(defaultPropertyUid))
+                {
+                    //if it's default property -> add it directly into flattenedNodeShape
+                    var flattenedDefaultProperty = GetFlattenedShapeProperty(propertyNode.AsObject(), nsDic, defaultPrefix, defaultUri); 
+                    
+                    //add constraints array directly into flattenedNodeShape
+                    foreach(var (key, defConstraintNode) in flattenedDefaultProperty)
+                    {
+
+                        flattenedNodeShape[key] = defConstraintNode.DeepClone();
+                    }
+                    flattenedNodeShape.Remove("defaultProperty");
+                }
+                else
+                {
+                    flattenedNodeShape["properties"]!.AsArray().Add(GetFlattenedShapeProperty(propertyNode.AsObject(), nsDic, defaultPrefix, defaultUri));
+                }
+            }
+
+            if(flattenedNodeShape["properties"]!.AsArray().Count == 0)
+                flattenedNodeShape.Remove("properties"); //there are no properties in this nodeShape
+
+            //we need the nodeShapeId be prefix:name
+            flattenedNodeShape["nodeShapeId"] = $"{(nodeShape.AsObject().TryGetPropertyValue("NodeShape.prefix", out var nodeShapePrefix) && nodeShape is not null ? nodeShapePrefix!["prefix"]!.GetValue<string>() : defaultPrefix)}:{nodeShape!["NodeShape.name"]!.GetValue<string>()}";
+
+            //delete all other unnecessary data
+            flattenedNodeShape.Remove("NodeShape.name");
+            flattenedNodeShape.Remove("NodeShape.prefix");
+            flattenedNodeShape.Remove("NodeShape.createdAt");
+            flattenedNodeShape.Remove("dgraph.type");
+            flattenedNodeShape.Remove("uid");
+            return flattenedNodeShape.DeepClone().AsObject();
+        }
+
+        public async Task<JsonObject?> GetShapeGraphFlattenedJson(string id)
+        {
+            var finalNode = new JsonObject
+            {
+                ["shapeId"] = id,
+                ["namespace"] = new JsonArray(),
+                ["shapes"] = new JsonArray()
+            };
+
+            var json = await _dgraphService.GetShapeGraphNestedFullJson(id);
+            if(json is null)
+                return null;
+            var defaultPrefix = $"pref{id}";
+            var defaultUri = $"http://example.org/shapeGraph/{id}/";
+            var nsDic = new Dictionary<string, string>
+            {
+                { defaultPrefix, defaultUri }
+            };
+
+            //iterate through the node shapes
+            if(json is not null && (json?.TryGetProperty("shapes", out var jsonShapes) ?? false))
+            {
+                foreach(var nodeShape in jsonShapes.AsNode()!.AsArray())
+                {
+                    //only difference -> flattening of contraint value nodes + defaultproperties (directly on the node shape)
+                    
+                    var flattenedNodeShape = GetFlattenedNodeShape(nodeShape!, nsDic, defaultPrefix, defaultUri);
+                    if(flattenedNodeShape is not null)
+                        finalNode["shapes"]!.AsArray().Add(flattenedNodeShape);
+                }
+            }
+
+            foreach(var pr in nsDic.Keys)
+                finalNode["namespace"]!.AsArray().Add(new JsonObject{["prefix"] = pr, ["uri"] = nsDic.GetValueOrDefault(pr)});
+
+            return finalNode;
+        }
+
+        private JsonObject GetJsonLDContext(JsonObject json, string idSanitized)
+        {
             var namespaces = json["namespace"]?.AsArray() ?? new JsonArray();
-            var things = json["things"]?.AsArray() ?? new JsonArray();
-
-            //initialize the context with the namespaces info
-            // prefix: uri
-
             var context = new JsonObject();
 
             foreach (var ns in namespaces)
@@ -454,152 +727,342 @@ namespace OpenTwinsV2.Twins.Services
                     context[prefix] = uri;
                 }
             }
+            return context;
+        }
 
-            var finalThings = new JsonArray();
+        private JsonObject GetJsonLDThing(JsonNode thingInfo, string idSanitized)
+        {
+            var thing = new JsonObject();
+
+            //obtain prefix
+            var prefix = thingInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
+            prefix = string.IsNullOrWhiteSpace(prefix) ? $"blankNodePrefix_{idSanitized}" : prefix;
+            //@id -> name (it's the thing id but without the ontology name as prefix)
+            thing["@id"] = $"{prefix}:{thingInfo?[string.IsNullOrWhiteSpace(thingInfo?["name"]?.GetValue<string>()) ? "thingId" : "name"]}";
+            //type of node is stored via hasType relation between Things (The Things that represent Types are ignored in the GetOntologyThings method) 
+            //depending on the ontology, one thing may have more than one type´
+            //if 1 -> JsonValue, if more -> JsonLD
+
+            //Type(s):
+            var types = thingInfo?["hasType"];
+            if ((types is not null) && (types.AsArray().Count > 0))
+            {
+                //this thing has at least one type
+                foreach (var typeInfo in types.AsArray())
+                {
+                    if(typeInfo is not null)
+                        thing = GetJsonLDTypes(typeInfo, thing, idSanitized, types.AsArray().Count).AsObject();
+                    
+                }
+            }
+
+            //Attributes:
+            var attributes = thingInfo?["hasAttribute"];
+            if ((attributes is not null) && attributes.AsArray().Count > 0)
+            {
+                //this thing has attributes
+                foreach (var attributeInfo in attributes.AsArray())
+                {
+                    if(attributeInfo is not null)
+                        thing = GetJsonLDAttribute(attributeInfo, thing, idSanitized).AsObject();
+                }
+            }
+            var relations = thingInfo?["relations"];
+            if ((relations is not null) && relations.AsArray().Count > 0)
+            {
+                //this thing has relations with other things
+                foreach (var relationInfo in relations.AsArray())
+                {
+                    if(relationInfo is not null)
+                        thing = GetJsonLDRelation(relationInfo, thing, idSanitized).AsObject();
+                }
+            }
+
+            return thing.DeepClone().AsObject();
+        }
+
+        private JsonNode GetJsonLDTypes(JsonNode typeInfo, JsonNode thing, string idSanitized, int typeCount)
+        {
+            var typeName = typeInfo?["name"]?.GetValue<string>();
+            var typePrefix = typeInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
+            typePrefix = string.IsNullOrWhiteSpace(typePrefix) ? $"blankNodePrefix_{idSanitized}" : typePrefix;
+
+            if (typeName is not null && (typeName.Length > 0))
+            {
+                if (typeCount==1)
+                {
+                    //only one type
+                    thing["@type"] = $"{((typePrefix == null || typePrefix.Length == 0) ? $"blankNodePrefix_{idSanitized}" : typePrefix)}:{typeName}";
+                }
+                else
+                {
+                    if (thing["@type"] is null)
+                        thing["@type"] = new JsonArray();
+                    //more than one type
+                    thing["@type"]?.AsArray().Add($"{((typePrefix == null || typePrefix.Length == 0) ? $"blankNodePrefix_{idSanitized}" : typePrefix)}:{typeName}");
+                }
+            }
+            return thing.DeepClone();
+        }
+
+        private JsonNode GetJsonLDAttribute(JsonNode attributeInfo, JsonNode thing, string idSanitized)
+        {
+            //TODO prefix support
+            var key = attributeInfo?["Attribute.key"]?.GetValue<string>();
+            var value = attributeInfo?["Attribute.value"]?.GetValue<string>();
+            var attPrefix = attributeInfo?["Attribute.prefix"]?["prefix"]?.GetValue<string>();
+            attPrefix = string.IsNullOrWhiteSpace(attPrefix) ? $"blankNodePrefix_{idSanitized}" : attPrefix;
+
+            if ((key is not null) && (key.Length > 0))
+            {
+                //Look for state data in the json (value is null, as it is now Attribute.default):
+                //Attribute.default ---> Previous Attribute.value
+                //value ---------------> Value of actual state (can be null)
+                //lastUpdate ----------> Date of the last time the state changed (can be null)
+                
+                if(value == null)
+                {
+                    //it has a state
+                    // atr.lastUpdate: "...",
+                    // atr.value =  value,
+                    value = attributeInfo?["value"]?.AsValue().ToString();
+                    var defaultValue = attributeInfo?["Attribute.default"]?.GetValue<string>();
+                    var lastUpdate = attributeInfo?["lastUpdate"]?.GetValue<string>();
+
+                    if (defaultValue is not null)
+                        thing[$"{attPrefix}:{key}.default"] = defaultValue;
+                        
+                    thing[$"{attPrefix}:{key}.value"] = value;
+                    thing[$"{attPrefix}:{key}.lastUpdate"] = lastUpdate;
+                }
+                else
+                {
+                    thing[$"{attPrefix}:{key}"] = value;
+                }
+            }
+            return thing.DeepClone();
+        }
+
+        private JsonNode GetJsonLDRelation(JsonNode relationInfo, JsonNode thing, string idSanitized)
+        {
+            //TODO prefix support
+            var name = relationInfo?["Relation.name"]?.GetValue<string>();
+            var relPrefix = relationInfo?["Relation.prefix"]?["prefix"]?.GetValue<string>();
+            relPrefix = string.IsNullOrWhiteSpace(relPrefix) ? $"blankNodePrefix_{idSanitized}" : relPrefix;
+            var relatedNode = relationInfo?["relatedTo"] ?? relationInfo?["hasChild"];
+            if (relatedNode is null)
+            {
+                return thing.DeepClone();
+            }
+            //check if there is only one lement or more
+            if (name is not null && name.Length > 0)
+            {
+                List<string> relatedThingstr = new List<string>();
+                foreach (var relatedThing in relatedNode.AsArray())
+                {
+                    var relatedName = relatedThing?["name"]?.GetValue<string>();
+                    var relatedPrefix = relatedThing?["Thing.prefix"]?["prefix"]?.GetValue<string>();
+                    relatedPrefix = string.IsNullOrWhiteSpace(relatedPrefix) ? $"blankNodePrefix_{idSanitized}" : relatedPrefix;
+                    if (relatedName is not null && relatedName.Length > 0)
+                        relatedThingstr.Add($"{relatedPrefix}:{relatedName}");
+                }
+                if (relatedThingstr.Count >= 1)
+                {
+                    var jsonArray = new JsonArray();
+
+                    foreach (var idThing in relatedThingstr)
+                    {
+                        var node = new JsonObject
+                        {
+                            ["@id"] = idThing
+                        };
+                        jsonArray.Add(node);
+                    }
+
+                    thing[$"{relPrefix}:{name}"] = jsonArray.Count == 1 ? jsonArray[0]!.DeepClone() : jsonArray;
+                }
+            }
+
+            return thing.DeepClone();
+
+        }
+
+        private JsonNode AddNodeIntoJsonArray(JsonNode shape, string key, JsonNode value)
+        {
+            if(shape[key] is null)
+                shape[key] = new JsonArray();
+            shape[key]!.AsArray().Add(value);
+            return shape.DeepClone();
+        }
+
+        private JsonObject GetJsonLDNodeShape(JsonNode shapeInfo, string idSanitized)
+        {
+            var shape = new JsonObject();
+
+            shape["@id"] = $"{shapeInfo?["nodeShapeId"]}";
+            shape["@type"] = "sh:NodeShape";
+
+            //iterate through its fields (in between them: properties)
+            if(shapeInfo is not null)
+            {
+                foreach(var (key, shapeField) in shapeInfo.AsObject())
+                {
+                    if(!string.IsNullOrWhiteSpace(key) && shapeField is not null)
+                    {
+
+                        if (key.Equals("properties"))
+                        {
+                            foreach(var propertyInfo in shapeField.AsArray())
+                            {
+                                if(propertyInfo is not null)
+                                    shape = AddNodeIntoJsonArray(shape, "sh:property", GetJsonLDShapeProperty(propertyInfo.AsObject(), idSanitized)).AsObject();
+                            }
+                        }
+                        else
+                        {
+                            shape = GetJsonLDShapeConstraint(key, shapeField, shape, idSanitized).AsObject();
+                        }
+                    }
+                }
+            }
+
+            return shape.DeepClone().AsObject();
+        }
+
+        private JsonNode GetJsonLDShapeProperty(JsonObject propertyInfo, string idSanitized)
+        {
+            var prop = new JsonObject();
+            foreach(var (propKey, propField) in propertyInfo)
+            {
+                if(propField is not null)
+                    prop = GetJsonLDShapeConstraint(propKey, propField, prop, idSanitized).AsObject();
+            }
+            return prop.DeepClone();
+        }
+
+        private JsonNode GetJsonLDShapeConstraint(string key, JsonNode shapeField, JsonNode shape, string idSanitized, bool isArray = false)
+        {
+            if(shapeField is JsonValue shapeValue)
+            {
+                //key: value
+                switch (key.Contains(":") ? key.Split(":").Last().ToLower() : key)
+                {
+                    case "node":
+                    case "and":
+                    case "or":
+                    case "not":
+                    case "xone":
+                    case "path":
+                    case "datatype":
+
+                        //set that the value should be { "@id": value }
+
+                        if(key.Contains("datatype") && shapeValue.GetValue<string>().StartsWith("//"))
+                            shapeValue = JsonValue.Create("http:" + shapeValue.GetValue<string>());
+                        
+                        if (isArray)
+                        {
+                            shape = AddNodeIntoJsonArray(shape, key, new JsonObject{["@id"] = shapeValue.DeepClone()});
+                        }
+                        else
+                        {
+                            shape[key] = new JsonObject{["@id"] = shapeValue.DeepClone()};
+                        }
+                        break;
+                    default:
+                        if (isArray)
+                        {
+                            shape= key.ToLower().Contains("target") ? AddNodeIntoJsonArray(shape, key, new JsonObject{["@id"] = shapeValue.DeepClone()}) : AddNodeIntoJsonArray(shape, key, shapeValue.DeepClone()) ;
+                        }
+                        else
+                        {
+                            shape[key] = key.ToLower().Contains("target") ? new JsonObject{["@id"] = shapeValue.DeepClone()} : shapeValue.DeepClone();
+                        }
+                        break;
+                }
+            }else if(shapeField is JsonArray)
+            {
+                //foreach though the array recursively calling
+                foreach(var element in shapeField.AsArray())
+                {
+                    if(element is not null)
+                        shape = GetJsonLDShapeConstraint(key, element, shape, idSanitized, true);
+                }
+
+            }else if(shapeField is JsonObject shapeObject)
+            {
+                //We don't know whether it's a nodeshape or a property
+                //properties always have path field
+
+                if (isArray)
+                {
+                    shape = AddNodeIntoJsonArray(shape, key, shapeObject.Any(p => p.Key.EndsWith("path", StringComparison.Ordinal)) ? GetJsonLDShapeProperty(shapeObject, idSanitized) : GetJsonLDNodeShape(shapeObject, idSanitized) );
+                }
+                else
+                {
+                    shape[key] = shapeObject.Any(p => p.Key.EndsWith("path", StringComparison.Ordinal)) ? GetJsonLDShapeProperty(shapeObject, idSanitized) : GetJsonLDNodeShape(shapeObject, idSanitized);
+                }
+            }
+            return shape.DeepClone();
+        }
+
+        public async Task<JsonObject?> GetJsonLDFromRegularJson(JsonObject json, string id, bool shape = false)
+        {
+            string idSanitized = SanitizeTypeAndUIDValues(id);
+            var nodes = json[shape ? "shapes" : "things"]?.AsArray() ?? new JsonArray();
+
+            //initialize the context with the namespaces info
+            // prefix: uri
+
+            var context = GetJsonLDContext(json, idSanitized);
+            // if (shape)
+            // {
+            //     context["datatype"] = new JsonObject{["@id"] = "sh:datatype", ["@type"]= "@id"};
+            // }
+
+            var finalNodes = new JsonArray();
 
             //iterate through the thing nodes 
-            foreach (var thingInfo in things)
+            foreach (var node in nodes)
             {
-                var thing = new JsonObject();
-
-                //obtener prefijo
-                var prefix = thingInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
-                prefix = string.IsNullOrWhiteSpace(prefix) ? $"blankNodePrefix_{idSanitized}" : prefix;
-                //@id -> name (it's the thing id but without the ontology name as prefix)
-                thing["@id"] = $"{prefix}:{thingInfo?[string.IsNullOrWhiteSpace(thingInfo?["name"]?.GetValue<string>()) ? "thingId" : "name"]}";
-                //type of node is stored via hasType relation between Things (The Things that represent Types are ignored in the GetOntologyThings method) 
-                //depending on the ontology, one thing may have more than one type´
-                //if 1 -> JsonValue, if more -> JsonLD
-
-                //Type(s):
-                var types = thingInfo?["hasType"];
-                if ((types is not null) && (types.AsArray().Count > 0))
-                {
-                    //this thing has at least one type
-                    foreach (var typeInfo in types.AsArray())
-                    {
-                        var typeName = typeInfo?["name"]?.GetValue<string>();
-                        var typePrefix = typeInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
-                        typePrefix = string.IsNullOrWhiteSpace(typePrefix) ? $"blankNodePrefix_{idSanitized}" : typePrefix;
-
-                        if (typeName is not null && (typeName.Length > 0))
-                        {
-                            if (types.AsArray().Count == 1)
-                            {
-                                //only one type
-                                thing["@type"] = $"{((typePrefix == null || typePrefix.Length == 0) ? $"blankNodePrefix_{idSanitized}" : typePrefix)}:{typeName}";
-                            }
-                            else
-                            {
-                                if (thing["@type"] is null)
-                                    thing["@type"] = new JsonArray();
-                                //more than one type
-                                thing["@type"]?.AsArray().Add($"{((typePrefix == null || typePrefix.Length == 0) ? $"blankNodePrefix_{idSanitized}" : typePrefix)}:{typeName}");
-                            }
-                        }
-                    }
-                }
-
-                //Attributes:
-                var attributes = thingInfo?["hasAttribute"];
-                if ((attributes is not null) && attributes.AsArray().Count > 0)
-                {
-                    //this thing has attributes
-                    foreach (var attributeInfo in attributes.AsArray())
-                    {
-                        //TODO prefix support
-                        var key = attributeInfo?["Attribute.key"]?.GetValue<string>();
-                        var value = attributeInfo?["Attribute.value"]?.GetValue<string>();
-                        var attPrefix = attributeInfo?["Attribute.prefix"]?["prefix"]?.GetValue<string>();
-                        attPrefix = string.IsNullOrWhiteSpace(attPrefix) ? $"blankNodePrefix_{idSanitized}" : attPrefix;
-
-                        if ((key is not null) && (key.Length > 0))
-                        {
-                            //Look for state data in the json (value is null, as it is now Attribute.default):
-                            //Attribute.default ---> Previous Attribute.value
-                            //value ---------------> Value of actual state (can be null)
-                            //lastUpdate ----------> Date of the last time the state changed (can be null)
-                            
-                            if(value == null)
-                            {
-                                //it has a state
-                                // atr.lastUpdate: "...",
-                                // atr.value =  value,
-                                value = attributeInfo?["value"]?.AsValue().ToString();
-                                var defaultValue = attributeInfo?["Attribute.default"]?.GetValue<string>();
-                                var lastUpdate = attributeInfo?["lastUpdate"]?.GetValue<string>();
-
-                                if (defaultValue is not null)
-                                    thing[$"{attPrefix}:{key}.default"] = defaultValue;
-                                    
-                                thing[$"{attPrefix}:{key}.value"] = value;
-                                thing[$"{attPrefix}:{key}.lastUpdate"] = lastUpdate;
-                            }
-                            else
-                            {
-                                thing[$"{attPrefix}:{key}"] = value;
-                            }
-                        }
-                    }
-                }
-                var relations = thingInfo?["relations"];
-                if ((relations is not null) && relations.AsArray().Count > 0)
-                {
-                    //this thing has relations with other things
-                    foreach (var relationInfo in relations.AsArray())
-                    {
-                        //TODO prefix support
-                        var name = relationInfo?["Relation.name"]?.GetValue<string>();
-                        var relPrefix = relationInfo?["Relation.prefix"]?["prefix"]?.GetValue<string>();
-                        relPrefix = string.IsNullOrWhiteSpace(relPrefix) ? $"blankNodePrefix_{idSanitized}" : relPrefix;
-                        var relatedNode = relationInfo?["relatedTo"] ?? relationInfo?["hasChild"];
-                        if (relatedNode is null)
-                        {
-                            continue;
-                        }
-                        //check if there is only one lement or more
-                        if (name is not null && name.Length > 0)
-                        {
-                            List<string> relatedThingstr = new List<string>();
-                            foreach (var relatedThing in relatedNode.AsArray())
-                            {
-                                var relatedName = relatedThing?["name"]?.GetValue<string>();
-                                var relatedPrefix = relatedThing?["Thing.prefix"]?["prefix"]?.GetValue<string>();
-                                relatedPrefix = string.IsNullOrWhiteSpace(relatedPrefix) ? $"blankNodePrefix_{idSanitized}" : relatedPrefix;
-                                if (relatedName is not null && relatedName.Length > 0)
-                                    relatedThingstr.Add($"{relatedPrefix}:{relatedName}");
-                            }
-                            if (relatedThingstr.Count >= 1)
-                            {
-                                var jsonArray = new JsonArray();
-
-                                foreach (var idThing in relatedThingstr)
-                                {
-                                    var node = new JsonObject
-                                    {
-                                        ["@id"] = idThing
-                                    };
-                                    jsonArray.Add(node);
-                                }
-
-                                thing[$"{relPrefix}:{name}"] = jsonArray.Count == 1 ? jsonArray[0]!.DeepClone() : jsonArray;
-                            }
-                        }
-                    }
-                }
                 //add final thing to the things jsonArray
-                finalThings.Add(thing);
+                if(node is not null)
+                    finalNodes.Add(shape ? GetJsonLDNodeShape(node, idSanitized): GetJsonLDThing(node, idSanitized));
             }
 
             //assemble the final json
             var jsonLd = new JsonObject
             {
                 ["@context"] = context,
-                ["@graph"] = finalThings
+                ["@graph"] = finalNodes
             };
 
             return jsonLd;
         }
+
+        // public async Task<JsonObject?> GetJsonLDShapeGraphFromRegularJson(JsonObject json, string id)
+        // {
+
+        //     //TODO: Context (Namespace)
+        //     //TODO: Graph -> Node Shapes
+        //     string idSanitized = SanitizeTypeAndUIDValues(id);
+        //     var finalShapes = new JsonArray();
+
+        //     var shapes = json["shapes"]!.AsArray();
+        //     foreach(var shape in shapes)
+        //     {
+        //         if(shape is not null)
+        //             finalShapes.Add(GetJsonLDNodeShape(shape, idSanitized));
+        //     }
+
+        //     var jsonLd = new JsonObject
+        //     {
+        //         ["@context"] = GetJsonLDContext(json, idSanitized),
+        //         ["@graph"] = finalShapes
+        //     };
+            
+        //     return jsonLd;
+        // }
 
         private void LoadNamespaceIntoGraph(JsonArray namespaces, IGraph graph, string ontologyId)
         {
@@ -623,12 +1086,32 @@ namespace OpenTwinsV2.Twins.Services
             }
         }
 
-        public async Task<VDS.RDF.Graph> GetRDFGraphFromRegularJson(JsonObject json, string id)
+        private void LoadNamespaceIntoGraph(JsonObject namespaces, IGraph graph, string ontologyId)
+        {
+            foreach (var (prefix, uri) in namespaces)
+            {
+                if(uri is not JsonObject)
+                    graph.NamespaceMap.AddNamespace(string.IsNullOrWhiteSpace(prefix.ToString()) ? $"blankNodePrefix_{ontologyId}" : prefix.ToString(), new Uri(uri.ToString()));
+            }
+        }
+
+        private void LoadNamespaceIntoGraph(JsonNode namespaces, IGraph graph, string ontologyId)
+        {
+            if(namespaces is JsonArray nsArr)
+            {
+                LoadNamespaceIntoGraph(nsArr, graph, ontologyId);
+            }else if(namespaces is JsonObject nsObj)
+            {
+                LoadNamespaceIntoGraph(nsObj, graph, ontologyId);
+            }
+        }
+
+        public async Task<VDS.RDF.Graph> GetRDFGraphFromJson(JsonObject json, string id, bool ld = false)
         {
             var idSanitized = SanitizeTypeAndUIDValues(id);
             var store = new TripleStore();
-            var jsonLd = await GetJsonLDFromRegularJson(json, idSanitized);
-            var jsonString = JsonSerializer.Serialize(jsonLd);
+            var jsonLd = ld ? json : await GetJsonLDFromRegularJson(json, idSanitized);
+            var jsonString = System.Text.Json.JsonSerializer.Serialize(jsonLd);
             var parser = new VDS.RDF.Parsing.JsonLdParser();
             using var reader = new StringReader(jsonString);
             parser.Load(store, reader);
@@ -637,8 +1120,8 @@ namespace OpenTwinsV2.Twins.Services
             //extract the namespaces from the Json
             
             JsonArray nsArr = new JsonArray();
-            json.TryGetPropertyValue("namespace", out var nsJson);
-            var ns = (nsJson ?? new JsonArray()).AsArray();
+            json.TryGetPropertyValue(ld ? "@context" :"namespace", out var nsJson);
+            var ns = nsJson ?? new JsonObject();
             
             //load namespaces into graph for eventual prefix parsing to uri
             LoadNamespaceIntoGraph(ns, mergedGraph, idSanitized);
@@ -647,15 +1130,30 @@ namespace OpenTwinsV2.Twins.Services
             {
                 mergedGraph.Merge(g, true); // true = keep namespace mappings
             }
-
             return mergedGraph;
 
         }
 
-        public async Task<MemoryStream> GetTTLFileFromRegularJson(string id, JsonObject json)
+        public async Task<MemoryStream> GetTTLFileFromJsonLd(string id, JsonObject json)
         {
             // var ns = json["namespace"]?.AsArray() ?? new JsonArray();
-            var mergedGraph = await GetRDFGraphFromRegularJson(json, id);
+            var mergedGraph = await GetRDFGraphFromJson(json, id);
+
+            var ttlWriter = new VDS.RDF.Writing.CompressingTurtleWriter();
+            using var sw = new StringWriter();
+            ttlWriter.Save(mergedGraph, sw);
+            string ttlString = sw.ToString();
+
+            //convert the string to bytes
+            var ttlBytes = System.Text.Encoding.UTF8.GetBytes(ttlString);
+            var stream = new MemoryStream(ttlBytes);
+
+            return stream;
+        }
+        public async Task<MemoryStream> GetTTLFileFromRegularJson(string id, JsonObject json, bool ld = false)
+        {
+            // var ns = json["namespace"]?.AsArray() ?? new JsonArray();
+            var mergedGraph = await GetRDFGraphFromJson(json, id, ld);
 
             var ttlWriter = new VDS.RDF.Writing.CompressingTurtleWriter();
             using var sw = new StringWriter();
@@ -674,7 +1172,7 @@ namespace OpenTwinsV2.Twins.Services
             var json = ns is null ? await getJsonWithoutNamespace(id) : await getJsonWithNamespace(id, ns);
             if (json is null)
                 return null;
-            var graph = await GetRDFGraphFromRegularJson(json, id);
+            var graph = await GetRDFGraphFromJson(json, id);
             if(graph is null)
                 return null;
             var store = new TripleStore();

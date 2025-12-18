@@ -1,11 +1,16 @@
 
 
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using J2N.Text;
+using Json.More;
 using Microsoft.AspNetCore.Mvc;
 using OpenTwinsV2.Twins.Services;
 using VDS.RDF;
 using VDS.RDF.Nodes;
 using VDS.RDF.Parsing;
+using VDS.RDF.Shacl;
 
 namespace OpenTwinsV2.Twins.Controllers
 {
@@ -312,7 +317,7 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 var (refPrefix, refId) = _converterService.GetLocalName(triple.Object, graph, shapeId);
                 nquads.AddRange(GetNQuadsReferenceTriples(shapeId, refPrefix, refId));
-                nquads.Add($"{subjectUid} <{(type.Equals("Generic") ? "GenericConstraint.value" : predicate)}> {GetReferenceUid(shapeId, refPrefix, refId)} .");
+                nquads.Add($"{subjectUid} <{(type.Equals("Generic") ? "GenericConstraint.value" : predicate)}> {GetReferenceUid(shapeId, refId, refPrefix)} .");
             }
             else
             {
@@ -370,7 +375,6 @@ namespace OpenTwinsV2.Twins.Controllers
 
             var nquads = new List<string>();
             string prefixPredicate, predicate;
-
             if (!triple.Predicate.NodeType.Equals(NodeType.Literal))
             {
                 (prefixPredicate, predicate) = _converterService.GetLocalName(triple.Predicate, graph, "");  //uri
@@ -380,21 +384,24 @@ namespace OpenTwinsV2.Twins.Controllers
                 prefixPredicate = parentPrefix;
                 predicate = parentPredicate;
             }
-
+            
             predicate ??= "predicate" + Guid.NewGuid();
 
             var isProperty = predicate.ContentEquals("property"); 
             string uid = "";
             if (isProperty)
             {
-                nquads.Add($"{subjectUid} <ShapeProperty.prefix> {GetNamespaceUid(shapeId, prefixPredicate)} .");
                 uid = GetPropertyUid(subjectUid, nProperty);
+                nquads.Add($"{uid} <ShapeProperty.prefix> {GetNamespaceUid(shapeId, prefixPredicate)} .");
+                nquads.Add($"{uid} <dgraph.type> \"ShapeProperty\" .");
+
                 if (predicate.Equals("message") && triple.Object.NodeType.Equals(NodeType.Literal))
                 {
-                    nquads.Add($"{uid} <description> {triple.Object.ToString()}");
+                    nquads.Add($"{uid} <description> \"{triple.Object.ToString()}\" .");
                 }
                 else
                 {
+                    nquads.Add($"{uid} <description> \"No Description\" .");
                     foreach(Triple t in graph.Triples.Where(tr => tr.Subject.Equals(triple.Object)).Distinct().ToList())
                     {
                         nquads.AddRange(GenerateShapeTriples(shapeId, uid, prefixPredicate, "constraints", nProperty, t, graph));
@@ -420,7 +427,7 @@ namespace OpenTwinsV2.Twins.Controllers
                         //constraint
                         uid = GetConstraintUid(subjectUid, prefixPredicate, $"{predicate}{nProperty}");
                         
-                        nquads.Add($"{uid} <constrainId> \"{predicate}\" .");
+                        nquads.Add($"{uid} <constraintId> \"{predicate}\" .");
                         nquads.Add($"{uid} <ShapeConstraint.prefix> {GetNamespaceUid(shapeId, prefixPredicate)} .");
                         string type = CategorizeConstraint(predicate);
                         nquads.Add($"{uid} <dgraph.type> \"{type}Constraint\" .");
@@ -499,7 +506,7 @@ namespace OpenTwinsV2.Twins.Controllers
             }
 
             //Check if the file is of .ttl type
-            var extension = Path.GetExtension(shapeFile.FileName);
+            var extension = System.IO.Path.GetExtension(shapeFile.FileName);
             if (extension == null || extension.ToLower() != ".ttl")
             {
                 return BadRequest("File can only be of .ttl extension, instead recieved a " + (extension is null ? "void" : extension.ToLower()) + " file");
@@ -545,6 +552,8 @@ namespace OpenTwinsV2.Twins.Controllers
                     {
                         nquads.AddRange(GetNQuadsNamespaceTriples(shapeId, createdAt, ns.Prefix, ns.NamespaceUri));
                     }
+                    //Add the default prefix pref{shapeId}
+                    nquads.AddRange(GetNQuadsNamespaceTriples(shapeId, createdAt, $"pref{shapeId}", $"http://example.org/shapeGraph/{shapeId}"));
 
                     // Iterate through Shape nodes
                     var allShapeNodes = graph.Triples
@@ -571,7 +580,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 try
                 {
                     //TODO Load NQUADS List into DGraph
-                    // GetNquadsAsTxtFile(nquads);
+                    GetNquadsAsTxtFile(nquads);
                     var response = await _dgraphService.AddNQuadTripleAsync(nquads);
 
                     return Ok($"{response} {nquads.ToArray().Length} triples added to DGraph successfully");
@@ -634,6 +643,101 @@ namespace OpenTwinsV2.Twins.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, $"Something went wrong while deleting the {shapeId} Shape Graph from DGraph: {ex.GetType}: {ex}");
+            }
+        }
+
+        [HttpGet("{shapeId}/export/Json")]
+        public async Task<IActionResult> ExportShapeGraphInFlattenedJsonFormat(string shapeId)
+        {
+            var check = await _dgraphService.ExistsShapeGraphByIdAsync(shapeId);
+            if (!check)
+            {
+                return NotFound($"{shapeId} Shape Graph does not exist");
+            }
+            JsonObject json;
+            try
+            {
+                // json = await _dgraphService.GetShapeGraphNestedFullJson(shapeId) ?? new JsonElement();
+                json = await _converterService.GetShapeGraphFlattenedJson(shapeId);
+                if (json is null)
+                    throw new Exception($"The received flattened Json of {shapeId} Shape Graph is null");
+            }catch (Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while getting the {shapeId} Shape Graph JSON from DGraph: {ex.GetType}: {ex}");
+            }
+            return Ok(json);
+        }
+
+        [HttpGet("{shapeId}/export/JsonLd")]
+        public async Task<IActionResult> ExportShapeGraphInJsonLdFormat(string shapeId)
+        {
+            var check = await _dgraphService.ExistsShapeGraphByIdAsync(shapeId);
+            if (!check)
+            {
+                return NotFound($"{shapeId} Shape Graph does not exist");
+            }
+            JsonObject json;
+            try
+            {
+                json = await _converterService.GetShapeGraphFlattenedJson(shapeId);
+                if(json is null)
+                    throw new Exception($"The flattened Json obtained of the {shapeId} Shape Graph is null");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while getting the {shapeId} Shape Graph JSON from DGraph: {ex.GetType}: {ex}");
+            }
+            JsonObject jsonLd;
+            try
+            {
+                jsonLd = await _converterService.GetJsonLDFromRegularJson(json, shapeId, true) ?? throw new Exception("Obtained JsonLd is null");
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while getting the JsonLd of the {shapeId} Shape Graph from its Json: {ex.GetType}: {ex}");
+            }
+            return Ok(jsonLd);
+        }
+
+        [HttpGet("{shapeId}/export/TTL")]
+        public async Task<IActionResult> ExportShapeGraphInTTLFormat(string shapeId)
+        {
+            var check = await _dgraphService.ExistsShapeGraphByIdAsync(shapeId);
+            if (!check)
+            {
+                return NotFound($"{shapeId} Shape Graph does not exist");
+            }
+            JsonObject json;
+            try
+            {
+                json = await _converterService.GetShapeGraphFlattenedJson(shapeId) ?? throw new Exception($"The flattened Json obtained of the {shapeId} Shape Graph is null");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while getting the {shapeId} Shape Graph JSON from DGraph: {ex.GetType}: {ex}");
+            }
+            JsonObject jsonLd;
+            try
+            {
+                jsonLd = await _converterService.GetJsonLDFromRegularJson(json, shapeId, true) ?? throw new Exception("Obtained JsonLd is null") ?? throw new Exception($"The obtained JsonLd from the {shapeId} Shape Graph is null");
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while getting the JsonLd of the {shapeId} Shape Graph from its Json: {ex.GetType}: {ex}");
+            }
+            try
+            {
+                return File(await _converterService.GetTTLFileFromRegularJson(shapeId, jsonLd, ld:true), "text/turtle", $"{shapeId}_shapeGraph.ttl");
+            }
+            catch (Exception e)
+            {
+                return StatusCode(500, $"Something wrong while parsing to TTL Format:{e}");
+            }
+        }
+
+        private void PrintGraph(IGraph graph)
+        {
+            foreach(Triple triple in graph.Triples)
+            {
+                Console.WriteLine(triple.ToString());
             }
         }
 

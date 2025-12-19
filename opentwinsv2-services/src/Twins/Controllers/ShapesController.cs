@@ -718,7 +718,7 @@ namespace OpenTwinsV2.Twins.Controllers
             JsonObject jsonLd;
             try
             {
-                jsonLd = await _converterService.GetJsonLDFromRegularJson(json, shapeId, true) ?? throw new Exception("Obtained JsonLd is null") ?? throw new Exception($"The obtained JsonLd from the {shapeId} Shape Graph is null");
+                jsonLd = await _converterService.GetJsonLDFromRegularJson(json, shapeId, true) ?? throw new Exception($"The obtained JsonLd from the {shapeId} Shape Graph is null");
             }catch(Exception ex)
             {
                 return StatusCode(500, $"Something went wrong while getting the JsonLd of the {shapeId} Shape Graph from its Json: {ex.GetType}: {ex}");
@@ -741,7 +741,130 @@ namespace OpenTwinsV2.Twins.Controllers
             }
         }
 
+        [HttpGet("{shapeId}/validate/{twinId}")]
+        public async Task<IActionResult> ValidateTwinWithShapeGraph(string shapeId, string twinId)
+        {
+            var check = await _dgraphService.ExistsShapeGraphByIdAsync(shapeId);
+            if (!check)
+            {
+                return NotFound($"{shapeId} Shape Graph does not exist");
+            }
+            check = await _dgraphService.ExistsThingByIdAsync(twinId);
+            if (!check)
+            {
+                return NotFound($"{twinId} Twin does not exist");
+            }
 
+            JsonObject json;
+            try
+            {
+                json = await _converterService.GetShapeGraphFlattenedJson(shapeId) ?? throw new Exception($"The recieved flattened Json of the {shapeId} shape Graph is null");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while getting the {shapeId} Shape Graph JSON from DGraph: {ex.GetType}: {ex}");
+            }
+            JsonObject jsonLd;
+            try
+            {
+                jsonLd = await _converterService.GetJsonLDFromRegularJson(json, shapeId, true) ?? throw new Exception($"The obtained JsonLd from the {shapeId} Shape Graph is null");
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while getting the JsonLd of the {shapeId} Shape Graph from its Json: {ex.GetType}: {ex}");
+            }
+            //Load Shape Graph in VDS.RDF.ShapeGraph
+            ShapesGraph shapeGraph; 
+            try
+            {
+                Console.WriteLine("------------------ JSON SHAPE GRAPH ----------------------");
+                Console.WriteLine(jsonLd.ToString());
+                IGraph shapeRDFgraph = await _converterService.GetRDFGraphFromJson(jsonLd, shapeId, ld:true) ?? throw new Exception("The graph obtained is null");
+                Console.WriteLine("------------------ SHAPE GRAPH RDF ----------------------");
+                PrintGraph(shapeRDFgraph);
+                shapeGraph = new ShapesGraph(shapeRDFgraph) ?? throw new Exception("The Shape Graph obtained is null");
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while loading the RDF Graph of the Shape Graph {ex.GetType}: {ex}");
+            }
+            Console.WriteLine("------------------ SHAPE GRAPH ----------------------");
+            PrintGraph(shapeGraph);
+
+            //Get the twin + the ontology Graph
+            IGraph compound = new VDS.RDF.Graph();
+            IGraph g1;
+            try
+            {
+                var twinJson = await _converterService.getJsonWithoutNamespace(twinId) ?? throw new Exception("The recieved Json of the Twin is null");
+                g1 = await _converterService.GetRDFGraphFromJson(twinJson, twinId) ?? throw new Exception("The recieved Graph of the Twin is null");
+                
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while loading the RDF Graph of the twin: {ex.GetType}: {ex}");
+            }
+
+            Console.WriteLine("------------------ TWIN ----------------------");
+            PrintGraph(g1);
+
+            //TODO: Add also the ontology to the graphs, how?
+            List<string> ontologies = await _dgraphService.GetOntologiesOfTwinAsync(twinId);
+            foreach(string ontologyId in ontologies)
+            {
+                try
+                {
+                    var ontologyJson = await _converterService.getJsonWithNamespace(ontologyId, await _dgraphService.GetNamespacesInOntologyAsync(ontologyId) ?? null) ?? throw new Exception($"The recieved Json of the {ontologyId} Ontology is null");
+                    var ontologyGraph = await _converterService.GetRDFGraphFromJson(ontologyJson, ontologyId) ?? throw new Exception($"The recieved Graph of the {ontologyId} Ontology is null");
+
+                    compound.Merge(ontologyGraph, true);
+                }catch(Exception ex)
+                {
+                    return StatusCode(500, $"Something went wrong while loading the RDF Graph of the {ontologyId} Ontology. {ex.GetType}: {ex}");
+                }
+            }
+
+            //in compound graph we have the twin and the ontologies it uses
+
+            //TODO: Validation
+
+            var results = shapeGraph.Validate(compound);
+
+            if (results.Conforms)
+            {
+                return Ok("Validation successful — graph conforms to the shape.");
+            }
+
+            StringBuilder report = new StringBuilder();
+            report.AppendLine("Validation FAILED:\n");
+
+            foreach (var res in results.Results)
+            {
+                // Focus node (what failed)
+                string focusNode = res.FocusNode?.ToSafeString() ?? "(unknown node)";
+
+                // Property path (what property failed)
+                string path = res.ResultPath?.ToSafeString() ?? "(no path)";
+
+                // Constraint type (minCount, datatype, etc.)
+                string constraint = res.SourceConstraintComponent?.ToSafeString()
+                                    ?? "(unknown constraint)";
+
+                // Shape
+                string shape = res.SourceShape?.ToSafeString() ?? "(unknown shape)";
+
+                // Severity
+                string severity = res.Severity?.ToSafeString() ?? "Violation";
+
+                report.AppendLine($"• Node: {focusNode}");
+                report.AppendLine($"  Shape: {shape}");
+                report.AppendLine($"  Property: {path}");
+                report.AppendLine($"  Constraint: {constraint}");
+                report.AppendLine($"  Severity: {severity}");
+                report.AppendLine($"  Message: {res.Message}");
+                report.AppendLine();
+            }
+
+            return Ok(report.ToString());
+
+        }
     }
 }
 

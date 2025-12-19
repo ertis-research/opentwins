@@ -946,6 +946,49 @@ namespace OpenTwinsV2.Twins.Services
             return things ?? [];
         }
 
+        public async Task<List<string>> GetOntologiesOfTwinAsync(string twinId)
+        {
+            using var txn = _client.NewTransaction();
+
+            var query = $@"
+            {{
+                things(func: eq(thingId, ""{twinId}"")) {{
+                    ~hasThing{{
+                        ontologyId
+                    }}
+                    ~twins {{
+                        uid
+                        ~hasThing{{
+                            ontologyId
+                        }}
+                    }}
+                }}
+            }}";
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8(); ;
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            // Acceder a things[0]["~twins"]
+            if (!root.TryGetProperty("things", out JsonElement thingsArray) || thingsArray.GetArrayLength() == 0)
+                return [];
+
+            var ontologyIds = new HashSet<string>();
+            JsonElement ontologyId;
+            if(thingsArray[0].TryGetProperty("~hasThing", out ontologyId))
+                ontologyIds.Add(ontologyId.GetProperty("ontologyId").ToString());
+            var twinsProp = thingsArray[0].GetProperty("~twins");
+            var twins = JsonSerializer.Deserialize<List<JsonElement>>(twinsProp.GetRawText()) ?? [];
+            foreach(var thing in twins)
+            {
+                if(thing.TryGetProperty("~hasThing", out ontologyId))
+                    ontologyIds.Add(ontologyId.GetProperty("ontologyId").ToString());
+            }
+            return ontologyIds.ToList();
+        }
+
         public async Task<JsonElement?> GetNamespacesInOntologyAsync(string ontologyId)
         {
             var txn = _client.NewTransaction();

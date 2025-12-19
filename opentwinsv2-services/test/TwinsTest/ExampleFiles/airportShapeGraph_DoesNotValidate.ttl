@@ -1,40 +1,65 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix prefairport: <http://example.org/twin/airport/> .
 @prefix otv2: <http://opentwinsv2.org/> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-# Gate must have a boolean occupied.value
-prefairport:GateShape_strict a sh:NodeShape ;
-    sh:targetSubjectsOf prefairport:occupied.value ;
+############################
+# Gate Shape (STRICT)
+############################
+
+prefairport:GateShape_strict
+    a sh:NodeShape ;
+
+    # Explicit targeting – no silent skipping
+    sh:targetNode prefairport:Gate ,
+                  prefairport:Gate2 ;
+
+    # Must belong to exactly one Terminal
+    sh:property [
+        sh:path otv2:tiene ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:node prefairport:TerminalShape_strict ;
+    ] ;
+
+    # occupied.value MUST exist and MUST be boolean
     sh:property [
         sh:path prefairport:occupied.value ;
-        sh:datatype xsd:boolean ;
-        sh:minCount 1 ;      # required!
-        sh:maxCount 1 ;
-    ] ;
-    sh:property [
-        sh:path otv2:tiene ;
-        sh:node prefairport:TerminalShape_strict ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
+        sh:datatype xsd:boolean ;
     ] .
 
-# Terminal must have exactly 2 child gates
-prefairport:TerminalShape_strict a sh:NodeShape ;
-    sh:targetSubjectsOf otv2:hasChild ;
+############################
+# Terminal Shape (STRICT)
+############################
+
+prefairport:TerminalShape_strict
+    a sh:NodeShape ;
+
+    sh:targetNode prefairport:Terminal ;
+
+    # Must have exactly 2 Gates
     sh:property [
         sh:path otv2:hasChild ;
-        sh:node prefairport:GateShape_strict ;
         sh:minCount 2 ;
         sh:maxCount 2 ;
+        sh:node prefairport:GateShape_strict ;
     ] .
 
-# Terminal2 must have EXACTLY ONE gate
-prefairport:Terminal2Shape_strict a sh:NodeShape ;
-    sh:targetSubjectsOf otv2:tiene ;
+############################
+# Terminal2 Shape (STRICT)
+############################
+
+prefairport:Terminal2Shape_strict
+    a sh:NodeShape ;
+
+    sh:targetNode prefairport:Terminal2 ;
+
+    # Must have exactly 1 Gate – your data has 2 → FAIL
     sh:property [
         sh:path otv2:tiene ;
-        sh:node prefairport:GateShape_strict ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
+        sh:node prefairport:GateShape_strict ;
     ] .

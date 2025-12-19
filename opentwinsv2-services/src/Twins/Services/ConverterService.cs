@@ -1040,30 +1040,6 @@ namespace OpenTwinsV2.Twins.Services
             return jsonLd;
         }
 
-        // public async Task<JsonObject?> GetJsonLDShapeGraphFromRegularJson(JsonObject json, string id)
-        // {
-
-        //     //TODO: Context (Namespace)
-        //     //TODO: Graph -> Node Shapes
-        //     string idSanitized = SanitizeTypeAndUIDValues(id);
-        //     var finalShapes = new JsonArray();
-
-        //     var shapes = json["shapes"]!.AsArray();
-        //     foreach(var shape in shapes)
-        //     {
-        //         if(shape is not null)
-        //             finalShapes.Add(GetJsonLDNodeShape(shape, idSanitized));
-        //     }
-
-        //     var jsonLd = new JsonObject
-        //     {
-        //         ["@context"] = GetJsonLDContext(json, idSanitized),
-        //         ["@graph"] = finalShapes
-        //     };
-            
-        //     return jsonLd;
-        // }
-
         private void LoadNamespaceIntoGraph(JsonArray namespaces, IGraph graph, string ontologyId)
         {
             foreach (var ns in namespaces)
@@ -1134,25 +1110,8 @@ namespace OpenTwinsV2.Twins.Services
 
         }
 
-        public async Task<MemoryStream> GetTTLFileFromJsonLd(string id, JsonObject json)
-        {
-            // var ns = json["namespace"]?.AsArray() ?? new JsonArray();
-            var mergedGraph = await GetRDFGraphFromJson(json, id);
-
-            var ttlWriter = new VDS.RDF.Writing.CompressingTurtleWriter();
-            using var sw = new StringWriter();
-            ttlWriter.Save(mergedGraph, sw);
-            string ttlString = sw.ToString();
-
-            //convert the string to bytes
-            var ttlBytes = System.Text.Encoding.UTF8.GetBytes(ttlString);
-            var stream = new MemoryStream(ttlBytes);
-
-            return stream;
-        }
         public async Task<MemoryStream> GetTTLFileFromRegularJson(string id, JsonObject json, bool ld = false)
         {
-            // var ns = json["namespace"]?.AsArray() ?? new JsonArray();
             var mergedGraph = await GetRDFGraphFromJson(json, id, ld);
 
             var ttlWriter = new VDS.RDF.Writing.CompressingTurtleWriter();

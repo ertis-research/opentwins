@@ -423,7 +423,7 @@ namespace OpenTwinsV2.Twins.Services
             }
         }
 
-        public async Task<List<JsonElement>> GetAllOntologiesIdsAsync()
+        public async Task<List<JsonElement>?> GetAllOntologiesIdsAsync()
         {
             var txn = _client.NewTransaction();
             try
@@ -1753,7 +1753,7 @@ namespace OpenTwinsV2.Twins.Services
                     foreach (var prop in element.EnumerateObject())
                     {
                         if (prop.NameEquals("uid") && prop.Value.ValueKind == JsonValueKind.String)
-                            yield return prop.Value.GetString();
+                            yield return prop.Value.GetString() ?? "";
 
                         foreach (var value in GetUidFromJsonElement(prop.Value))
                             yield return value;

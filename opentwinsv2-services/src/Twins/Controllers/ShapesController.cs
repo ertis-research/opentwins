@@ -27,6 +27,13 @@ namespace OpenTwinsV2.Twins.Controllers
             _converterService = converterService;
         }
 
+        /// <summary>
+        /// Retrieves the Shape Graphs stored in the DataBase.
+        /// </summary>
+        /// <returns>
+        /// Returns 200 Ok with the list of Shape Graphs with its identifiers and shapes identifiers.<br/>
+        /// Returns 500 Internal Server Error if there was any issue while retrieving the Shape Graphs.
+        /// </returns>
         [HttpGet("")]
         public async Task<IActionResult> GetAllShapeGraphs()
         {
@@ -496,6 +503,17 @@ namespace OpenTwinsV2.Twins.Controllers
             return nquads;
         }
 
+        /// <summary>
+        /// Creates a Shape Graph from the provided TTL File.
+        /// </summary>
+        /// <param name="shapeId">The identifier of the Shape Graph</param>
+        /// <param name="shapeFile">The TTL File with the Shape Graph.</param>
+        /// <returns>
+        /// Returns 200 Ok with the response obtained from the DataBase and how NQuads triples were added.<br/>
+        /// Returns 400 Bad Request if the file is void or not of TTL extension.<br/>
+        /// Returns 409 Conflict if there is already a Shape Graph with the same identifier.<br/>
+        /// Returns 500 Internal Server Error if there was any issue while either processing the TTL File or uploading the NQuads into the DataBase.
+        /// </returns>
         [HttpPost("{shapeId}")]
         public async Task<IActionResult> UploadShapeGraph(string shapeId, IFormFile shapeFile)
         {
@@ -593,17 +611,42 @@ namespace OpenTwinsV2.Twins.Controllers
             return Conflict($"There is already a Shape Graph with the id {shapeId}");
         }
 
+        /// <summary>
+        /// Retrieves the List of Shapes from the Shape Graph.
+        /// </summary>
+        /// <param name="shapeId">The identifier of the Shape Graph.</param>
+        /// <returns>
+        /// Returns 200 Ok with the list of Shapes of the Shape Graph.<br/>
+        /// Returns 404 Not Found if the Shape Graph was not found.<br/>
+        /// Returns 500 Internal Server Error if there was any issue while retrieving the Shapes. 
+        /// </returns>
         [HttpGet("{shapeId}")]
         public async Task<IActionResult> GetShapeGraphByID(string shapeId)
         {
-            var check = await _dgraphService.ExistsShapeGraphByIdAsync(shapeId);
-            if (check)
+            try
             {
-                return Ok(await _dgraphService.GetShapesFromShapeGraph(shapeId));
+                var check = await _dgraphService.ExistsShapeGraphByIdAsync(shapeId);
+                if (check)
+                {
+                    return Ok(await _dgraphService.GetShapesFromShapeGraph(shapeId));
+                }
+                return NotFound($"{shapeId} Shape Graph does not exist");
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something wrong happened while obtaining the Shapes from the {shapeId} Shape Graph:\n{ex.GetType()}: {ex.Message}");
             }
-            return NotFound($"{shapeId} Shape Graph does not exist");
         }
 
+        /// <summary>
+        /// Retrieves a Shape from the Shape Graph.
+        /// </summary>
+        /// <param name="shapeId">The identifier of the Shape Graph.</param>
+        /// <param name="nodeShapeId">The identifier of the Shape.</param>
+        /// <returns>
+        /// Returns 200 Ok with the Shape of the Shape Graph.<br/>
+        /// Returns 404 Not Found if either the Shape Graph was not found, there was no Shape with the provided identifier in the Shape Graph, or the Shape's information could not be retrieved.<br/>
+        /// Returns 500 Internal Server Error if there was any issue while obtaining the Shape from the Shape Graph.
+        /// </returns>
         [HttpGet("{shapeId}/shapes/{nodeShapeId}")]
         public async Task<IActionResult> GetNodeShapeFromShapeGraphById(string shapeId, string nodeShapeId)
         {
@@ -624,9 +667,21 @@ namespace OpenTwinsV2.Twins.Controllers
             catch (KeyNotFoundException ex)
             {
                 return NotFound(new { message = ex.Message });
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something wrong happened while obtaining the Shapes from the {shapeId} Shape Graph:\n{ex.GetType()}: {ex.Message}");
             }
         }
 
+        /// <summary>
+        /// Deletes a Shape Graoh by its identifier.
+        /// </summary>
+        /// <param name="shapeId">The identifier of the Shape Graph.</param>
+        /// <returns>
+        /// Returns 204 No Content if the Shape Graph was successfully deleted.<br/>
+        /// Returns 404 Not Found if the Shape Graph was not found.<br/>
+        /// Returns 500 Internal Server Error if there was any issue while deleting the Shape Graph.
+        /// </returns>
         [HttpDelete("{shapeId}")]
         public async Task<IActionResult> DeleteShapeGraphByID(string shapeId)
         {
@@ -638,7 +693,7 @@ namespace OpenTwinsV2.Twins.Controllers
             try
             {
                 var response = await _dgraphService.DeleteShapeGraphByIdAsync(shapeId);
-                return Ok(response);
+                return NoContent();
             }
             catch (Exception ex)
             {
@@ -646,6 +701,15 @@ namespace OpenTwinsV2.Twins.Controllers
             }
         }
 
+        /// <summary>
+        /// Returns the ShapeGraph in a flattened JSON format.
+        /// </summary>
+        /// <param name="shapeId">The identifier of the Shape Graph.</param>
+        /// <returns>
+        /// Returns 200 Ok with the flattened JSON of the Shape Graph.<br/>
+        /// Returns 404 Not Found if the Shape Graph was not found.<br/>
+        /// Returns 500 Internal Server Error if there was any issue while generating the JSON of the Shape Graph.
+        /// </returns>
         [HttpGet("{shapeId}/export/Json")]
         public async Task<IActionResult> ExportShapeGraphInFlattenedJsonFormat(string shapeId)
         {
@@ -657,10 +721,7 @@ namespace OpenTwinsV2.Twins.Controllers
             JsonObject json;
             try
             {
-                // json = await _dgraphService.GetShapeGraphNestedFullJson(shapeId) ?? new JsonElement();
-                json = await _converterService.GetShapeGraphFlattenedJson(shapeId);
-                if (json is null)
-                    throw new Exception($"The received flattened Json of {shapeId} Shape Graph is null");
+                json = await _converterService.GetShapeGraphFlattenedJson(shapeId) ?? throw new Exception($"The received flattened Json of {shapeId} Shape Graph is null");
             }catch (Exception ex)
             {
                 return StatusCode(500, $"Something went wrong while getting the {shapeId} Shape Graph JSON from DGraph: {ex.GetType}: {ex}");
@@ -668,6 +729,15 @@ namespace OpenTwinsV2.Twins.Controllers
             return Ok(json);
         }
 
+        /// <summary>
+        /// Returns the Shape Graph in a JSON-LD format.
+        /// </summary>
+        /// <param name="shapeId">The identifier of the Shape Graph.</param>
+        /// <returns>
+        /// Returns 200 Ok with the JSON-LD of the Shape Graph.<br/>
+        /// Returns 404 Not Found if the Shape Graph was not found.<br/>
+        /// Returns 500 Internal Server Error if there was any issue while either obtaining the flattened JSON or the JSON-LD of the Shape Graph.
+        /// </returns>
         [HttpGet("{shapeId}/export/JsonLd")]
         public async Task<IActionResult> ExportShapeGraphInJsonLdFormat(string shapeId)
         {
@@ -679,9 +749,7 @@ namespace OpenTwinsV2.Twins.Controllers
             JsonObject json;
             try
             {
-                json = await _converterService.GetShapeGraphFlattenedJson(shapeId);
-                if(json is null)
-                    throw new Exception($"The flattened Json obtained of the {shapeId} Shape Graph is null");
+                json = await _converterService.GetShapeGraphFlattenedJson(shapeId) ?? throw new Exception($"The flattened Json obtained of the {shapeId} Shape Graph is null");
             }
             catch (Exception ex)
             {
@@ -698,6 +766,15 @@ namespace OpenTwinsV2.Twins.Controllers
             return Ok(jsonLd);
         }
 
+        /// <summary>
+        /// Returns the Shape Graph in a TTL format File.
+        /// </summary>
+        /// <param name="shapeId">The identifier of the Shape Graph.</param>
+        /// <returns>
+        /// Returns 200 Ok with the TTL File of the Shape Graph.<br/>
+        /// Returns 404 Not Found if the Shape Graph was not found.<br/>
+        /// Returns 500 internal Server Error if there was any issue while either obtaining the flattened JSON or the TTL File of the Shape Graph.
+        /// </returns>
         [HttpGet("{shapeId}/export/TTL")]
         public async Task<IActionResult> ExportShapeGraphInTTLFormat(string shapeId)
         {
@@ -733,14 +810,16 @@ namespace OpenTwinsV2.Twins.Controllers
             }
         }
 
-        private void PrintGraph(IGraph graph)
-        {
-            foreach(Triple triple in graph.Triples)
-            {
-                Console.WriteLine(triple.ToString());
-            }
-        }
-
+        /// <summary>
+        /// Validates a Twin, taking into account also its Ontologies, using the Shape Graph.
+        /// </summary>
+        /// <param name="shapeId">The identifier of the Shape Graph.</param>
+        /// <param name="twinId">The identifier of the Twin.</param>
+        /// <returns>
+        /// Returns 200 Ok with the report of the results obtained after the ShaCL valdiation.<br/>
+        /// Returns 404 Not Found if either the ShapeGraph or the Twin were not found.<br/>
+        /// Returns 500 Internal Server Error if there was any issue while obtaining the flattened JSON or generating the necessary Graphs.
+        /// </returns>
         [HttpGet("{shapeId}/validate/{twinId}")]
         public async Task<IActionResult> ValidateTwinWithShapeGraph(string shapeId, string twinId)
         {
@@ -776,18 +855,12 @@ namespace OpenTwinsV2.Twins.Controllers
             ShapesGraph shapeGraph; 
             try
             {
-                Console.WriteLine("------------------ JSON SHAPE GRAPH ----------------------");
-                Console.WriteLine(jsonLd.ToString());
                 IGraph shapeRDFgraph = await _converterService.GetRDFGraphFromJson(jsonLd, shapeId, ld:true) ?? throw new Exception("The graph obtained is null");
-                Console.WriteLine("------------------ SHAPE GRAPH RDF ----------------------");
-                PrintGraph(shapeRDFgraph);
                 shapeGraph = new ShapesGraph(shapeRDFgraph) ?? throw new Exception("The Shape Graph obtained is null");
             }catch(Exception ex)
             {
                 return StatusCode(500, $"Something went wrong while loading the RDF Graph of the Shape Graph {ex.GetType}: {ex}");
             }
-            Console.WriteLine("------------------ SHAPE GRAPH ----------------------");
-            PrintGraph(shapeGraph);
 
             //Get the twin + the ontology Graph
             IGraph compound = new VDS.RDF.Graph();
@@ -802,10 +875,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 return StatusCode(500, $"Something went wrong while loading the RDF Graph of the twin: {ex.GetType}: {ex}");
             }
 
-            Console.WriteLine("------------------ TWIN ----------------------");
-            PrintGraph(g1);
-
-            //TODO: Add also the ontology to the graphs, how?
+            //Add also the ontology to the graphs
             List<string> ontologies = await _dgraphService.GetOntologiesOfTwinAsync(twinId);
             foreach(string ontologyId in ontologies)
             {
@@ -823,7 +893,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
             //in compound graph we have the twin and the ontologies it uses
 
-            //TODO: Validation
+            //Validation
 
             var results = shapeGraph.Validate(compound);
 

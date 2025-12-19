@@ -240,6 +240,12 @@ namespace OpenTwinsV2.Twins.Controllers
                         interestingPredicates.Any(ip => p.ToString().Contains(ip)));
         }
 
+        /// <summary>
+        /// Consults the Ontologies stored on the DataBase.
+        /// </summary>
+        /// <returns>
+        /// Returns a list of the ids of the ontologies stored on the DataBase.
+        /// </returns>
         [HttpGet("")]
         public async Task<IActionResult> GetAllOntologiesId()
         {
@@ -252,6 +258,17 @@ namespace OpenTwinsV2.Twins.Controllers
             }
         }
 
+        /// <summary>
+        /// Creates a new Ontology from the TTL File provided and with the identifier provided.
+        /// </summary>
+        /// <param name="ontologyFile">The TTL File that defines the Ontology's structure.</param>
+        /// <param name="ontologyId">The identifier of the Ontology.</param>
+        /// <returns>
+        /// Returns 200 Ok with the list of NQuads triples that were sent to the DataBase.<br/>
+        /// Returns 400 Bad Request if the file provided is void or not of TTL Extension.<br/>
+        /// Returns 409 Conflict if an ontology with the same identifier already exists on the DataBase.<br/>
+        /// Returns 500 Internal Server Error if there were any issue while parsing the Ontology or while uploading it into the DataBase.
+        /// </returns>
         [HttpPost("{ontologyId}")]
         public async Task<IActionResult> UploadOntology(IFormFile ontologyFile, string ontologyId)
         {
@@ -265,7 +282,7 @@ namespace OpenTwinsV2.Twins.Controllers
             var extension = Path.GetExtension(ontologyFile.FileName);
             if (extension == null || extension.ToLower() != ".ttl")
             {
-                return BadRequest("File can only be of .ttl extension, instead recieved a " + extension.ToLower() + " file");
+                return BadRequest($"File can only be of .ttl extension, instead recieved a {(extension is null ? "no extension" : extension.ToLower())} file");
             }
 
             if (!await _dgraphService.ExistsOntologyByIdAsync(ontologyId))
@@ -373,17 +390,15 @@ namespace OpenTwinsV2.Twins.Controllers
                                 //Support for "type" and "a" predicate
                                 //create or find a thing whose thingId is the name of the type, and with this subject, relate it to the type Thing through hasType relation
                                 var (typePrefix, typeOfNode) = _converterService.GetLocalName(triple.Object, graph, ontologyId);
-                                Console.WriteLine("PREFIX: " + typePrefix + ", TYPE: " + typeOfNode);
                                 // var typeOfNode = ((ILiteralNode)triple.Object).ToString();
-                                string match = nquads.FirstOrDefault(nquad => nquad.Contains($"<thingId> {typeOfNode}")); //null manegement ahead
+                                string match = nquads.FirstOrDefault(nquad => nquad.Contains($"<thingId> {typeOfNode}")) ?? ""; //null manegement ahead
                                 string typeUid = "";
                                 //find out if it is already a Thing
-                                if (match != null)
+                                if (match is not null || string.IsNullOrWhiteSpace(match))
                                 {
                                     //the Thing already exists
                                     //first we get the uid of the Type Thing
-                                    typeUid = match.Split('<')[0];
-                                    Console.WriteLine("UID de Type: " + typeUid);
+                                    typeUid = match!.Split('<')[0];
                                 }
                                 else
                                 {
@@ -394,7 +409,7 @@ namespace OpenTwinsV2.Twins.Controllers
                                 }
                                 if (typeUid.Equals(""))
                                 {
-                                    //typeUid has nit been instanciated correctly, something has gone wrong
+                                    //typeUid has not been instanciated correctly, something has gone wrong
                                     return StatusCode(500, $"Something wrong happened while importing the Ontology to DGraph:\nType Uid of ${subject} node not instanciated");
                                 }
 
@@ -411,7 +426,6 @@ namespace OpenTwinsV2.Twins.Controllers
                             {
                                 //Relation between 2 nodes
                                 string obj = _converterService.GetUid(triple.Object, graph);
-                                Console.WriteLine($"SUBJECT: {subject} OBJECT: {obj}");
                                 //check if the relation is bidirectional or not
                                 //if yes, check if the relation object has already been added to the nquads
                                 var (bid, existent) = isRelationBidirectional(graph, triple, subject, obj, predicate, nquads);
@@ -437,6 +451,15 @@ namespace OpenTwinsV2.Twins.Controllers
             return Conflict("There is already an ontology with this id");
         }
 
+        /// <summary>
+        /// Retrieves the List of Things with its Attributes and Relations that belong to the Ontology with the provided identifier.
+        /// </summary>
+        /// <param name="ontologyId">The identifier of the Ontology.</param>
+        /// <returns>
+        /// Returns 200 Ok with the List of Things.<br/>
+        /// Returns 404 Not Found if the Ontology was not found.<br/>
+        /// Returns 500 if there were any issue retrieving the things from the DataBase.
+        /// </returns>
         [HttpGet("{ontologyId}")]
         public async Task<IActionResult> GetThingsByOntologyId(string ontologyId)
         {
@@ -449,6 +472,16 @@ namespace OpenTwinsV2.Twins.Controllers
             return Ok(response);
         }
 
+        /// <summary>
+        /// Retrieves the Thing with its Attributes and Relations that has the thing identifier provided and also belongs to the Ontology specified.
+        /// </summary>
+        /// <param name="ontologyId">The identifier of the Ontology.</param>
+        /// <param name="thingId">The identifier of the Thing.</param>
+        /// <returns>
+        /// Returns 200 Ok with the Thing information.<br/>
+        /// Returns 404 Not Found if the Ontology or the Thing were not found.<br/>
+        /// Returns 500 Internal Server Error if there were any issue while retrieving the Thing Information from the DataBase.
+        /// </returns>
         [HttpGet("{ontologyId}/things/{thingId}")]
         public async Task<IActionResult> GetThingByOntologyAndThingId(string ontologyId, string thingId)
         {
@@ -470,6 +503,16 @@ namespace OpenTwinsV2.Twins.Controllers
 
         }
 
+        /// <summary>
+        /// Retrieves the list of all the pairs of Things related to each other with the Relation specified.
+        /// </summary>
+        /// <param name="ontologyId">The identifier of the Ontology.</param>
+        /// <param name="relationName">The name of the Relation.</param>
+        /// <returns>
+        /// Returns 200 Ok with the list of pairs of the Relation.<br/>
+        /// Returns 404 Not Found if either the Ontology was not found or there was no Relation with the specified name in the Ontology.<br/>
+        /// Returns 500 Internal Server Error if there were any issue while retrieving the Relation pairs from the DataBase.
+        /// </returns>
         [HttpGet("{ontologyId}/relations/{relationName}")]
         public async Task<IActionResult> GetThingsByRelationName(string ontologyId, string relationName)
         {
@@ -492,6 +535,16 @@ namespace OpenTwinsV2.Twins.Controllers
 
         }
 
+        /// <summary>
+        /// Retrieves the list of values the specified Attribute of the Ontology takes and the thing associated to that value.
+        /// </summary>
+        /// <param name="ontologyId">The identifier of the Ontology.</param>
+        /// <param name="attributeName">The name of the Attribute.</param>
+        /// <returns>
+        /// Returns 200 Ok with the list of values of the Attribute.<br/>
+        /// Returns 404 Not Found if either the Ontology was not found or there was no Attribute with the name provided in the Ontology.<br/>
+        /// Returns 500 Internal Server Error if there was any issue while retrieving the Attribute values from the DataBase.
+        /// </returns>
         [HttpGet("{ontologyId}/attributes/{attributeName}")]
         public async Task<IActionResult> GetThingsByAttributeName(string ontologyId, string attributeName)
         {
@@ -564,6 +617,15 @@ namespace OpenTwinsV2.Twins.Controllers
             return res.Count > 0 ? res : null;
         }
 
+        /// <summary>
+        /// Deleted an ontology by its identifier.
+        /// </summary>
+        /// <param name="ontologyId">The identifier of the Ontology.</param>
+        /// <returns>
+        /// Returns 204 No Content if the Ontology was successfully deleted.<br/>
+        /// Returns 404 Not Found if the Ontology was not Found.<br/>
+        /// Returns 500 Internal Server Error if there was any issue while deleting the Ontology from the DataBase.
+        /// </returns>
         [HttpDelete("{ontologyId}")]
         public async Task<IActionResult> DeleteOntology(string ontologyId)
         {
@@ -575,15 +637,25 @@ namespace OpenTwinsV2.Twins.Controllers
             try
             {
                 var result = await _dgraphService.DeleteByOntologyId(ontologyId);
-                return Ok(result);
+                return NoContent();
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Something went wrong while deleting the {ontologyId} ontology from DGraph");
+                return StatusCode(500, $"Something went wrong while deleting the {ontologyId} ontology from DGraph: ${ex.GetType()} {ex.Message}");
             }
 
         }
 
+        /// <summary>
+        /// Deletes an specific Thing from the Ontology.
+        /// </summary>
+        /// <param name="ontologyId">The identifier of the Ontology.</param>
+        /// <param name="thingId">The identifier of the Thing.</param>
+        /// <returns>
+        /// Returns 204 No Content if the Thing was successfully deleted from the Ontology and DataBase.<br/>
+        /// Returns 404 Not Found if wither the Ontology was not found or there was no Thing with the provided identifier in the Ontology.<br/>
+        /// Returns 505 Internal Server Error if there was any issue while deleting the Thing from the DataBase.
+        /// </returns>
         [HttpDelete("{ontologyId}/things/{thingId}")]
         public async Task<IActionResult> DeleteThingFromOntology(string ontologyId, string thingId)
         {
@@ -596,15 +668,27 @@ namespace OpenTwinsV2.Twins.Controllers
             try
             {
                 var result = await _dgraphService.DeleteByOntologyIdAndThingId(ontologyId, thingId);
-                return Ok(result);
+                return NoContent();
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Something went wrong while deleting the {thingId} thing from the {ontologyId} ontology from DGraph");
+                return StatusCode(500, $"Something went wrong while deleting the {thingId} thing from the {ontologyId} ontology from DGraph: {ex.GetType()} {ex.Message}");
             }
 
         }
 
+        /// <summary>
+        /// Instanciates a Thing from the Ontology.
+        /// </summary>
+        /// <param name="ontologyId">The identifier of the Ontology.</param>
+        /// <param name="thingId">The identifier of the Thing.</param>
+        /// <param name="id">The identifier of the instanciated Thing.</param>
+        /// <returns>
+        /// Returns 200 Ok with a message of success.<br/>
+        /// Returns 404 Not Found if either the Ontology was not found or there was no Thing with the provided id in the Ontology.<br/>
+        /// Returns 409 Conflict if there is already an instanciated Thing with the provided identifier.<br/>
+        /// Returns 500 Internal Server Error if there was any issue while instanciatinf the Thing.
+        /// </returns>
         [HttpPost("{ontologyId}/things/{thingId}/instanciate/{id}")]
         public async Task<IActionResult> InstanciateThingOfOntology(string ontologyId, string thingId, string id)
         {
@@ -621,7 +705,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 //Provisional: If it throws an exception, then the id is unused
                 await _thingsService.GetThingAsync(id);
             }
-            catch (KeyNotFoundException e)
+            catch (KeyNotFoundException)
             {
                 conflict = false;
             }
@@ -655,6 +739,15 @@ namespace OpenTwinsV2.Twins.Controllers
             return Conflict($"There is already an instanced thing with the id {id}");
         }
 
+        /// <summary>
+        /// Returns the Ontology in a JSON format.
+        /// </summary>
+        /// <param name="ontologyId">The identifier of the Ontology</param>
+        /// <returns>
+        /// Returns 200 Ok with the Ontology's JSON.<br/>
+        /// Returns 404 Not Found if the Ontology was not found.<br/>
+        /// Returns 500 Internal Server Error if there was any issue while obtaining the namespace or JSON of the Ontology.
+        /// </returns>
         [HttpGet("{ontologyId}/export/Json")]
         public async Task<IActionResult> GetAllOntologyNodes(string ontologyId)
         {
@@ -664,12 +757,26 @@ namespace OpenTwinsV2.Twins.Controllers
                 return NotFound(new { message = $"Ontology '{ontologyId}' does not exist" });
             }
 
-            var ns = await _dgraphService.GetNamespacesInOntologyAsync(ontologyId);
-            var json = await _converterService.getJsonWithNamespace(ontologyId, ns);
-
-            return Ok(json);
+            try
+            {
+                var ns = await _dgraphService.GetNamespacesInOntologyAsync(ontologyId);
+                var json = await _converterService.getJsonWithNamespace(ontologyId, ns);
+                return Ok(json);
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Failed to generate the {ontologyId} Ontology JSON: {ex.GetType()} {ex.Message}");
+            }
         }
 
+        /// <summary>
+        /// Returns the Ontology in a JSON-LD format.
+        /// </summary>
+        /// <param name="ontologyId">The identifier of the Ontology.</param>
+        /// <returns>
+        /// Returns 200 Ok with the Ontology's JSON-LD.<br/>
+        /// Returns 404 Not FOund if the Ontology was not found.<br/>
+        /// Returns 500 Internal Server Error if either the namespace, JSON in regular format or final JSON-LD obtained were null. 
+        /// </returns>
         [HttpGet("{ontologyId}/export/JsonLd")]
         public async Task<IActionResult> ExportOntologyInJsonLdFormat(string ontologyId)
         {
@@ -700,42 +807,17 @@ namespace OpenTwinsV2.Twins.Controllers
             }
 
             return Ok(jsonLd);
-
-            //Example format:
-            /*
-            {
-                "@context": {
-                    "@vocab": "http://schema.org/",
-                    "ex": "http://example.org/university#",
-                    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-                    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
-                    "owl": "http://www.w3.org/2002/07/owl#"
-                },
-                "@graph": [
-                    {
-                    "@id": "ex:Person",
-                    "@type": "rdfs:Class",
-                    "rdfs:label": "Person",
-                    "rdfs:comment": "A human being who is part of the university."
-                    },
-                    {
-                    "@id": "ex:Student",
-                    "@type": "rdfs:Class",
-                    "rdfs:subClassOf": { "@id": "ex:Person" },
-                    "rdfs:label": "Student",
-                    "rdfs:comment": "A person who is enrolled in one or more courses."
-                    },
-                    {
-                    "@id": "ex:Professor",
-                    "@type": "rdfs:Class",
-                    "rdfs:subClassOf": { "@id": "ex:Person" },
-                    "rdfs:label": "Professor",
-                    "rdfs:comment": "A person who teaches courses."
-                    }
-                ]
-            */
         }
 
+        /// <summary>
+        /// Returns Ontology in a TTL Format File. 
+        /// </summary>
+        /// <param name="ontologyId">The identifier of the Ontology.</param>
+        /// <returns>
+        /// Returns 200 Ok with the TTL File of the Ontology.<br/>
+        /// Returns 404 Not Found if the Ontology was not found.<br/>
+        /// Returns 500 Internal Server Error if either the namespace or the JSON of the Ontology obtained were null, or there was any issue generating the TTL File.
+        /// </returns>
         [HttpGet("{ontologyId}/export/TTL")]
         public async Task<IActionResult> ExportOntologyInTTLFormat(string ontologyId)
         {
@@ -766,46 +848,20 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 return StatusCode(500, $"Something wrong while parsing to TTL Format:{e}");
             }
-
-            //Example format:
-            /*
-            @prefix ex: <http://example.org/> .
-            @prefix foaf: <http://xmlns.com/foaf/0.1/> .
-            @prefix schema: <http://schema.org/> .
-
-            ex:alice a foaf:Person ;
-                foaf:name "Alice" ;
-                foaf:age 30 ;
-                foaf:knows ex:bob, ex:carol ;
-                schema:memberOf ex:bookClub .
-
-            ex:bob a foaf:Person ;
-                foaf:name "Bob" ;
-                foaf:age 25 ;
-                foaf:knows ex:alice, ex:dave ;
-                schema:memberOf ex:chessClub .
-
-            ex:carol a foaf:Person ;
-                foaf:name "Carol" ;
-                foaf:age 28 ;
-                foaf:knows ex:alice ;
-                schema:memberOf ex:bookClub .
-
-            ex:dave a foaf:Person ;
-                foaf:name "Dave" ;
-                foaf:age 35 ;
-                foaf:knows ex:bob ;
-                schema:memberOf ex:chessClub .
-
-            ex:bookClub a schema:Organization ;
-                schema:name "Local Book Club" .
-
-            ex:chessClub a schema:Organization ;
-                schema:name "City Chess Club" .
-
-            */
         }
 
+        /// <summary>
+        /// Runs a SparQL query on the Ontology.
+        /// </summary>
+        /// <param name="ontologyId">The identifier of the Ontology.</param>
+        /// <param name="stringQuery">The SparQL query on a String format.</param>
+        /// <returns>
+        /// Returns 200 Ok with the results of the query.<br/>
+        /// Returns 204 No Content if the query was successfully run but no results were obtained.<br/>
+        /// Returns 400 Bad Request if either the query was void or null, the query was not of SELECT or similar type, or its format was not valid<br/>
+        /// Returns 404 Not Found if the Ontology was not found.
+        /// Returns 500 Internal Server Error if there was any issue while processing or running the query on the Ontology.
+        /// </returns>
         [HttpPost("{ontologyId}/query")]
         public async Task<IActionResult> SparQLQueryInOntology(string ontologyId, [FromForm] string stringQuery)
         {
@@ -843,7 +899,7 @@ namespace OpenTwinsV2.Twins.Controllers
                     return Ok(results.Result);
 
                 if (results.IsEmpty)
-                    return Ok(new List<object>());
+                    return NoContent();
 
                 var jsonResults = results.Select(r =>
                     r.Variables.ToDictionary(v => v, v => r[v]?.ToString())

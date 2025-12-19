@@ -34,6 +34,15 @@ namespace OpenTwinsV2.Twins.Controllers
             _converterService = converterService;
         }
 
+        /// <summary>
+        /// Creates an empty Twin.
+        /// </summary>
+        /// <param name="twinId">The identifier of the Twin.</param>
+        /// <returns>
+        /// Returns 200 Ok with a sucess message.<br/>
+        /// Returns 409 Conflict if there is already a Twin with the provided identifier.<br/>
+        /// Returns 500 Internal Sevrer Error if there was any issue creating the Thing.
+        /// </returns>
         [HttpPost("{twinId}")]
         public async Task<IActionResult> CreateTwin(string twinId)
         {
@@ -61,6 +70,15 @@ namespace OpenTwinsV2.Twins.Controllers
             return Conflict("There is already a twin with this id");
         }
 
+        /// <summary>
+        /// Retrieves the NQuads of the Twin.
+        /// </summary>
+        /// <param name="twinId">The identifier of the Twin.</param>
+        /// <returns>
+        /// Returns 200 Ok with the NQuads.<br/>
+        /// Returns 404 Not Found if either the Twin was not found or no Things were found associated to the Twin.<br/>
+        /// Returns 500 Internal Server Error if there was any issue while retieving the Twin.
+        /// </returns>
         [HttpGet("{twinId}")]
         public async Task<IActionResult> GetTwin(string twinId)
         {
@@ -97,6 +115,14 @@ namespace OpenTwinsV2.Twins.Controllers
             }
         }
 
+        /// <summary>
+        /// Retrieves the list of Things of a Twin.
+        /// </summary>
+        /// <param name="twinId">The identifier of the Twin.</param>
+        /// <returns>
+        /// Returns 200 Ok with the list of Things.<br/>
+        /// Returns 500 Internal Server Error if there was any issue retrieving the Things.
+        /// </returns>
         [HttpGet("{twinId}/things")]
         public async Task<IActionResult> GetThingsInTwin(string twinId)
         {
@@ -104,6 +130,15 @@ namespace OpenTwinsV2.Twins.Controllers
             return Ok(response);
         }
 
+        /// <summary>
+        /// Retrieves the ThingDescription (TD) of a Thing in the Twin.
+        /// </summary>
+        /// <param name="twinId">The identifier of the Twin.</param>
+        /// <param name="thingId">The identifier of the Thing.</param>
+        /// <returns>
+        /// Returns 200 Ok with the ThingDescription.<br/>
+        /// Returns 404 Not Found if either the Twin was not found, no Thing with the provided identifier was found associated to the Twin or the ThingDescription could not be obtained.
+        /// </returns>
         [HttpGet("{twinId}/things/{thingId}")]
         public async Task<IActionResult> GetThingDescriptionInTwinById(string twinId, string thingId)
         {
@@ -122,6 +157,15 @@ namespace OpenTwinsV2.Twins.Controllers
             }
         }
 
+        /// <summary>
+        /// Retrieves the node of a Thing from the Twin.
+        /// </summary>
+        /// <param name="twinId">The identifier of the Twin.</param>
+        /// <param name="thingId">The identifier of the Thing.</param>
+        /// <returns>
+        /// Returns 200 Ok with the Thing node.<br/>
+        /// Returns 404 Not Found if the Thing node was not obtained.
+        /// </returns>
         [HttpGet("{twinId}/things/{thingId}/node")]
         public async Task<IActionResult> GetThingNodeInTwinById(string twinId, string thingId)
         {
@@ -130,6 +174,15 @@ namespace OpenTwinsV2.Twins.Controllers
             return (response == null) ? NotFound() : Ok(response);
         }
 
+        /// <summary>
+        /// Retrieves the state of a Thing in the Twin.
+        /// </summary>
+        /// <param name="twinId">The identifier of the Twin.</param>
+        /// <param name="thingId">The identifier of the Thing.</param>
+        /// <returns>
+        /// Returns 200 Ok with the current state of the Thing.<br/>
+        /// Returns 404 Not Found if either the Twin was not found ot no Thing with the provided identifier was found associated to it.
+        /// </returns>
         [HttpGet("{twinId}/things/{thingId}/state")]
         public async Task<IActionResult> GetThingStateInTwinById(string twinId, string thingId)
         {
@@ -148,7 +201,17 @@ namespace OpenTwinsV2.Twins.Controllers
             }
         }
 
-
+        /// <summary>
+        /// Adds the Things to the Twin.
+        /// </summary>
+        /// <param name="twinId">The identifier of the Twin.</param>
+        /// <param name="thingIds">The list of Thing identifiers separated by commas.</param>
+        /// <returns>
+        /// Returns 200 Ok with the responses obtained.<br/>
+        /// Returns 400 Bad Request if the list is not of appropiate format.<br/>
+        /// Returns 404 Not Found if the Twin was not found.<br/>
+        /// Returns 500 Internal Server Error if there was any uncontrolled issue while adding the Things into the Twin.
+        /// </returns>
         [HttpPut("{twinId}/things/{thingIds}")]
         public async Task<IActionResult> AddThingToTwin(string twinId, string thingIds)
         {
@@ -202,6 +265,16 @@ namespace OpenTwinsV2.Twins.Controllers
             }
         }
 
+        /// <summary>
+        /// Deletes a Thing from the Twin.
+        /// </summary>
+        /// <param name="twinId">The identifier of the Twin.</param>
+        /// <param name="thingId">The identifier of the Thing.</param>
+        /// <returns>
+        /// Returns 200 Ok with the response of deleting the thing.<br/>
+        /// Returns 404 Not Found either if the Twin was not found or no Thing with the provided identifier was associated to the Twin.<br/>
+        /// Returns 500 Internal Server Error if there was any issue while deleting the Thing.
+        /// </returns>
         [HttpDelete("{twinId}/things/{thingId}")]
         public async Task<IActionResult> DeleteThingFromTwin(string twinId, string thingId)
         {
@@ -219,6 +292,15 @@ namespace OpenTwinsV2.Twins.Controllers
             }
         }
 
+        /// <summary>
+        /// Returns the Twin in a JSON format.
+        /// </summary>
+        /// <param name="twinId">The identifier of the Twin.</param>
+        /// <returns>
+        /// Returns 200 Ok with the JSON of the Twin.<br/>
+        /// Returns 404 Not Found if the Twin was not found.<br/>
+        /// Returns 500 Internal Server Error if threre was any issue while generating the Twin JSON.
+        /// </returns>
         [HttpGet("{twinId}/export/Json")]
         public async Task<IActionResult> ExportTwinInJsonFormat(string twinId)
         {
@@ -239,6 +321,15 @@ namespace OpenTwinsV2.Twins.Controllers
 
         }
 
+        /// <summary>
+        /// Returns the Twin in a JSON-LD format.
+        /// </summary>
+        /// <param name="twinId">The identifier of the Twin.</param>
+        /// <returns>
+        /// Returns 200 Ok with the JSON-LD of the Twin.<br/>
+        /// Returns 404 Not Found if the Twin was not found.<br/>
+        /// Returns 500 Internal Server Error if there was any issue while generating either the JSON or the JSON-LD of the Twin.
+        /// </returns>
         [HttpGet("{twinId}/export/JsonLd")]
         public async Task<IActionResult> ExportTwinInJsonLdFormat(string twinId)
         {
@@ -247,12 +338,10 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 return NotFound(new { message = $"Twin '{twinId}' does not exist" });
             }
-            JsonObject json = null;
+            JsonObject json;
             try
             {
-                json = await _converterService.getJsonWithoutNamespace(twinId);
-                if (json is null)
-                    return StatusCode(500, $"Something went wrong while getting the Twin JSON:\n Obtained null value ");
+                json = await _converterService.getJsonWithoutNamespace(twinId) ?? throw new Exception($"Obtained null value from the Json");
             }
             catch (Exception ex)
             {
@@ -260,7 +349,7 @@ namespace OpenTwinsV2.Twins.Controllers
             }
             try
             {
-                return Ok(await _converterService.GetJsonLDFromRegularJson(json, twinId));
+                return Ok(await _converterService.GetJsonLDFromRegularJson(json, twinId) ?? throw new Exception("Obtained null value from the JsonLd"));
             }
             catch (Exception ex)
             {
@@ -268,6 +357,15 @@ namespace OpenTwinsV2.Twins.Controllers
             }
         }
 
+        /// <summary>
+        /// Returns the Twin in a TTl format File.
+        /// </summary>
+        /// <param name="twinId">The identifier of the Twin.</param>
+        /// <returns>
+        /// Returns 200 Ok with the TTL File of the Twin.<br/>
+        /// Returns 404 Not Found if the Twin was not found.<br/>
+        /// Returns 500 Internal Server Error if there was any issue while obtaining either the JSON or the TTL File of the Twin.
+        /// </returns>
         [HttpGet("{twinId}/export/TTL")]
         public async Task<IActionResult> ExportTwinInTTLFormat(string twinId)
         {
@@ -276,12 +374,10 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 return NotFound(new { message = $"Twin '{twinId}' does not exist" });
             }
-            JsonObject json = null;
+            JsonObject json;
             try
             {
-                json = await _converterService.getJsonWithoutNamespace(twinId);
-                if (json is null)
-                    throw new Exception("Obtained null value");
+                json = await _converterService.getJsonWithoutNamespace(twinId) ?? throw new Exception("Obtained null value");
             }
             catch (Exception ex)
             {
@@ -298,6 +394,18 @@ namespace OpenTwinsV2.Twins.Controllers
             }
         }
 
+        /// <summary>
+        /// Runs a SparQL query on the Twin.
+        /// </summary>
+        /// <param name="twinId">The identifier of the Twin.</param>
+        /// <param name="stringQuery">The SparQL query on a String format.</param>
+        /// <returns>
+        /// Returns 200 Ok with the results of the query.<br/>
+        /// Returns 204 No Content if the query was successfully run but no results were obtained.<br/>
+        /// Returns 400 Bad Request if either the query was void or null, the query was not of SELECT or similar type, or its format was not valid<br/>
+        /// Returns 404 Not Found if the Twin was not found.
+        /// Returns 500 Internal Server Error if there was any issue while processing or running the query on the Twin.
+        /// </returns>
         [HttpPost("{twinId}/query")]
         public async Task<IActionResult> SparQLQueryInTwin(string twinId, [FromForm] string stringQuery)
         {

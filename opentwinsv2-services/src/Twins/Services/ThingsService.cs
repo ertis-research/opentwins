@@ -9,6 +9,9 @@ using OpenTwinsV2.Shared.Models;
 
 namespace OpenTwinsV2.Twins.Services
 {
+    /// <summary>
+    /// Manages petitions that require Things Project.
+    /// </summary>
     public class ThingsService
     {
         private readonly DaprClient _daprClient;
@@ -20,6 +23,14 @@ namespace OpenTwinsV2.Twins.Services
             _daprClient = new DaprClientBuilder().Build();
         }
 
+        /// <summary>
+        /// Sends petition for creating a new thing.
+        /// </summary>
+        /// <param name="newThing">The Json Node of the thing to create.</param>
+        /// <returns>
+        /// Returns true if the operation was successfull<br/>
+        /// Returns false if there was any issue while performing the operation.
+        /// </returns>
         public async Task<bool> CreateThingAsync(JsonNode newThing)
         {
             var client = DaprClient.CreateInvokeHttpClient();
@@ -30,6 +41,13 @@ namespace OpenTwinsV2.Twins.Services
             //var json = await response.Content.ReadFromJsonAsync<JsonNode>();
         }
 
+        /// <summary>
+        /// Gets the ThingDescription of the Thing.
+        /// </summary>
+        /// <param name="thingId">The identifier of the Thing.</param>
+        /// <returns>Returns The Thing Description of the Thing.</returns>
+        /// <exception cref="KeyNotFoundException">Is thrown if the Thing could not be found by its identifier.</exception>
+        /// <exception cref="InvalidDataException">Is thrown if the ThingDescription obtaind is not valid.</exception>
         public async Task<ThingDescription> GetThingAsync(string thingId)
         {
             var proxy = ActorProxy.Create<IThingActor>(new ActorId(thingId), ActorType);
@@ -45,6 +63,12 @@ namespace OpenTwinsV2.Twins.Services
             return td;
         }
 
+        /// <summary>
+        /// Gets the state of the Thing.
+        /// </summary>
+        /// <param name="thingId">The identifier of the Thing.</param>
+        /// <returns>Returns the state of the Thing in Json format.</returns>
+        /// <exception cref="KeyNotFoundException">Is thrown if the Thing could not be found by its identifier.</exception>
         public async Task<JsonElement> GetThingState(string thingId)
         {
             var proxy = ActorProxy.Create<IThingActor>(new ActorId(thingId), ActorType);
@@ -54,6 +78,11 @@ namespace OpenTwinsV2.Twins.Services
             return doc.RootElement.Clone();
         }
 
+        /// <summary>
+        /// Gets the states of each Thing in the list provided.
+        /// </summary>
+        /// <param name="thingIds">The list of identifiers of Things.</param>
+        /// <returns>Returns a Dictionary with the states of each Thing, being the key the identifier of each Thing.</returns>
         public async Task<Dictionary<string, JsonElement>> GetThingsStatesAsync(List<string> thingIds)
         {
             var result = new Dictionary<string, JsonElement>();

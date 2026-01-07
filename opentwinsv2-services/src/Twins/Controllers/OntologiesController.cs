@@ -41,203 +41,15 @@ namespace OpenTwinsV2.Twins.Controllers
         private readonly DGraphService _dgraphService;
         private readonly ThingsService _thingsService;
         private readonly ConverterService _converterService;
+        private readonly NQuadsService _nquadsService;
         // private const string ActorType = Actors.ThingActor;
 
-        public OntologiesController(DGraphService dgraphService, ThingsService thingsService, ConverterService converterService)
+        public OntologiesController(DGraphService dgraphService, ThingsService thingsService, ConverterService converterService, NQuadsService nquadsService)
         {
             _dgraphService = dgraphService;
             _thingsService = thingsService;
             _converterService = converterService;
-        }
-
-        private List<string> GetNQuadAttributeTriples(string subject, string predicate, ILiteralNode literal, string ontology, string prefix)
-        {
-
-            /*
-            type Attribute {
-                Attribute.key =============> Generated key (it will overrided when uploaded to DGraph)
-                Attribute.type ============> Type of the attribute value (DGraph format)
-                Attribute.value ===========> Value of the attribute casted to string
-            }
-            */
-
-            var nquads = new List<string>();
-
-            // string value = _converterService.SanitizeAttributeValue(literal.Value);
-            // //There's the possibility of the value containing " characters
-
-            // //string type by default
-            // string dataType = literal.DataType?.ToString() ?? "string";
-            // var type = _converterService.SanitizeTypeAndUIDValues(dataType) ?? "string";
-
-            var(type, value) = _converterService.GetLiteralCleanData(literal);
-
-            var namespace_uid = $"_:{ontology}namespace_{prefix}";
-
-            string attribute_uid = $"_:att_{predicate}_{Guid.NewGuid()}";
-            nquads.Add($"{attribute_uid} <dgraph.type> \"Attribute\" .");
-            nquads.Add($"{attribute_uid} <Attribute.key> \"{predicate}\" .");
-            nquads.Add($"{attribute_uid} <Attribute.type> \"{type}\" .");
-            nquads.Add($"{attribute_uid} <Attribute.prefix> {namespace_uid} .");
-            nquads.Add($"{attribute_uid} <Attribute.value> \"{value}\" .");
-
-            //Link the node to the attribute
-            nquads.Add($"{subject} <hasAttribute> {attribute_uid} .");
-
-            return nquads;
-        }
-
-        private List<string> GetNQuadRelationTriples(string subject, string predicate, string obj, bool bidirectional, string createdAt, string ontology, string prefix)
-        {
-            /*
-            type Relation {
-                Relation.name =============> Name of the original predicate
-                Relation.createdAt ========> timestamp
-                Relation.attributes =======> any additional info of the relation (thre's no example in the sample ontology provided)
-                hasPart ===================> ignore as of now
-                hasChild ==================> ignore as of now
-                relatedTo =================> The object of a relation. If bidirectional, also the subject
-                relatedFrom ===============> The subject of a relation only if it's unidirectional. If not, not defined
-            }
-            */
-
-            var nquads = new List<string>();
-            var namespace_uid = $"_:{ontology}namespace_{prefix}";
-            //Relation node
-            string relation_uid = $"_:rel_{predicate}_{Guid.NewGuid()}";
-            nquads.Add($"{relation_uid} <dgraph.type> \"Relation\" .");
-            nquads.Add($"{relation_uid} <Relation.name> \"{predicate}\" .");
-            nquads.Add($"{relation_uid} <Relation.createdAt> \"{createdAt}\" .");
-            nquads.Add($"{relation_uid} <Relation.prefix> {namespace_uid} .");
-            nquads.Add($"{relation_uid} <relatedTo> {obj} ."); //always
-            nquads.Add($"{relation_uid} <{(bidirectional ? "relatedTo" : "relatedFrom")}> {subject} .");
-
-            return nquads;
-        }
-
-        private List<string> GetNQuadNodeTriples(string uid, string thingId, string createdAt, string ontology, string prefix)
-        {
-            var nquads = new List<string>();
-            var ontology_uid = $"_:{ontology}";
-            var namespace_uid = $"_:{ontology}namespace_{prefix}";
-
-            nquads.Add($"{uid} <dgraph.type> \"Thing\" .");
-            nquads.Add($"{uid} <thingId> \"{ontology}:{thingId}\" .");
-            nquads.Add($"{uid} <name> \"{thingId}\" .");
-            nquads.Add($"{uid} <createdAt> \"{createdAt}\" .");
-            nquads.Add($"{uid} <Thing.prefix> {namespace_uid} .");
-
-            //Associate the Thing node with the Ontology node
-            nquads.Add($"{ontology_uid} <hasThing> {uid} .");
-
-            return nquads;
-        }
-
-        private List<string> GetNQuadsOntologyTriples(string ontologyId, string createdAt)
-        {
-            var nquads = new List<string>();
-
-            var ontology_uid = $"_:{ontologyId}";
-            nquads.Add($"{ontology_uid} <dgraph.type> \"Ontology\" .");
-            nquads.Add($"{ontology_uid} <createdAt> \"{createdAt}\" .");
-            nquads.Add($"{ontology_uid} <ontologyId> \"{ontologyId}\" .");
-            nquads.Add($"{ontology_uid} <Ontology.name> \"{ontologyId}\" .");
-            nquads.Add($"{ontology_uid} <Ontology.name> \"{ontologyId}\" .");
-            return nquads;
-        }
-
-        private List<string> GetNQuadsNamespaceTriples(string ontologyId, string createdAt, string prefix, string uri)
-        {
-            var nquads = new List<string>();
-
-            /*
-            namespaceId ===========> ontologyId:namespace
-            prefix ================> prefix of the type "rdf:"
-            uri ===================> uri that replaces the prefix (http://example.org/)
-            Namespace.name ========> ontologyId:namespace
-            */
-
-            var namespace_uid = $"_:{ontologyId}namespace_{prefix}";
-            nquads.Add($"{namespace_uid} <dgraph.type> \"Namespace\" .");
-            nquads.Add($"{namespace_uid} <Namespace.createdAt> \"{createdAt}\" .");
-            nquads.Add($"{namespace_uid} <namespaceId> \"{ontologyId}:namespace:{prefix}\" .");
-            nquads.Add($"{namespace_uid} <Namespace.name> \"{ontologyId}:namespace:{prefix}\" .");
-            nquads.Add($"{namespace_uid} <prefix> \"{prefix}\" .");
-            nquads.Add($"{namespace_uid} <uri> \"{uri}\" .");
-
-            //link namespace to the ontology
-            nquads.Add($"_:{ontologyId} <namespace> {namespace_uid} .");
-
-            return nquads;
-        }
-
-        private (bool, bool) isRelationBidirectional(IGraph graph, Triple triple, string uidSubj, string uidObj, string predicate, List<string> nquads)
-        {
-            bool bid = false;
-            bool exists = false;
-
-            //check if in Object there's: uidObj <predicate> uidSubj
-            /*look specifically for:
-            relUid <relatedTo> objUid 
-            and then:
-            relUid <relatedTo> subjUid
-            to make sure, supposedly if the first nquad is present it means 
-            */
-
-            var reversedTriple = new Triple(triple.Object, triple.Predicate, triple.Subject);
-            bid = graph.ContainsTriple(triple) && graph.ContainsTriple(reversedTriple);
-
-            if (bid)
-            {
-                var pattern = @"^(?<subject>\S+)\s+<(?<predicate>[^>]+)>\s+(?:(?<objectUri>\S+)|""(?<objectLit>[^""]+)"")";
-                var relUid = $"_:rel_{predicate}_";
-
-                var parsed = nquads
-                    .Select(line => new { line, match = Regex.Match(line, pattern) })
-                    .Where(x => x.match.Success)
-                    .ToList();
-
-                var relationsNquads = parsed
-                    .Where(x =>
-                        x.match.Groups["subject"].Value.Contains(relUid) &&
-                        x.match.Groups["predicate"].Value.Equals("relatedTo") &&
-                        x.match.Groups["objectUri"].Value.Equals(uidSubj) &&
-                        parsed.Any(y =>
-                            y.match.Groups["subject"].Value == x.match.Groups["subject"].Value &&
-                            y.match.Groups["predicate"].Value.Equals("relatedTo") &&
-                            y.match.Groups["objectUri"].Value.Equals(uidObj)))
-                    .Select(x => x.line)
-                    .ToList();
-
-                exists = relationsNquads.Count > 0;
-            }
-
-            Console.WriteLine($"{(!bid ? "NO" : "")} es bidireccional");
-            Console.WriteLine($"{(!exists ? "NO" : "YA")} existia");
-            return (bid, exists);
-        }
-
-        private void GetNquadsAsTxtFile(List<string> nquads)
-        {
-            //DEBUGGING
-            System.IO.File.WriteAllText("nquads.txt", "");
-            foreach (string str in nquads)
-            {
-                System.IO.File.AppendAllText("nquads.txt", str + "\n");
-            }
-        }
-
-        private bool IsRelevantBlankNode(IGraph g, VDS.RDF.INode node)
-        {
-            var interestingPredicates = new[] {
-                "owl:oneOf", "owl:intersectionOf", "owl:unionOf",
-                "owl:someValuesFrom", "owl:allValuesFrom",
-                "rdf:first", "rdf:rest"
-            };
-
-            return g.GetTriplesWithSubject(node)
-                .Any(t => t.Predicate is IUriNode p &&
-                        interestingPredicates.Any(ip => p.ToString().Contains(ip)));
+            _nquadsService = nquadsService;
         }
 
         /// <summary>
@@ -289,164 +101,23 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 //Parse to rdf
                 //first we read the file data and save it in a IGraph variable
-                IGraph graph = new VDS.RDF.Graph();
-                var parser = new TurtleParser();
-
-                //the RDF parser will load into the graph the data from the file using the stream reader
-                using (var stream = ontologyFile.OpenReadStream())
-                using (var reader = new StreamReader(stream))
-                {
-                    parser.Load(graph, reader);
-                }
-
-                //Parse to JSON
-                //The parsed node will be stored in a list of dictionaries
-
-                var res = new List<Dictionary<string, object>>();
-
-                //Iterate over each Subject
-                //Triple: Subject - Predicate -> Object
-
-                //List of triples in NQuads format
-                var nquads = new List<string>();
-
-                //to prevent predicates to be created as nodes, we'll ignore as of now the owl types
+                List<string>? nquads = null;
                 try
                 {
-                    var owlTypes = graph.Triples
-                        .Where(t => t.Predicate.ToString().EndsWith("type") && t.Object.ToString().Contains("owl"))
-                        .Select(t => t.Object.ToString())
-                        .Distinct();
-
-                    var ignoredPrefixes = new[] { "swrl:", "swrla:" }; //PROVISIONAL: Ignore the Blank Nodes
-                                                                       //Ignore the property types so it will not create a node for a Relation
-                    var ignoredTypes = owlTypes.ToList();
-
-                    //save the namespace mapping [(prefix,uri)] of the ontology, ignoring the previously defined prefixes in ignoredPrefixes
-                    var prefixList = graph.NamespaceMap.Prefixes
-                        .Where(p => !ignoredPrefixes.Contains(p))
-                        .Select(p => new
-                        {
-                            Prefix = p,
-                            NamespaceUri = graph.NamespaceMap.GetNamespaceUri(p).ToString()
-                        })
-                        .ToList();
-
-
-                    var allNodes = graph.Triples
-                        .Select(t => t.Subject)
-                        .Where(s => s.NodeType == VDS.RDF.NodeType.Uri || (s.NodeType == VDS.RDF.NodeType.Blank && IsRelevantBlankNode(graph, s)))
-                    /*.Where(s =>
-                    {
-                        // Obtain the node type
-                        var types = graph.GetTriplesWithSubjectPredicate(s, graph.CreateUriNode("rdf:type"))
-                                        .Select(tr => tr.Object.ToString());
-                        // Exclude the ones with any excluded type
-                        return !types.Any(t => ignoredTypes.Contains(t));
-                    })*/
-                    .Distinct();
-                    string createdAt = DateTime.UtcNow.ToString("O");
-
-                    //Create the Ontology node
-                    nquads.AddRange(GetNQuadsOntologyTriples(ontologyId, createdAt));
-
-                    //Create the Namespace nodes associated to the ontology
-                    foreach (var ns in prefixList)
-                    {
-                        nquads.AddRange(GetNQuadsNamespaceTriples(ontologyId, createdAt, ns.Prefix, ns.NamespaceUri));
-                    }
-                    //In case there is a node with no prefix, I set a fallback with a generic uri unique for the ontology
-                    nquads.AddRange(GetNQuadsNamespaceTriples(ontologyId, createdAt, $"pref{ontologyId}", $"http://example.org/ontology/{ontologyId}"));
-
-                    foreach (var node in allNodes)
-                    {
-
-                        if (ignoredPrefixes.Any(p => node.ToString().Contains(p)))
-                        {
-                            continue;
-                        }
-
-                        string uid = _converterService.GetUid(node, graph);
-                        var (prefix, thingId) = _converterService.GetLocalName(node, graph, ontologyId); //here it takes care of the no prefix fallback
-                        thingId ??= "thing" + Guid.NewGuid();
-                        nquads.AddRange(GetNQuadNodeTriples(uid, thingId, createdAt, ontologyId, prefix));
-
-                    }
-
-                    var ignoredPredicates = new List<string> { "domain", "range", "inverseOf", "uid" };
-
-                    foreach (Triple triple in graph.Triples.Distinct())
-                    {
-                        //Get the subject, predicate and object of the triple
-                        string subject = _converterService.GetUid(triple.Subject, graph); //_:uid
-                        var (prefixPredicate, predicate) = _converterService.GetLocalName(triple.Predicate, graph, "");  //uri
-                        predicate ??= "predicate" + Guid.NewGuid();
-                        //as this includes the original type and uid of the ontology, we exclude them so as not to duplicate the existing ones
-                        if (!ignoredPredicates.Contains(predicate))
-                        {
-                            //Check if the object is a literal (Attribute) or the uid to another node (Relation)
-                            if (predicate.Equals("type") || predicate.Equals("a"))
-                            {
-                                //Support for "type" and "a" predicate
-                                //create or find a thing whose thingId is the name of the type, and with this subject, relate it to the type Thing through hasType relation
-                                var (typePrefix, typeOfNode) = _converterService.GetLocalName(triple.Object, graph, ontologyId);
-                                // var typeOfNode = ((ILiteralNode)triple.Object).ToString();
-                                string match = nquads.FirstOrDefault(nquad => nquad.Contains($"<thingId> {typeOfNode}")) ?? ""; //null manegement ahead
-                                string typeUid = "";
-                                //find out if it is already a Thing
-                                if (match is not null || string.IsNullOrWhiteSpace(match))
-                                {
-                                    //the Thing already exists
-                                    //first we get the uid of the Type Thing
-                                    typeUid = match!.Split('<')[0];
-                                }
-                                else
-                                {
-                                    //the Thing doesn't exist, we have to create it
-                                    //typeOfNode is the thingId, but we need the prefix too
-                                    typeUid = $"_:typeThing{typeOfNode}";
-                                    nquads.AddRange(GetNQuadNodeTriples($"_:typeThing{typeOfNode}", typeOfNode, createdAt, ontologyId, typePrefix));
-                                }
-                                if (typeUid.Equals(""))
-                                {
-                                    //typeUid has not been instanciated correctly, something has gone wrong
-                                    return StatusCode(500, $"Something wrong happened while importing the Ontology to DGraph:\nType Uid of ${subject} node not instanciated");
-                                }
-
-                                //instanciate hasType relation
-                                nquads.Add($"{subject} <hasType> {typeUid} .");
-                            }
-                            else if (triple.Object.NodeType == VDS.RDF.NodeType.Literal)
-                            {
-                                //Attribute of a node
-                                var literal = (ILiteralNode)triple.Object;
-                                nquads.AddRange(GetNQuadAttributeTriples(subject, predicate, literal, ontologyId, prefixPredicate));
-                            }
-                            else
-                            {
-                                //Relation between 2 nodes
-                                string obj = _converterService.GetUid(triple.Object, graph);
-                                //check if the relation is bidirectional or not
-                                //if yes, check if the relation object has already been added to the nquads
-                                var (bid, existent) = isRelationBidirectional(graph, triple, subject, obj, predicate, nquads);
-                                if (!existent)
-                                    nquads.AddRange(GetNQuadRelationTriples(subject, predicate, obj, bid, createdAt, ontologyId, prefixPredicate));
-                            }
-                        }
-
-                    }
-
-                    //---------------------------------------------------------------------------------
-                    //Upload the triples as a mutation to DGraph
-
-                    var response = await _dgraphService.AddNQuadTripleAsync(nquads);
-
-                    return Ok($"{response} {nquads.ToArray().Length} triples added to DGraph successfully");
+                    nquads = _nquadsService.GetFullOntologyNQuadsFromFile(ontologyId, ontologyFile) ?? throw new Exception("The obtained NQuads list of the Ontology was null");
                 }
-                catch (Exception ex)
+                catch(Exception ex)
                 {
                     return StatusCode(500, $"Something wrong happened while importing the Ontology to DGraph:\n{ex.GetType}: {ex.Message}");
                 }
+                
+                //---------------------------------------------------------------------------------
+                //Upload the triples as a mutation to DGraph
+
+                var response = await _dgraphService.AddNQuadTripleAsync(nquads);
+
+                return Ok($"{response} {nquads.ToArray().Length} triples added to DGraph successfully");
+                
             }
             return Conflict("There is already an ontology with this id");
         }

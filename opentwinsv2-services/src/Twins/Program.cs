@@ -17,6 +17,7 @@ builder.Services.AddScoped<LinkEventsHandler>();
 builder.Services.AddScoped<DGraphService>();
 builder.Services.AddScoped<ThingsService>();
 builder.Services.AddScoped<ConverterService>();
+builder.Services.AddScoped<NQuadsService>();
 builder.Services.AddControllers().AddDapr();
 
 builder.Services.AddEndpointsApiExplorer();

@@ -1793,9 +1793,6 @@ namespace OpenTwinsV2.Twins.Services
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            //TODO: iterate through elements to get all node uids
-            //check out how to do that (different types of constraints, subNodeShapes, etc...)
-
             return [.. GetUidFromJsonElement(root)];
         }
 

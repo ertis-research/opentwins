@@ -41,9 +41,11 @@ namespace Twins.Controllers
                 _logger.LogInformation("Add link event processed successfully.");
                 return Ok();
             }
-            catch (KeyNotFoundException ex)
+            catch (KeyNotFoundException)
             {
-                return NotFound(ex.Message);
+                // return NotFound(ex.Message);
+                _logger.LogInformation("The Thing was not found");
+                return Ok();
             }
             catch (Exception ex)
             {

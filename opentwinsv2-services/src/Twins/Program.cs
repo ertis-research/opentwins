@@ -32,6 +32,7 @@ app.UseCloudEvents();
 
 app.MapControllers();
 app.MapSubscribeHandler();
+app.MapGet("/health", () => Results.Ok("Twins service is running"));
 
 ClassMapping.Map();
 

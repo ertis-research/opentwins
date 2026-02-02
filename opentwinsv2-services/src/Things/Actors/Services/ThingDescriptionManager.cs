@@ -81,6 +81,8 @@ namespace OpenTwinsV2.Things.Actors.Services
             await _daprClient.DeleteStateAsync(StateStoreName, ThingDescriptionKey + _thingId);
             ActorLogger.Info(_thingId, "Thing Description deleted from statestore.");
 
+            ThingDescription = null; //delete it from local memory
+
             await _daprClient.InvokeMethodAsync(HttpMethod.Delete, "twins-service", $"internal/things/{_thingId}");
 
             if (asyncPersist)

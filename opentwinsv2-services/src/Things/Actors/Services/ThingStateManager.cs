@@ -47,6 +47,7 @@ namespace OpenTwinsV2.Things.Actors.Services
             {
                 // Eliminar el estado desde el state store de Dapr
                 await _daprClient.DeleteStateAsync(StateStoreName, CurrentStateKey + _thingId);
+                CurrentState.Clear();
                 ActorLogger.Info(_thingId, "Thing state deleted from statestore.");
             }
             catch (Exception ex)

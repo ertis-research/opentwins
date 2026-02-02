@@ -1,0 +1,9 @@
+output:
+  kafka:
+    addresses:
+      - kafka-controller-0.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092
+      - kafka-controller-1.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092
+      - kafka-controller-2.kafka-controller-headless.opentwinsv2.svc.cluster.local:9092
+    topic: opentwinsv2.events
+    client_id: benthos-kafka-producer
+    max_in_flight: 64

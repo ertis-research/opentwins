@@ -1,4 +1,5 @@
 using System.Runtime.Serialization;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenTwinsV2.Shared.Converters;
 
@@ -35,5 +36,8 @@ namespace OpenTwinsV2.Shared.Models
         [JsonPropertyName("op")]
         [JsonConverter(typeof(SingleOrArrayConverter<OperationType>))]
         public List<OperationType>? Op { get; set; } // Valores posibles según el estándar
+
+        [JsonExtensionData]
+        public Dictionary<string, JsonElement>? AdditionalData { get; set; }
     }
 }

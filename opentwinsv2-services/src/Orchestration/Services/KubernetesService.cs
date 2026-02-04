@@ -675,10 +675,15 @@ namespace Orchestration.Services
         /// </summary>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <returns>Returns the list of Connector Pods.</returns>
-        public async Task<V1PodList>GetAllConnectorPods(string namespaceName)
+        public async Task<(int, List<V1Pod>)>GetAllConnectorPods(string namespaceName, int offset, int pageSize, string filter)
         {
             var pods = await _k8s.CoreV1.ListNamespacedPodAsync(namespaceName, labelSelector: $"app=benthos-worker,connector=true");
-            return pods;
+            
+            var filteredPods = pods.Items
+                .Where(pod => pod.Metadata.Annotations.ContainsKey("original-thing-id") && pod.Metadata.Annotations["original-thing-id"].Contains(filter, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            
+            return (filteredPods.Count, filteredPods.Skip(offset).Take(pageSize).ToList());
         }
 
         #endregion

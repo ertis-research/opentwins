@@ -1,4 +1,4 @@
-namespace OpenTwinsV2.Things.Models
+namespace OpenTwinsV2.Shared.Models
 {
     public record PagedResult<T>(
         IEnumerable<T> Items, 

@@ -55,15 +55,21 @@ namespace OpenTwinsV2.Twins.Controllers
         /// <summary>
         /// Consults the Ontologies stored on the DataBase.
         /// </summary>
+        /// <param name="page">The number of the desired page of Ontologies. By default: 1.</param>
+        /// <param name="pageSize">The size of the pages. By default: 10.</param>
+        /// <param name="search">The optional string filter to apply to the search. If not specified, no filter will be applied.</param>
         /// <returns>
         /// Returns a list of the ids of the ontologies stored on the DataBase.
         /// </returns>
         [HttpGet("")]
-        public async Task<IActionResult> GetAllOntologiesId()
+        public async Task<IActionResult> GetAllOntologiesId(
+            [FromQuery] int page = 1, 
+            [FromQuery] int pageSize=10, 
+            [FromQuery] string? search = null)
         {
             try
             {
-                return Ok(await _dgraphService.GetAllOntologiesIdsAsync());
+                return Ok(await _dgraphService.GetAllOntologiesIdsAsync(page, pageSize, search));
             }catch(Exception ex)
             {
                 return StatusCode(500, $"Something wrong happened while looking for ontologies in Dgraph:\n{ex.GetType}: {ex.Message}");
@@ -513,7 +519,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
             try
             {
-                return File(await _converterService.GetTTLFileFromRegularJson(ontologyId, ontologyJson), "text/turtle", $"{ontologyId}_ontology.ttl");
+                return File(_converterService.GetTTLFileFromRegularJson(ontologyId, ontologyJson), "text/turtle", $"{ontologyId}_ontology.ttl");
             }
             catch (Exception e)
             {

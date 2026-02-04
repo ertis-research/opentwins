@@ -817,7 +817,7 @@ namespace OpenTwinsV2.Twins.Services
                             string match = nquads.FirstOrDefault(nquad => nquad.Contains($"<thingId> {typeOfNode}")) ?? ""; //null manegement ahead
                             string typeUid = "";
                             //find out if it is already a Thing
-                            if (match is not null || string.IsNullOrWhiteSpace(match))
+                            if (match is not null && !string.IsNullOrWhiteSpace(match))
                             {
                                 //the Thing already exists
                                 //first we get the uid of the Type Thing

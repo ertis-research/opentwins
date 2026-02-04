@@ -99,17 +99,23 @@ namespace OpenTwinsV2.Orchestration.Controllers
         /// <summary>
         /// Returns all Connectors with their job identifier and Thing Description.
         /// </summary>
+        /// <param name="page">The number of current page of Connectors.</param>
+        /// <param name="pageSize">The size of the pages of Connectors.</param>
+        /// <param name="filter">The optional string filter applied to Connectors. If not specified no filter will be applied.</param>
         /// <returns>
         /// Returns 200 Ok with the list of Connectors.<br/>
         /// Returns 500 Internal Server Error if any issue is encountered while obtaining the Connectors.
         /// </returns>
         [HttpGet("/connections/")]
-        public async Task<IActionResult> GetAllConnectors()
+        public async Task<IActionResult> GetAllConnectors(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? search = null
+        )
         {
-            
             try
             {
-                var list = await _benthosService.GetConnectors();
+                var list = await _benthosService.GetConnectors(page, pageSize, search);
                 return Ok(list);
             }catch(Exception ex)
             {

@@ -42,6 +42,22 @@ namespace OpenTwinsV2.Twins.Services
         }
 
         /// <summary>
+        /// Sends petition for deleting a Thing.
+        /// </summary>
+        /// <param name="thingId">The identifier of the Thing.</param>
+        /// <returns>
+        /// Returns true if the delete petition returned a successful status code.<br/>
+        /// Returns false if teh delete petition did not return a successful code.
+        /// </returns>
+        public async Task<bool> DeleteThingAsync(string thingId)
+        {
+            var client = DaprClient.CreateInvokeHttpClient();
+            var cts = new CancellationTokenSource();
+            var response = await client.DeleteAsync($"http://{_thingServiceAppId}/things/{thingId}", cts.Token);
+            return response.IsSuccessStatusCode;
+        }
+
+        /// <summary>
         /// Gets the ThingDescription of the Thing.
         /// </summary>
         /// <param name="thingId">The identifier of the Thing.</param>

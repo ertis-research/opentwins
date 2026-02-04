@@ -35,6 +35,35 @@ namespace OpenTwinsV2.Twins.Controllers
         }
 
         /// <summary>
+        /// Gets all Twins with an optional filter.
+        /// </summary>
+        /// <param name="page">The desired page number. By default: 1.</param>
+        /// <param name="pageSize">The size of the pages. By default: 10.</param>
+        /// <param name="search">The optional string filter to serach with. If not specified, no filter will be applied.</param>
+        /// <returns>
+        /// Returns 200 Ok with the page of Twins.<br/>
+        /// Returns 500 Intenral Server Error if something went wrong while retrieving the Twins. 
+        /// </returns>
+        [HttpGet("")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(PagedResult<object>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAllTwins(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? search = null
+        )
+        {
+            try
+            {
+                var twins = await _dgraphService.GetAllTwinsAsync(page, pageSize, search);
+                return Ok(twins);
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while getting all Things: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Creates an empty Twin.
         /// </summary>
         /// <param name="twinId">The identifier of the Twin.</param>
@@ -112,6 +141,32 @@ namespace OpenTwinsV2.Twins.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, $"Error retrieving twin {twinId}: {ex.Message}");
+            }
+        }
+
+        [HttpDelete("{twinId}")]
+        public async Task<IActionResult> DeleteTwin(string twinId)
+        {
+            try
+            {
+                if(!await _dgraphService.ExistsTwinAsync(twinId))
+                    return NotFound($"There is no Twin with thingId {twinId}");
+                
+                //get things
+                var things = await _dgraphService.GetThingsInTwinAsync(twinId);
+
+                //unlink things to twin
+                foreach(var thing in things)
+                    await _dgraphService.RemoveThingFromTwinAsync(thing.GetProperty("thingId").GetString()!, twinId);
+
+                //delete twin thing
+                if(!await _thingsService.DeleteThingAsync(twinId))
+                    throw new Exception("The Twin's thing could not be deleted successfuly.");
+
+                return NoContent();
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while deleting the Twin: {ex.Message}");
             }
         }
 
@@ -349,7 +404,7 @@ namespace OpenTwinsV2.Twins.Controllers
             }
             try
             {
-                return Ok(await _converterService.GetJsonLDFromRegularJson(json, twinId) ?? throw new Exception("Obtained null value from the JsonLd"));
+                return Ok(_converterService.GetJsonLDFromRegularJson(json, twinId) ?? throw new Exception("Obtained null value from the JsonLd"));
             }
             catch (Exception ex)
             {
@@ -386,7 +441,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
             try
             {
-                return File(await _converterService.GetTTLFileFromRegularJson(twinId, json), "text/turtle", $"{twinId}.ttl");
+                return File(_converterService.GetTTLFileFromRegularJson(twinId, json), "text/turtle", $"{twinId}.ttl");
             }
             catch (Exception e)
             {

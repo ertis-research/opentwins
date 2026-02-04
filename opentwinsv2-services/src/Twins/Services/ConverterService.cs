@@ -1372,7 +1372,7 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="id">The identifier of the object.</param>
         /// <param name="shape">OPTIONAl. Whether the Json corresponds to a Shape Graph or not.</param>
         /// <returns>Returns the JsonLd equivalent to the Json provided.</returns>
-        public async Task<JsonObject?> GetJsonLDFromRegularJson(JsonObject json, string id, bool shape = false)
+        public JsonObject? GetJsonLDFromRegularJson(JsonObject json, string id, bool shape = false)
         {
             string idSanitized = SanitizeTypeAndUIDValues(id);
             var nodes = json[shape ? "shapes" : "things"]?.AsArray() ?? new JsonArray();
@@ -1473,11 +1473,11 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="id">The identifier of the object.</param>
         /// <param name="ld">OPTIONAl. Whether the Json provided is in JsonLD format. By default is false.</param>
         /// <returns>Returns the RDF Graph of the Json.</returns>
-        public async Task<VDS.RDF.Graph> GetRDFGraphFromJson(JsonObject json, string id, bool ld = false)
+        public VDS.RDF.Graph GetRDFGraphFromJson(JsonObject json, string id, bool ld = false)
         {
             var idSanitized = SanitizeTypeAndUIDValues(id);
             var store = new TripleStore();
-            var jsonLd = ld ? json : await GetJsonLDFromRegularJson(json, idSanitized);
+            var jsonLd = ld ? json : GetJsonLDFromRegularJson(json, idSanitized);
             var jsonString = System.Text.Json.JsonSerializer.Serialize(jsonLd);
             var parser = new VDS.RDF.Parsing.JsonLdParser();
             using var reader = new StringReader(jsonString);
@@ -1508,9 +1508,9 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="json">The Json object.</param>
         /// <param name="ld">OPTIONAL. Whether the Json provided has JsonLD format. By default is false.</param>
         /// <returns></returns>
-        public async Task<MemoryStream> GetTTLFileFromRegularJson(string id, JsonObject json, bool ld = false)
+        public MemoryStream GetTTLFileFromRegularJson(string id, JsonObject json, bool ld = false)
         {
-            var mergedGraph = await GetRDFGraphFromJson(json, id, ld);
+            var mergedGraph = GetRDFGraphFromJson(json, id, ld);
 
             var ttlWriter = new VDS.RDF.Writing.CompressingTurtleWriter();
             using var sw = new StringWriter();
@@ -1539,7 +1539,7 @@ namespace OpenTwinsV2.Twins.Services
             var json = ns is null ? await getJsonWithoutNamespace(id) : await getJsonWithNamespace(id, ns);
             if (json is null)
                 return null;
-            var graph = await GetRDFGraphFromJson(json, id);
+            var graph = GetRDFGraphFromJson(json, id);
             if(graph is null)
                 return null;
             var store = new TripleStore();

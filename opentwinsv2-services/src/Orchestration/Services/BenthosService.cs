@@ -17,6 +17,7 @@ using System.Threading.Tasks;
 using System.Text.Json;
 using k8s.ClientSets;
 using Orchestration.Services;
+using OpenTwinsV2.Shared.Models;
 
 
 namespace OpenTwinsV2.Orchestration.Services
@@ -265,7 +266,7 @@ namespace OpenTwinsV2.Orchestration.Services
             var input = BenthosConfigParser.GetInputFromThingDescription(thingDescription);
             var configMap = ParseThingDescriptionIntoBenthosConfig(thingDescription, thingId, input);
             var yaml = await GetKafkaOutput("./Sources/kafka.yaml");
-            configMap = await MergeOutputYamlIntoConfig(yaml, configMap);
+            configMap = MergeOutputYamlIntoConfig(yaml, configMap);
             return configMap;
         }
 
@@ -523,7 +524,7 @@ namespace OpenTwinsV2.Orchestration.Services
         /// <returns>Returns the modified configMap.</returns>
         /// <exception cref="InvalidOperationException">Thrown if the Kafka plain text does not contain an output configuration.</exception>
         
-        public async Task<V1ConfigMap> MergeOutputYamlIntoConfig(string outputYaml, V1ConfigMap configMap)
+        public V1ConfigMap MergeOutputYamlIntoConfig(string outputYaml, V1ConfigMap configMap)
         {
             return MergeOutputYamlIntoConfig(outputYaml, configMap, _namespaceName);
         }
@@ -571,35 +572,43 @@ namespace OpenTwinsV2.Orchestration.Services
         /// <summary>
         /// Gets all stored Connectors.
         /// </summary>
+        /// <param name="page">The number of current page of Connectors.</param>
+        /// <param name="pageSize">The size of the pages of Connectors.</param>
+        /// <param name="filter">The optional string filter applied to Connectors. If not specified no filter will be applied.</param>
         /// <returns>
         /// Returns an Array with all Connector's Thing Desszcription and job identifiers.
         /// </returns>
-        public async Task<JsonArray> GetConnectors()
+        public async Task<PagedResult<JsonElement>> GetConnectors(int page, int pageSize, string? filter)
         {
-            return await GetConnectors(_namespaceName);
+            return await GetConnectors(page, pageSize, filter, _namespaceName);
         }
 
         /// <summary>
         /// Gets all stored Connectors.
         /// </summary>
+        /// <param name="page">The number of current page of Connectors.</param>
+        /// <param name="pageSize">The size of the pages of Connectors.</param>
+        /// <param name="filter">The optional string filter applied to Connectors. If not specified no filter will be applied.</param>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <returns>
         /// Returns an Array with all Connector's Thing Desszcription and job identifiers.
         /// </returns>
-        public async Task<JsonArray> GetConnectors(string namespaceName)
+        public async Task<PagedResult<JsonElement>> GetConnectors(int page, int pageSize, string? filter, string namespaceName)
         {
-            JsonArray connectors = new JsonArray();
+            var offset = (page - 1) * pageSize;
 
-            var pods = await _k8s.GetAllConnectorPods(_namespaceName);
+            (int totalCount, var pods) = await _k8s.GetAllConnectorPods(namespaceName, offset, pageSize, string.IsNullOrWhiteSpace(filter) ? "" : filter);
+            var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
 
             //now that we have the pods, and can obtain the jobId, get the ThingDescription
-            foreach(V1Pod pod in pods.Items){
+            var result = new List<JsonElement>();
+            foreach(V1Pod pod in pods){
                 // task: get the thingId and the jobId
                 try
                 {
                     var jobId = _k8s.GetOriginalValue(pod);
                     var td = await GetThing(_k8s.GetOriginalValue(pod, thingId: true));
-                    connectors.Add(new JsonObject { ["jobId"] = jobId, ["thingDescription"] = td});
+                    result.Add(JsonSerializer.Deserialize<JsonElement>(new JsonObject { ["jobId"] = jobId, ["thingDescription"] = td}));
                 }
                 catch (Exception)
                 {
@@ -607,7 +616,7 @@ namespace OpenTwinsV2.Orchestration.Services
                 }
             }
 
-            return connectors;
+            return new PagedResult<JsonElement>(result, totalCount, page, pageSize, totalPages);
         }
 
         /// <summary>

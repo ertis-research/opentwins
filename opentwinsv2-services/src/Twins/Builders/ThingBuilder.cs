@@ -6,7 +6,7 @@ namespace OpenTwinsV2.Twins.Builders
 {
     public static class ThingBuilder
     {
-        public static JsonObject BuildThing(string thingId, string? name = null)
+        public static JsonObject BuildThing(string thingId, string? name = null, string? typeUid=null, string? twinUid = null)
         {
             return new JsonObject
             {
@@ -14,8 +14,9 @@ namespace OpenTwinsV2.Twins.Builders
                 ["thingId"] = thingId,
                 ["name"] = name ?? thingId,
                 ["createdAt"] = DateTime.UtcNow.ToString("o"),
-                ["twins"] = new JsonArray(),
-                ["domains"] = new JsonArray()
+                ["twins"] = twinUid is null ? [] : new JsonArray{new JsonObject{["uid"]=twinUid}},
+                ["domains"] = new JsonArray(),
+                ["hasType"] = typeUid is null ? [] : new JsonArray{new JsonObject{["uid"]=typeUid}}
             };
         }
 

@@ -30,6 +30,8 @@ using Json.More;
 using System.Text.RegularExpressions;
 using VDS.RDF.Query.Datasets;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
+using OpenTwinsV2.Twins.Models;
+using Google.Rpc;
 
 
 namespace OpenTwinsV2.Twins.Controllers
@@ -42,14 +44,16 @@ namespace OpenTwinsV2.Twins.Controllers
         private readonly ThingsService _thingsService;
         private readonly ConverterService _converterService;
         private readonly NQuadsService _nquadsService;
+        private readonly InstanciationService _instanciationService;
         // private const string ActorType = Actors.ThingActor;
 
-        public OntologiesController(DGraphService dgraphService, ThingsService thingsService, ConverterService converterService, NQuadsService nquadsService)
+        public OntologiesController(DGraphService dgraphService, ThingsService thingsService, ConverterService converterService, NQuadsService nquadsService, InstanciationService instanciationService)
         {
             _dgraphService = dgraphService;
             _thingsService = thingsService;
             _converterService = converterService;
             _nquadsService = nquadsService;
+            _instanciationService = instanciationService;
         }
 
         /// <summary>
@@ -243,57 +247,6 @@ namespace OpenTwinsV2.Twins.Controllers
             }
         }
 
-
-
-        private async Task<JsonObject?> GetWOTThingProperties(string ontologyId, string thingId)
-        {
-            var json = await _dgraphService.GetThingAttributesByIdAsync(ontologyId, thingId);
-            var res = new JsonObject();
-            if (json != null && json.Value.ValueKind.Equals(JsonValueKind.Array))
-            {
-                foreach (var att in json.Value.EnumerateArray().ToArray())
-                {
-                    var key = att.GetProperty("Attribute.key").ToString()!;
-                    var type = att.GetProperty("Attribute.type").ToString()!;
-                    //var value = att.GetProperty("Attribute.value").ValueKind == JsonValueKind.Number ? att.GetProperty("Attribute.value") : att.GetProperty("Attribute.value").ToString();
-
-                    var valueElement = att.GetProperty("Attribute.value").ToString();
-                    object? value;
-
-                    switch (type.ToLower())
-                    {
-                        case "int":
-                        case "integer":
-                            value = int.TryParse(valueElement, NumberStyles.Integer, CultureInfo.InvariantCulture, out _) ? int.Parse(valueElement) : valueElement;
-                            break;
-                        case "float":
-                        case "double":
-                            value = double.TryParse(valueElement, NumberStyles.Float, CultureInfo.InvariantCulture, out _) ? float.Parse(valueElement) : valueElement;
-                            break;
-                        case "bool":
-                            value = bool.TryParse(valueElement, out _) ? bool.Parse(valueElement) : valueElement;
-                            break;
-                        default:
-                            value = valueElement;
-                            break;
-                    }
-
-                    var obj = new JsonObject
-                    {
-                        ["type"] = type
-                    };
-
-                    if (value is not null)
-                    {
-                        obj["default"] = JsonValue.Create(value);
-                    }
-
-                    res.Add($"{key}", obj);
-                }
-            }
-            return res.Count > 0 ? res : null;
-        }
-
         /// <summary>
         /// Deleted an ontology by its identifier.
         /// </summary>
@@ -355,6 +308,34 @@ namespace OpenTwinsV2.Twins.Controllers
         }
 
         /// <summary>
+        /// Returns the dependencies of a Thing that belongs to the Ontology.
+        /// </summary>
+        /// <param name="ontologyId">The identifier of the Ontology.</param>
+        /// <param name="thingId">The identifier of the Thing.</param>
+        /// <returns>
+        /// Returns 200 Ok with the Thing's dependencies.<br/>
+        /// Returns 404 Not Found if either the Ontology or the Thing was not found.<br/>
+        /// Returns 500 Internal Server Error if something goes wrong while retrieving the dependencies from DGraph or formatting them.
+        /// </returns>
+        [HttpGet("{ontologyId}/things/{thingId}/relations/dependencies")]
+        public async Task<IActionResult> GetThingDependenciesInOntology(string ontologyId, string thingId)
+        {
+            if(!await _dgraphService.ExistsOntologyByIdAsync(ontologyId))
+                return NotFound($"There is no Ontology with id {ontologyId}");
+            if(!await _dgraphService.ExistsThingInOntologyByIdAsync(ontologyId, thingId))
+                return NotFound($"There is no Thing with id {thingId} in {ontologyId} Ontology");
+
+            try
+            {
+                return Ok(await _instanciationService.GetThingDependecies(ontologyId, thingId));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while getting the dependencies of {thingId} Thing in {ontologyId}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Instanciates a Thing from the Ontology.
         /// </summary>
         /// <param name="ontologyId">The identifier of the Ontology.</param>
@@ -390,7 +371,7 @@ namespace OpenTwinsV2.Twins.Controllers
             if (!conflict) // Check if the id is already on use in thingsService 
             {
                 //Get and format the thing's attributes to WOT
-                var props = await GetWOTThingProperties(ontologyId, thingId);
+                var props = await _instanciationService.GetWOTThingProperties(ontologyId, thingId);
 
                 var payload = new JsonObject
                 {
@@ -414,6 +395,122 @@ namespace OpenTwinsV2.Twins.Controllers
                 return Ok(new { message = "Thing created successfully" });
             }
             return Conflict($"There is already an instanced thing with the id {id}");
+        }
+
+        /// <summary>
+        /// Instanciates the Things defined by the provided Graph following the Ontology structure requirements.
+        /// </summary>
+        /// <param name="ontologyId">The identifier of the Ontology.</param>
+        /// <param name="subgraph">The subgraph of the Things to be instanciated.</param>
+        /// <returns>
+        /// Returns 200 Ok with a success message.<br/>
+        /// Returns 204 No Content if the Graph provided was empty, therefore nothing was instanciated.<br/>
+        /// Returns 400 BadRequest if either the identifier of the Ontology or the provided Graph are null or of bad format, or any Ontology dependecy was not met.<br/>
+        /// Returns 404 Not Found if there is no Ontology with such identifier.<br/>
+        /// Returns 409 Conflict if there are repited identifiers in the Graph.<br/>
+        /// Returns 500 Internal Server Error if an issue was encountered while validating the Graph or instanciating the Things.
+        /// </returns>
+        [HttpPut("{ontologyId}/instanciate")]
+        public async Task<IActionResult> InstanciateSubGraphOfOntology(string ontologyId, [FromBody] JsonElement subgraph)
+        {
+            if(string.IsNullOrWhiteSpace(ontologyId))
+                return BadRequest("The Ontology id provided is either null or empty");
+            
+            if(!await _dgraphService.ExistsOntologyByIdAsync(ontologyId))
+                return NotFound($"There is no Ontology with id {ontologyId}");
+
+            if(subgraph.AsNode() is null)
+                return BadRequest("The provided Json Graph is not valid: obtained null");
+
+            if(!(subgraph.TryGetProperty("@graph", out var graphElement) && graphElement.AsNode() is JsonArray graphNode))
+                return BadRequest("The Json provided in the Body does not belong to a Json-Ld Graph.");
+
+            if(graphNode.Count()==0)
+                return NoContent();
+
+            if(_instanciationService.AreThereConflictingIdsOnSubGraph(graphNode))
+                return Conflict($"There are at least one conflicting id between some nodes of the subgraph provided.");
+
+            try
+            {
+                await _instanciationService.ValidateGraph(ontologyId, subgraph);
+            }catch(InvalidDataException ex)
+            {
+                return BadRequest(ex.Message);
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while validating the Graph: {ex.Message}");
+            }
+
+            try
+            {
+                await _instanciationService.InstanciateThingGraph(ontologyId, graphNode);
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while instanciating the Things: {ex.Message}");
+            }
+
+            return Ok("Success");
+        }
+
+        /// <summary>
+        /// Instanciates the Twin and its Things defined by the provided Graph following the Ontology structure requirements.
+        /// </summary>
+        /// <param name="ontologyId">The identifier of the Ontology.</param>
+        /// <param name="twinId">The identifier of the Twin.</param>
+        /// <param name="subgraph">The subgraph of the Things to be instanciated.</param>
+        /// <returns>
+        /// Returns 200 Ok with a success message.<br/>
+        /// Returns 204 No Content if the Graph provided was empty, therefore nothing was instanciated.<br/>
+        /// Returns 400 BadRequest if either the identifier of the Ontology or the provided Graph are null or of bad format, or any Ontology dependecy was not met.<br/>
+        /// Returns 404 Not Found if there is no Ontology with such identifier.<br/>
+        /// Returns 409 Conflict if there are repited identifiers in the Graph or there is already a Twin with the identifier provided.
+        /// Returns 500 Internal Server Error if an issue was encountered while validating the Graph or instanciating the Things.
+        /// </returns>
+        [HttpPut("{ontologyId}/instanciate/{twinId}")]
+        public async Task<IActionResult> InstanciateTwinWithSubGraphOfOntology(string ontologyId, string twinId, [FromBody] JsonElement subgraph)
+        {
+            if(string.IsNullOrWhiteSpace(ontologyId))
+                return BadRequest("The Ontology id provided is either null or empty");
+            
+            if(!await _dgraphService.ExistsOntologyByIdAsync(ontologyId))
+                return NotFound($"There is no Ontology with id {ontologyId}");
+
+            if(await _dgraphService.ExistsTwinAsync(twinId))
+                return Conflict($"There is already a Twin with the id {twinId}");
+
+            if(subgraph.AsNode() is null)
+                return BadRequest("The provided Json Graph is not valid: obtained null");
+
+            if(!(subgraph.TryGetProperty("@graph", out var graphElement) && graphElement.AsNode() is JsonArray graphNode))
+                return BadRequest("The Json provided in the Body does not belong to a Json-Ld Graph.");
+
+            if(graphNode.Count()==0)
+                return NoContent();
+
+            if(_instanciationService.AreThereConflictingIdsOnSubGraph(graphNode))
+                return Conflict($"There are at least one conflicting id between some nodes of the subgraph provided.");
+
+            try
+            {
+                await _instanciationService.ValidateGraph(ontologyId, subgraph);
+            }catch(InvalidDataException ex)
+            {
+                return BadRequest(ex.Message);
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while validating the Graph: {ex.Message}");
+            }
+
+            try
+            {
+                await _instanciationService.InstanciateThingGraph(ontologyId, graphNode, twinId);
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while instanciating the Things: {ex.Message}");
+            }
+
+            return Ok("Success");
         }
 
         /// <summary>

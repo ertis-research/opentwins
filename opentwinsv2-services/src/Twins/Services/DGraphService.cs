@@ -10,6 +10,10 @@ using Google.Protobuf;
 using Grpc.Core;
 using Json.More;
 using OpenTwinsV2.Shared.Models;
+using OpenTwinsV2.Twins.Builders;
+using OpenTwinsV2.Twins.Models;
+using Twins.Models;
+using VDS.RDF;
 
 namespace OpenTwinsV2.Twins.Services
 {
@@ -19,13 +23,16 @@ namespace OpenTwinsV2.Twins.Services
         private readonly Channel _channel;
         private readonly ILogger<DGraphService> _logger;
 
-        public DGraphService(IConfiguration configuration, ILogger<DGraphService> logger)
+        private readonly ThingsService _thingsService;
+
+        public DGraphService(IConfiguration configuration, ILogger<DGraphService> logger, ThingsService thingsService)
         {
             var dgraphUrl_gRPC = configuration["DGraph:URL_gRPC"] ?? throw new Exception("[ERROR] DGraph URL is not defined");
             // Vamos a usar este cliente porque el oficial no esta actualizado: https://github.com/schivei/dgraph4net
             _channel = new Channel(dgraphUrl_gRPC, ChannelCredentials.Insecure);
             _client = new Dgraph4NetClient(_channel);
             _logger = logger;
+            _thingsService = thingsService;
         }
 
         #region Schema
@@ -534,14 +541,70 @@ namespace OpenTwinsV2.Twins.Services
             return (page, pageSize, offset, filter);
         }
 
-        private JsonElement FlattenJsonElementIntoArray<T>(JsonElement json, string parentProperty, string innerProperty)
+        private JsonElement FlattenJsonElement<T>(JsonElement json, string parentProperty, string innerProperty, string? groupbyClause = null)
         {
             JsonNode newJson = json.AsNode()!.DeepClone();
             if(!json.TryGetProperty(parentProperty, out var propVal))
                 return JsonSerializer.Deserialize<JsonElement>(newJson);
-            newJson[parentProperty] = JsonSerializer.SerializeToNode(propVal.EnumerateArray().Select(item => item.GetProperty(innerProperty).AsNode()!.GetValue<T>()).Where(value => value is not null).ToList());
+            var cleanVal = propVal.EnumerateArray().Select(item => item.GetProperty(innerProperty).AsNode()!.GetValue<T>()).Where(value => value is not null).ToList();
+            if (cleanVal.Count > 1)
+            {
+                newJson[parentProperty] = JsonSerializer.SerializeToNode(cleanVal);
+            }
+            else
+            {
+                newJson[parentProperty] = JsonSerializer.SerializeToNode(cleanVal.Single());
+            }
             return JsonSerializer.Deserialize<JsonElement>(newJson);
         }
+
+        private JsonElement FlattenJsonElementArray<T>(JsonElement jsonArr, string parentProperty, string innerProperty, string? groupByClause = null, T? reflexiveFallback=default) where T:notnull
+        {
+            //flattened
+            var query = jsonArr.EnumerateArray().Select(item => new
+            {
+                Key = !string.IsNullOrWhiteSpace(groupByClause) && item.TryGetProperty(groupByClause, out var key) && key.AsNode() is JsonValue val ? val.GetValue<string>() : null,
+                Value = item.TryGetProperty(parentProperty, out var parValue) ? (parValue[0].TryGetProperty(innerProperty, out var innerVal) ? innerVal.Deserialize<T>() : default) : item.TryGetProperty("isReflexive", out var reflexiveClause) && reflexiveClause.AsNode()!.GetValue<bool>() == true ? JsonSerializer.SerializeToNode(reflexiveFallback).Deserialize<T>() : default
+            }).Where(x => x.Value is not null && x.Key is not null && x.Key.ToString() is not null);
+
+            if (string.IsNullOrWhiteSpace(groupByClause))
+                return JsonSerializer.SerializeToElement(query.Select(x=>x.Value).ToList());
+
+            JsonObject finalRes = new JsonObject();
+
+            var grouped = query.GroupBy(x => x.Key).ToDictionary(
+                group =>group.Key!.ToString()!,
+                group =>
+                {
+                    var values = group.Select(x => x.Value).ToList();
+                    return values.Count > 1 ? JsonSerializer.SerializeToNode(values) : JsonSerializer.SerializeToNode(values.First());
+                }
+            );
+            
+            return JsonSerializer.SerializeToElement(grouped);
+        }
+
+        private JsonElement IncorporateNewJsonElement(JsonElement parent, JsonElement child, string property)
+        {
+            JsonNode newJson = parent.AsNode()!.DeepClone();
+            newJson[property] = child.AsNode()!.DeepClone();
+            return JsonSerializer.Deserialize<JsonElement>(newJson);
+        }
+
+        // private void UpdateExistingDependencies(Dictionary<string, JsonNode> rel, HashSet<string> dependencies)
+        // {
+        //     // HashSet<string> res = [.. dependencies];
+
+        //     foreach((var relName, var thingIds) in rel)
+        //     {
+        //         foreach(var arrEl in thingIds is JsonArray ? thingIds.AsArray() : new JsonArray{thingIds.DeepClone()})
+        //         {
+        //             var val = arrEl?.GetValue<string>();
+        //             if(val is not null)
+        //                 dependencies.Add(val);
+        //         }
+        //     }
+        // }
 
         #endregion
 
@@ -692,7 +755,7 @@ namespace OpenTwinsV2.Twins.Services
                 if(doc.RootElement.TryGetProperty("twins", out var twins))
                 {
                     foreach(var twin in twins.EnumerateArray())
-                        result.Add(FlattenJsonElementIntoArray<string>(twin, "thingsOfTwin", "thingId"));
+                        result.Add(FlattenJsonElement<string>(twin, "thingsOfTwin", "thingId"));
                 }
 
                 return new PagedResult<JsonElement>(result, totalCount, page, pageSize, totalPages);
@@ -1052,6 +1115,36 @@ namespace OpenTwinsV2.Twins.Services
             }
         }
 
+        public async Task<string?> GetTwinUidAsync(string twinId)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var query= $@"
+                {{
+                    twin(func: eq(thingId, ""{twinId}"")) @filter(type(Twin)){{
+                        uid
+                    }}
+                }}
+                ";
+
+                var res = await txn.Query(query);
+                var json = res.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if(!(root.TryGetProperty("twin", out var twin) && twin.TryGetProperty("uid", out var uid)))
+                    return null;
+                return uid.GetString();
+            }
+            catch (Exception)
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
         #endregion
 
         #region Ontologies
@@ -1090,7 +1183,7 @@ namespace OpenTwinsV2.Twins.Services
                 if(doc.RootElement.TryGetProperty("ontologies", out var ontologies))
                 {
                     foreach(var ontology in ontologies.EnumerateArray())
-                        result.Add(FlattenJsonElementIntoArray<string>(ontology, "thingsOfOntology", "thingId"));
+                        result.Add(FlattenJsonElement<string>(ontology, "thingsOfOntology", "thingId"));
                 }
                 return new PagedResult<JsonElement>(result, totalCount, page, pageSize, totalPages);
             }
@@ -1724,6 +1817,195 @@ namespace OpenTwinsV2.Twins.Services
             return null;
         }
 
+        public async Task CreateInstanciatedThingAsync(string ontologyId, string thingId, string id, string? twinUid = null)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var uid = await GetThingInOntologyUidAsync(ontologyId, thingId);
+
+                var mutation = new Mutation
+                {
+                    SetJson = ByteString.CopyFromUtf8(JsonSerializer.Serialize(ThingBuilder.BuildThing(thingId, id, uid, twinUid: string.IsNullOrWhiteSpace(twinUid) ? null : twinUid)))
+                };
+                await txn.Mutate(mutation);
+                await txn.Commit();
+            }
+            catch (Exception)
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
+        public async Task<(bool, bool)> ExistsInstanciatedThingOfOntology(string ontologyId, string thingId, string id)
+        {
+            //First bool: whether if it exists (conflict) or not
+            //Second bool: only checked if the first one is true, if the existing thing is correct (all relations are there)
+
+            var txn = _client.NewTransaction();
+            try
+            {
+                ThingDescription? thingDescription = null;
+                try
+                {
+                    thingDescription = await _thingsService.GetThingAsync(id);
+
+                    //if it's not of type thing Id, we take it as conflict   
+                    if(thingDescription.TypeAnnotation is null || !thingDescription.TypeAnnotation.Contains(thingId))
+                        return (true, false);
+
+                }catch(KeyNotFoundException){
+                    return (false, false);
+                }
+
+                
+
+                //we check the Thing in the Onology to quicklycheck that all relations are in order and correct
+                var ontologyThing = await GetDependenciesOfThingInOntology(ontologyId, thingId);
+                if(ontologyThing.TryGetProperty("unidirectionals", out var unidir))
+                    foreach(var rel in JsonSerializer.Deserialize<Dictionary<string, JsonNode>>(unidir)!.Keys){
+                        if(thingDescription.Links is null || !thingDescription.Links.Any(l => l.Rel is not null && l.Rel == $"{ontologyId}:{rel}"))
+                            return (true, false);
+                        
+                            
+                    }
+                if(ontologyThing.TryGetProperty("bidirectionals", out var bidir))
+                    foreach(var rel in JsonSerializer.Deserialize<Dictionary<string, JsonNode>>(bidir)!.Keys)
+                        if(thingDescription.Links is null || !thingDescription.Links.Any(l => l.Rel is not null && l.Rel == $"{ontologyId}:{rel}"))
+                            return (true, false);
+
+                var query = $@"
+                {{
+                    thing(func: eq(thingId, ""{thingId}"")) @filter(eq(name, ""{id}"")) @cascade{{
+                        thingId
+                        hasType @filter(eq(thingId, ""{thingId}"")){{
+                            thingId
+                        }}
+                    }}
+                }}
+                ";
+
+                var response = await txn.Query(query);
+                var json = response.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if(root.TryGetProperty("thing", out var thing) || thing.AsNode()!.AsArray().Count()>0)
+                    return (true, true);
+                
+                await CreateInstanciatedThingAsync(ontologyId, thingId, id);
+                return (true, true);
+            }
+            catch (Exception)
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
+        public async Task<JsonElement> GetDependenciesOfThingInOntology(string ontologyId, string thingId, HashSet<string>? codependencies = null, ValidationBody? validation = null)
+        {
+            //gets the necessary relations and things for the Thing to be instanciated correctly
+            var txn = _client.NewTransaction();
+            try
+            {
+                var filterOntology = @$"~hasThing @filter(eq(ontologyId, ""{ontologyId}""))";
+                var filterThings = codependencies is null ? "" : @$"avoidingThings as var(func: eq(thingId, [{(codependencies.Count()==0 ? "\"\"" : string.Join(", ", codependencies.Select(id => $"\"{id}\"")))}])) @cascade {{
+                    {filterOntology}
+                }}";
+
+                var query = @$"
+                {{
+                    things as var(func: eq(thingId, ""{thingId}"")) @cascade{{
+                        {filterOntology}
+                    }}
+
+                    {filterThings}
+
+                    thing(func: uid(things)){{
+                        thingId
+                        typeThing: hasType{{
+                            thingId
+                        }}
+                        unidirectionals: ~relatedFrom (orderasc: Relation.name){{
+                            Relation.name
+                            relatedTo {(!string.IsNullOrWhiteSpace(filterThings) ? "@filter(not uid(avoidingThings))" : "")}{{
+                                thingId
+                            }}
+                            cb as count(relatedTo @filter(not uid(things) {(!string.IsNullOrWhiteSpace(filterThings) ? "and not uid(avoidingThings)" : "")}))
+                            isReflexive: math(cb == 0)
+                        }}
+                        bidirectionals: ~relatedTo @filter(not has(relatedFrom)){{
+                            Relation.name
+                            relatedTo @filter(not uid(things) {(!string.IsNullOrWhiteSpace(filterThings) ? "and not uid(avoidingThings)" : "")}){{
+                                thingId
+                            }}
+                            cu as count(relatedTo @filter(not uid(things) {(!string.IsNullOrWhiteSpace(filterThings) ? "and not uid(avoidingThings)" : "")}))
+                            isReflexive: math(cu == 0)
+                        }}
+                    }}
+                }}
+                ";
+
+                var response = await txn.Query(query);
+                var json = response.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                var thing = root.GetProperty("thing")[0];
+                var flatThing = FlattenJsonElement<string>(thing, "typeThing", "thingId");
+                if(flatThing.TryGetProperty("unidirectionals", out var unidir))
+                    flatThing = IncorporateNewJsonElement(flatThing, FlattenJsonElementArray(unidir, "relatedTo", "thingId", "Relation.name", thingId), "unidirectionals");
+                if(flatThing.TryGetProperty("bidirectionals", out var bidir))
+                    flatThing = IncorporateNewJsonElement(flatThing, FlattenJsonElementArray(bidir, "relatedTo", "thingId", "Relation.name", thingId), "bidirectionals");                
+                
+                return flatThing;
+            }catch (Exception)
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
+        public async Task<string?> GetThingInOntologyUidAsync(string ontologyId, string thingId)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var query = @$"
+                {{
+                    things as var(func: eq(thingId, ""{thingId}"")) @cascade {{
+                        ~hasThing @filter(eq(ontologyId, ""{ontologyId}""))
+                    }}
+
+                    thing(func: uid(things)){{
+                        uid
+                    }}
+                }}
+                ";
+
+                var response = await txn.Query(query);
+                var json = response.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if(!root.TryGetProperty("thing", out var thing) || thing.AsNode()!.AsArray().Count()==0)
+                    return null;
+                
+                return thing.AsNode()!.AsArray().First()!["uid"]!.GetValue<string>();
+
+            }
+            catch (Exception)
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
         #endregion
 
         #region Shape Graphs
@@ -1786,7 +2068,7 @@ namespace OpenTwinsV2.Twins.Services
                 if(doc.RootElement.TryGetProperty("shapegraphs", out var nodeshapes))
                 {
                     foreach(var nodeshape in nodeshapes.EnumerateArray())
-                        result.Add(FlattenJsonElementIntoArray<string>(nodeshape, "shapesOfGraph", "nodeShapeId"));
+                        result.Add(FlattenJsonElement<string>(nodeshape, "shapesOfGraph", "nodeShapeId"));
                 }
                 return new PagedResult<JsonElement>(result, totalCount, page, pageSize, totalPages);                
             }

@@ -1,0 +1,26 @@
+{
+  "@context": {
+    "trial": "http://example.org/trial#",
+    "@vocab": "http://example.org/trial#"
+  },
+  "@graph": [
+    {
+      "@id": "urn:node1",
+      "@type": "trial:Node",
+      "trial:relA": { "@id": "urn:node2" },
+      "trial:relB": { "@id": "urn:node1" }
+    },
+    {
+      "@id": "urn:node2",
+      "@type": "trial:Node",
+      "trial:relA": { "@id": "urn:node3" },
+      "trial:relB": { "@id": "urn:node1" }
+    },
+    {
+      "@id": "urn:node3",
+      "@type": "trial:Node",
+      "trial:relA": { "@id": "urn:node2" },
+      "trial:relB": { "@id": "urn:node2" }
+    }
+  ]
+}

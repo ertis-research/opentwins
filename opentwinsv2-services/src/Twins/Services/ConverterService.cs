@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -210,8 +211,10 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="predicate">The predicate of the Relation.</param>
         /// <param name="nquads">The current list of NQuads of the Ontology.</param>
         /// <returns>
-        /// Returns true if the Relation is bidirectional<br/>
-        /// Returns false if the Relation is currently not bidirectional.
+        /// Returns (true, true) if the Relation is bidirectional and already exists<br/>
+        /// Returns (true, false) if the Relation is bidirectional but doesn't exist yet.<br/>
+        /// Returns (false, true) if the Relation is currently not bidirectional and already exists.<br/>
+        /// Returns (false, false) if the Relation is currently not bidirectional and doesn't exist yet .
         /// </returns>
         public (bool, bool) isRelationBidirectional(IGraph graph, Triple triple, string uidSubj, string uidObj, string predicate, List<string> nquads)
         {
@@ -227,7 +230,7 @@ namespace OpenTwinsV2.Twins.Services
             */
 
             var reversedTriple = new Triple(triple.Object, triple.Predicate, triple.Subject);
-            bid = graph.ContainsTriple(triple) && graph.ContainsTriple(reversedTriple);
+            bid = uidSubj==uidObj ? false : graph.ContainsTriple(triple) && graph.ContainsTriple(reversedTriple);
 
             if (bid)
             {
@@ -254,8 +257,6 @@ namespace OpenTwinsV2.Twins.Services
                 exists = relationsNquads.Count > 0;
             }
 
-            Console.WriteLine($"{(!bid ? "NO" : "")} es bidireccional");
-            Console.WriteLine($"{(!exists ? "NO" : "YA")} existia");
             return (bid, exists);
         }
 

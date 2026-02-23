@@ -1,0 +1,84 @@
+{
+  "@context": {
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "ex": "http://example.org/",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "prefpeople": "http://example.org/ontology/people",
+    "schema": "http://schema.org/",
+    "xsd": "http://www.w3.org/2001/XMLSchema#"
+  },
+  "@graph": [
+    {
+      "@id": "urn:alice",
+      "@type": "people:alice",
+      "people:name": "Alice",
+      "people:age": "30",
+      "people:knows": [
+        {
+          "@id": "urn:bob"
+        },
+        {
+          "@id": "urn:carol"
+        }
+      ],
+      "people:memberOf": {
+        "@id": "urn:bookClub"
+      }
+    },
+    {
+      "@id": "urn:bookClub",
+      "@type": "people:bookClub",
+      "people:name": "Local Book Club"
+    },
+    {
+      "@id": "urn:chessClub",
+      "@type": "people:chessClub",
+      "people:name": "City Chess Club"
+    },
+    {
+      "@id": "urn:carol",
+      "@type": "people:carol",
+      "people:age": "28",
+      "people:name": "Carol",
+      "people:knows": {
+        "@id": "urn:alice"
+      },
+      "people:memberOf": {
+        "@id": "urn:bookClub"
+      }
+    },
+    {
+      "@id": "urn:dave",
+      "@type": "people:dave",
+      "people:name": "Dave",
+      "people:age": "35",
+      "people:knows": {
+        "@id": "urn:bob"
+      },
+      "people:memberOf": {
+        "@id": "urn:chessClub"
+      }
+    },
+    {
+      "@id": "urn:bob",
+      "@type": "people:bob",
+      "people:name": "Bob",
+      "people:age": "25",
+      "people:knows": [
+        {
+          "@id": "urn:alice"
+        },
+        {
+          "@id": "urn:dave"
+        }
+      ],
+      "people:likes": {
+        "@id": "urn:alice"
+      },
+      "people:memberOf": {
+        "@id": "urn:chessClub"
+      }
+    }
+  ]
+}

@@ -703,28 +703,11 @@ namespace OpenTwinsV2.Twins.Services
             return nquads;
         }
 
-        /// <summary>
-        /// The full list of NQuads of an Ontology based on the TTL structure provided.
-        /// </summary>
-        /// <param name="ontologyId">The identifier of the Ontology.</param>
-        /// <param name="ontologyFile">The TTL file of the Ontology.</param>
-        /// <returns>Returns the list of NQuads of the Ontology and its nodes.</returns>
-        public List<string> GetFullOntologyNQuadsFromFile(string ontologyId, IFormFile ontologyFile)
+        public List<string> GetFullOntologyNQuadsFromGraph(string ontologyId, IGraph graph)
         {
-
-            IGraph graph = new VDS.RDF.Graph();
-            var parser = new TurtleParser();
-
-            //the RDF parser will load into the graph the data from the file using the stream reader
-            using (var stream = ontologyFile.OpenReadStream())
-            using (var reader = new StreamReader(stream))
-            {
-                parser.Load(graph, reader);
-            }
-
             //Parse to JSON
             //The parsed node will be stored in a list of dictionaries
-
+            
             var res = new List<Dictionary<string, object>>();
 
             //Iterate over each Subject
@@ -865,6 +848,28 @@ namespace OpenTwinsV2.Twins.Services
             }
 
             return nquads;
+        }
+
+        /// <summary>
+        /// The full list of NQuads of an Ontology based on the TTL structure provided.
+        /// </summary>
+        /// <param name="ontologyId">The identifier of the Ontology.</param>
+        /// <param name="ontologyFile">The TTL file of the Ontology.</param>
+        /// <returns>Returns the list of NQuads of the Ontology and its nodes.</returns>
+        public List<string> GetFullOntologyNQuadsFromFile(string ontologyId, IFormFile ontologyFile)
+        {
+
+            IGraph graph = new VDS.RDF.Graph();
+            var parser = new TurtleParser();
+
+            //the RDF parser will load into the graph the data from the file using the stream reader
+            using (var stream = ontologyFile.OpenReadStream())
+            using (var reader = new StreamReader(stream))
+            {
+                parser.Load(graph, reader);
+            }
+
+            return GetFullOntologyNQuadsFromGraph(ontologyId, graph);
         }
 
         /// <summary>

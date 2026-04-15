@@ -1,0 +1,73 @@
+@prefix : <http://example.org/university#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+#################################################################
+# Ontology Declaration
+#################################################################
+
+:UniversityOntology a owl:Ontology ;
+    rdfs:label "University Ontology Example with Restrictions" .
+
+#################################################################
+# Classes
+#################################################################
+
+:Student a owl:Class .
+
+:Course a owl:Class .
+
+:GraduateCourse a owl:Class ;
+    rdfs:subClassOf :Course .
+
+:Professor a owl:Class .
+
+#################################################################
+# Object Properties
+#################################################################
+
+:enrolledIn a owl:ObjectProperty ;
+    rdfs:domain :Student ;
+    rdfs:range :Course .
+
+:teaches a owl:ObjectProperty ;
+    rdfs:domain :Professor ;
+    rdfs:range :Course .
+
+#################################################################
+# Data Properties
+#################################################################
+
+:hasStudentID a owl:DatatypeProperty ;
+    rdfs:domain :Student ;
+    rdfs:range xsd:string .
+
+#################################################################
+# Restrictions
+#################################################################
+
+# Restriction 1:
+# Every Student must be enrolled in at least one Course
+:Student rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :enrolledIn ;
+    owl:someValuesFrom :Course
+] .
+
+# Restriction 2:
+# A GraduateCourse is taught only by Professors
+:GraduateCourse rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty [ owl:inverseOf :teaches ] ;
+    owl:allValuesFrom  [ owl:unionOf (:Professor :Student) ]
+] .
+
+# Restriction 3 (Cardinality example):
+# A Student has exactly one student ID
+:Student rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :hasStudentID ;
+    owl:cardinality "1"^^xsd:nonNegativeInteger
+] .

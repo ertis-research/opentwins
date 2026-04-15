@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
@@ -11,7 +12,10 @@ using OpenTwinsV2.Twins.Builders;
 using OpenTwinsV2.Twins.Models;
 using OpenTwinsV2.Twins.Services;
 using Twins.Models;
+using Twins.Services;
 using VDS.RDF;
+using VDS.RDF.Shacl;
+using VDS.RDF.Shacl.Validation;
 
 namespace OpenTwinsV2.Twins.Services
 {
@@ -19,11 +23,13 @@ namespace OpenTwinsV2.Twins.Services
     {
         private readonly DGraphService _dgraphService;
         private readonly ThingsService _thingsService;
+        private readonly ExportService _exportService;
 
-        public InstanciationService(DGraphService dgraphService, ThingsService thingsService)
+        public InstanciationService(DGraphService dgraphService, ThingsService thingsService, ExportService exportService)
         {
             _dgraphService = dgraphService;
             _thingsService = thingsService;
+            _exportService = exportService;
         }
 
         /// <summary>
@@ -296,7 +302,7 @@ namespace OpenTwinsV2.Twins.Services
         {
             var thingId = thing["@type"]!.GetValue<string>();
             var props = await GetWOTThingProperties(ontologyId, thingId);
-            var links = await GetWOTThingLinks(thing);
+            var links = GetWOTThingLinks(thing);
             var payload = new JsonObject
             {
                 ["@context"] = new JsonArray("https://www.w3.org/2019/wot/td/v1"),
@@ -312,11 +318,34 @@ namespace OpenTwinsV2.Twins.Services
         }
 
         /// <summary>
+        /// Builds a Thing payload for its instanciation.
+        /// </summary>
+        /// <param name="thing">The Json of the Thing.</param>
+        /// <returns>Returns the Json payload of the Thing.</returns>
+        private JsonNode GetThingPayloadForInstanciation(JsonNode thing)
+        {
+            var thingId = thing["@type"]!.GetValue<string>();
+            var links = GetWOTThingLinks(thing);
+            var payload = new JsonObject
+            {
+                ["@context"] = new JsonArray("https://www.w3.org/2019/wot/td/v1"),
+                ["id"] = thing["@id"]!.GetValue<string>(),
+                ["title"] = "",
+                ["@type"] = thingId,
+                ["properties"] = new JsonObject(),
+                ["actions"] = new JsonObject { },
+                ["events"] = new JsonObject { },
+                ["links"] = links
+            };
+            return payload;
+        }
+
+        /// <summary>
         /// Obtains the Web Of Things Links Relations from the thing.
         /// </summary>
         /// <param name="thing">The Thing in Json format.</param>
         /// <returns>Returns the JsonArray of the links in Web Of Things format.</returns>
-        private async Task<JsonArray> GetWOTThingLinks(JsonNode thing)
+        private JsonArray GetWOTThingLinks(JsonNode thing)
         {
             //Parts:
             //href: MANDATORY. @id (urn:something)
@@ -444,11 +473,112 @@ namespace OpenTwinsV2.Twins.Services
                 var payload = await GetThingPayloadForInstanciation(ontologyId, thing);
                 var thingId = thing!["@type"]!.GetValue<string>();
                 var id = thing["@id"]!.GetValue<string>();
-                await _dgraphService.CreateInstanciatedThingAsync(ontologyId, thingId, id, twinUid: twinUid);
+                await _dgraphService.CreateInstanciatedThingAsync(thingId, id, ontologyId: ontologyId, twinUid: twinUid);
                 var thingsResponse = await _thingsService.CreateThingAsync(payload);
                 if(!thingsResponse)
                     throw new Exception("Things Instanciation failed in Things Service");
             }
-        }    
+        }  
+
+        /// <summary>
+        /// Instanciates a Twin with a Thing Graph in both ThingsService and DGraph.
+        /// </summary>
+        /// <param name="graph">The Thing Graph to instanciate.</param>
+        /// <param name="twinId">The identifier of the Twin.</param>
+        /// <returns></returns>
+        /// <exception cref="Exception">Thrown if any issue is encountered while instanciating the Things in thingsService.</exception>
+        public async Task InstanciateThingGraph(JsonArray graph, string twinId)
+        {
+            string twinUid = await CreateInstanciationTwin(twinId);
+            foreach(var thing in graph)
+            {
+                if(thing is null)
+                    continue;
+                var payload = GetThingPayloadForInstanciation(thing);
+                var thingId = thing!["@type"]!.GetValue<string>();
+                var id = thing["@id"]!.GetValue<string>();
+                await _dgraphService.CreateInstanciatedThingAsync(thingId, id, twinUid: twinUid);
+                var thingsResponse = await _thingsService.CreateThingAsync(payload);
+                if(!thingsResponse)
+                    throw new Exception("Things Instanciation failed in Things Service");
+            }
+        }
+
+        #region Shape Oriented
+
+        private string BuildShapeValidationReport(Report results)
+        {
+            StringBuilder report = new StringBuilder();
+            report.AppendLine("Validation FAILED:\n");
+
+            foreach (var res in results.Results)
+            {
+                // Focus node (what failed)
+                string focusNode = res.FocusNode?.ToSafeString() ?? "(unknown node)";
+
+                // Property path (what property failed)
+                string path = res.ResultPath?.ToSafeString() ?? "(no path)";
+
+                // Constraint type (minCount, datatype, etc.)
+                string constraint = res.SourceConstraintComponent?.ToSafeString()
+                                    ?? "(unknown constraint)";
+
+                // Shape
+                string shape = res.SourceShape?.ToSafeString() ?? "(unknown shape)";
+
+                // Severity
+                string severity = res.Severity?.ToSafeString() ?? "Violation";
+
+                report.AppendLine($"• Node: {focusNode}");
+                report.AppendLine($"  Shape: {shape}");
+                report.AppendLine($"  Property: {path}");
+                report.AppendLine($"  Constraint: {constraint}");
+                report.AppendLine($"  Severity: {severity}");
+                report.AppendLine($"  Message: {res.Message}");
+                report.AppendLine();
+            }
+
+            return report.ToString();
+        }
+
+        /// <summary>
+        /// Validates a Twin's Graph through a valid Shape Graph.
+        /// </summary>
+        /// <param name="twinId">The identifier of the twin.</param>
+        /// <param name="graph">The Graph of the Twin.</param>
+        /// <param name="shapeId">The identifier of the Shape Graph.</param>
+        /// <returns>
+        /// Returns null if the Twin's Graph validates the given Shape Graph.<br/>
+        /// Returns a string describing the errors encountered if the validation failed. 
+        /// </returns>
+        /// <exception cref="InvalidDataException">Thrown if the given Graph is of bad format.</exception>
+        /// <exception cref="Exception">Thrown if any of the intermediate values obtained are null or invalid.</exception>
+        public async Task<string?> ValidateGraphThroughShapeGraph(string twinId, JsonElement graph, string shapeId)
+        {
+            if(graph.AsNode() is not JsonObject graphObj)
+                throw new InvalidDataException("The provided graph is of bad format");
+            JsonObject json = await _exportService.GetShapeGraphFlattenedJson(shapeId) ?? throw new Exception($"The recieved flattened Json of the {shapeId} shape Graph is null");
+            JsonObject jsonLd = ExportService.GetJsonLDFromRegularJson(json, shapeId, true) ?? throw new Exception($"The obtained JsonLd from the {shapeId} Shape Graph is null");
+            var shapeRDFgraph = FormatService.GetRDFGraphFromJson(jsonLd, shapeId, ld:true) ?? throw new Exception("The graph obtained is null");
+            ShapesGraph shapeGraph = new ShapesGraph(shapeRDFgraph) ?? throw new Exception("The Shape Graph obtained is null");
+            
+            //The twin doesn't exist yet, i have to get the Graph from the JsonLD graph directly
+            IGraph compound = FormatService.GetRDFGraphFromJson(graphObj, twinId, ld: true);
+            List<string> ontologies = await _dgraphService.GetOntologiesOfTwinAsync(twinId);
+            foreach(string ontologyId in ontologies)
+            {
+                var ontologyJson = await _exportService.GetJsonWithNamespace(ontologyId, await _dgraphService.GetNamespacesInOntologyAsync(ontologyId) ?? null) ?? throw new Exception($"The recieved Json of the {ontologyId} Ontology is null");
+                var ontologyGraph = FormatService.GetRDFGraphFromJson(ontologyJson, ontologyId) ?? throw new Exception($"The recieved Graph of the {ontologyId} Ontology is null");
+                compound.Merge(ontologyGraph, true);
+            }
+            var results = shapeGraph.Validate(compound);
+            if(results.Conforms)
+                return null;
+
+            //if it doesn't conform, return report
+            return BuildShapeValidationReport(results);
+        }  
+
+        #endregion
     }
 }

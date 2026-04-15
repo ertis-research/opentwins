@@ -7,6 +7,7 @@ using J2N.Text;
 using Json.More;
 using Microsoft.AspNetCore.Mvc;
 using OpenTwinsV2.Twins.Services;
+using Twins.Services;
 using VDS.RDF;
 using VDS.RDF.Nodes;
 using VDS.RDF.Parsing;
@@ -19,14 +20,13 @@ namespace OpenTwinsV2.Twins.Controllers
     public class ShapeController : ControllerBase
     {
         private readonly DGraphService _dgraphService;
-        private readonly ConverterService _converterService;
-        private readonly NQuadsService _nquadsService;
-
-        public ShapeController(DGraphService dgraphService, ConverterService converterService, NQuadsService nquadsService)
+        private readonly ExportService _exportService;
+        private readonly ImportService _importService;
+        public ShapeController(DGraphService dgraphService, ExportService exportService, ImportService importService)
         {
             _dgraphService = dgraphService;
-            _converterService = converterService;
-            _nquadsService = nquadsService;
+            _exportService = exportService;
+            _importService = importService;
         }
 
         /// <summary>
@@ -91,7 +91,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 List<string>? nquads = null;
                 try
                 {
-                    nquads = _nquadsService.GetFullShapeGraphNquadsFromFile(shapeId, shapeFile) ?? throw new Exception("The obtained list of NQuads of the Shape Graph was null");
+                    nquads = _importService.GetFullShapeGraphNquads(shapeId.ToLowerInvariant(), shapeFile) ?? throw new Exception("The obtained list of NQuads of the Shape Graph was null");
                 }
                 catch (Exception ex)
                 {
@@ -222,7 +222,7 @@ namespace OpenTwinsV2.Twins.Controllers
             JsonObject json;
             try
             {
-                json = await _converterService.GetShapeGraphFlattenedJson(shapeId) ?? throw new Exception($"The received flattened Json of {shapeId} Shape Graph is null");
+                json = await _exportService.GetShapeGraphFlattenedJson(shapeId) ?? throw new Exception($"The received flattened Json of {shapeId} Shape Graph is null");
             }catch (Exception ex)
             {
                 return StatusCode(500, $"Something went wrong while getting the {shapeId} Shape Graph JSON from DGraph: {ex.GetType}: {ex}");
@@ -250,7 +250,7 @@ namespace OpenTwinsV2.Twins.Controllers
             JsonObject json;
             try
             {
-                json = await _converterService.GetShapeGraphFlattenedJson(shapeId) ?? throw new Exception($"The flattened Json obtained of the {shapeId} Shape Graph is null");
+                json = await _exportService.GetShapeGraphFlattenedJson(shapeId) ?? throw new Exception($"The flattened Json obtained of the {shapeId} Shape Graph is null");
             }
             catch (Exception ex)
             {
@@ -259,7 +259,7 @@ namespace OpenTwinsV2.Twins.Controllers
             JsonObject jsonLd;
             try
             {
-                jsonLd = _converterService.GetJsonLDFromRegularJson(json, shapeId, true) ?? throw new Exception("Obtained JsonLd is null");
+                jsonLd = ExportService.GetJsonLDFromRegularJson(json, shapeId, true) ?? throw new Exception("Obtained JsonLd is null");
             }catch(Exception ex)
             {
                 return StatusCode(500, $"Something went wrong while getting the JsonLd of the {shapeId} Shape Graph from its Json: {ex.GetType}: {ex}");
@@ -287,7 +287,7 @@ namespace OpenTwinsV2.Twins.Controllers
             JsonObject json;
             try
             {
-                json = await _converterService.GetShapeGraphFlattenedJson(shapeId) ?? throw new Exception($"The flattened Json obtained of the {shapeId} Shape Graph is null");
+                json = await _exportService.GetShapeGraphFlattenedJson(shapeId) ?? throw new Exception($"The flattened Json obtained of the {shapeId} Shape Graph is null");
             }
             catch (Exception ex)
             {
@@ -296,14 +296,14 @@ namespace OpenTwinsV2.Twins.Controllers
             JsonObject jsonLd;
             try
             {
-                jsonLd = _converterService.GetJsonLDFromRegularJson(json, shapeId, true) ?? throw new Exception($"The obtained JsonLd from the {shapeId} Shape Graph is null");
+                jsonLd = ExportService.GetJsonLDFromRegularJson(json, shapeId, true) ?? throw new Exception($"The obtained JsonLd from the {shapeId} Shape Graph is null");
             }catch(Exception ex)
             {
                 return StatusCode(500, $"Something went wrong while getting the JsonLd of the {shapeId} Shape Graph from its Json: {ex.GetType}: {ex}");
             }
             try
             {
-                return File(_converterService.GetTTLFileFromRegularJson(shapeId, jsonLd, ld:true), "text/turtle", $"{shapeId}_shapeGraph.ttl");
+                return File(FormatService.GetTTLFileFromRegularJson(shapeId, jsonLd, ld:true), "text/turtle", $"{shapeId}_shapeGraph.ttl");
             }
             catch (Exception e)
             {
@@ -338,7 +338,7 @@ namespace OpenTwinsV2.Twins.Controllers
             JsonObject json;
             try
             {
-                json = await _converterService.GetShapeGraphFlattenedJson(shapeId) ?? throw new Exception($"The recieved flattened Json of the {shapeId} shape Graph is null");
+                json = await _exportService.GetShapeGraphFlattenedJson(shapeId) ?? throw new Exception($"The recieved flattened Json of the {shapeId} shape Graph is null");
             }
             catch (Exception ex)
             {
@@ -347,7 +347,7 @@ namespace OpenTwinsV2.Twins.Controllers
             JsonObject jsonLd;
             try
             {
-                jsonLd = _converterService.GetJsonLDFromRegularJson(json, shapeId, true) ?? throw new Exception($"The obtained JsonLd from the {shapeId} Shape Graph is null");
+                jsonLd = ExportService.GetJsonLDFromRegularJson(json, shapeId, true) ?? throw new Exception($"The obtained JsonLd from the {shapeId} Shape Graph is null");
             }catch(Exception ex)
             {
                 return StatusCode(500, $"Something went wrong while getting the JsonLd of the {shapeId} Shape Graph from its Json: {ex.GetType}: {ex}");
@@ -356,7 +356,7 @@ namespace OpenTwinsV2.Twins.Controllers
             ShapesGraph shapeGraph; 
             try
             {
-                IGraph shapeRDFgraph = _converterService.GetRDFGraphFromJson(jsonLd, shapeId, ld:true) ?? throw new Exception("The graph obtained is null");
+                IGraph shapeRDFgraph = FormatService.GetRDFGraphFromJson(jsonLd, shapeId, ld:true) ?? throw new Exception("The graph obtained is null");
                 shapeGraph = new ShapesGraph(shapeRDFgraph) ?? throw new Exception("The Shape Graph obtained is null");
             }catch(Exception ex)
             {
@@ -368,8 +368,8 @@ namespace OpenTwinsV2.Twins.Controllers
             IGraph g1;
             try
             {
-                var twinJson = await _converterService.getJsonWithoutNamespace(twinId) ?? throw new Exception("The recieved Json of the Twin is null");
-                g1 = _converterService.GetRDFGraphFromJson(twinJson, twinId) ?? throw new Exception("The recieved Graph of the Twin is null");
+                var twinJson = await _exportService.GetJsonWithoutNamespace(twinId) ?? throw new Exception("The recieved Json of the Twin is null");
+                g1 = FormatService.GetRDFGraphFromJson(twinJson, twinId) ?? throw new Exception("The recieved Graph of the Twin is null");
                 
             }catch(Exception ex)
             {
@@ -382,8 +382,8 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 try
                 {
-                    var ontologyJson = await _converterService.getJsonWithNamespace(ontologyId, await _dgraphService.GetNamespacesInOntologyAsync(ontologyId) ?? null) ?? throw new Exception($"The recieved Json of the {ontologyId} Ontology is null");
-                    var ontologyGraph = _converterService.GetRDFGraphFromJson(ontologyJson, ontologyId) ?? throw new Exception($"The recieved Graph of the {ontologyId} Ontology is null");
+                    var ontologyJson = await _exportService.GetJsonWithNamespace(ontologyId, await _dgraphService.GetNamespacesInOntologyAsync(ontologyId) ?? null) ?? throw new Exception($"The recieved Json of the {ontologyId} Ontology is null");
+                    var ontologyGraph = FormatService.GetRDFGraphFromJson(ontologyJson, ontologyId) ?? throw new Exception($"The recieved Graph of the {ontologyId} Ontology is null");
 
                     compound.Merge(ontologyGraph, true);
                 }catch(Exception ex)

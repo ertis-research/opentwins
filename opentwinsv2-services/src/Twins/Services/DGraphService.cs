@@ -84,6 +84,7 @@ namespace OpenTwinsV2.Twins.Services
                 hasChild: [uid] @reverse .
                 relatedTo: [uid] @reverse .
                 relatedFrom: [uid] @reverse .
+                inheritsFrom: uid @reverse .
 
                 domainId: string @index(exact) .
                 Domain.name: string @index(term) .
@@ -243,6 +244,7 @@ namespace OpenTwinsV2.Twins.Services
                     twins
                     domains
                     Thing.prefix
+                    inheritsFrom
                 }
 
                 type Ontology {
@@ -591,19 +593,10 @@ namespace OpenTwinsV2.Twins.Services
             return JsonSerializer.Deserialize<JsonElement>(newJson);
         }
 
-        // private void UpdateExistingDependencies(Dictionary<string, JsonNode> rel, HashSet<string> dependencies)
-        // {
-        //     // HashSet<string> res = [.. dependencies];
 
-        //     foreach((var relName, var thingIds) in rel)
-        //     {
-        //         foreach(var arrEl in thingIds is JsonArray ? thingIds.AsArray() : new JsonArray{thingIds.DeepClone()})
-        //         {
-        //             var val = arrEl?.GetValue<string>();
-        //             if(val is not null)
-        //                 dependencies.Add(val);
-        //         }
-        //     }
+        // public async Task<JsonObject> GetFromUid(string uid)
+        // {
+            
         // }
 
         #endregion
@@ -737,7 +730,7 @@ namespace OpenTwinsV2.Twins.Services
                         thingId
                         countThings: count(~twins)
                         thingsOfTwin: ~twins{{
-                            thingId 
+                            name
                         }}
                     }}
                 }}";
@@ -755,7 +748,7 @@ namespace OpenTwinsV2.Twins.Services
                 if(doc.RootElement.TryGetProperty("twins", out var twins))
                 {
                     foreach(var twin in twins.EnumerateArray())
-                        result.Add(FlattenJsonElement<string>(twin, "thingsOfTwin", "thingId"));
+                        result.Add(FlattenJsonElement<string>(twin, "thingsOfTwin", "name"));
                 }
 
                 return new PagedResult<JsonElement>(result, totalCount, page, pageSize, totalPages);
@@ -1483,7 +1476,7 @@ namespace OpenTwinsV2.Twins.Services
             var query = $@"
             {{
                 ontologies(func: eq(ontologyId, ""{ontologyId}"")) {{
-                    hasThing @filter(not has(~hasType)){{
+                    hasThing{{
                         uid
                         name
                         thingId
@@ -1817,16 +1810,16 @@ namespace OpenTwinsV2.Twins.Services
             return null;
         }
 
-        public async Task CreateInstanciatedThingAsync(string ontologyId, string thingId, string id, string? twinUid = null)
+        public async Task CreateInstanciatedThingAsync(string thingId, string id, string? ontologyId = null, string? twinUid = null)
         {
             var txn = _client.NewTransaction();
             try
             {
-                var uid = await GetThingInOntologyUidAsync(ontologyId, thingId);
+                string? uid = string.IsNullOrWhiteSpace(ontologyId) ? null : await GetThingInOntologyUidAsync(ontologyId, thingId);
 
                 var mutation = new Mutation
                 {
-                    SetJson = ByteString.CopyFromUtf8(JsonSerializer.Serialize(ThingBuilder.BuildThing(thingId, id, uid, twinUid: string.IsNullOrWhiteSpace(twinUid) ? null : twinUid)))
+                    SetJson = ByteString.CopyFromUtf8(JsonSerializer.Serialize(ThingBuilder.BuildThing(thingId, id, typeUid: uid, twinUid: string.IsNullOrWhiteSpace(twinUid) ? null : twinUid)))
                 };
                 await txn.Mutate(mutation);
                 await txn.Commit();
@@ -1895,7 +1888,7 @@ namespace OpenTwinsV2.Twins.Services
                 if(root.TryGetProperty("thing", out var thing) || thing.AsNode()!.AsArray().Count()>0)
                     return (true, true);
                 
-                await CreateInstanciatedThingAsync(ontologyId, thingId, id);
+                await CreateInstanciatedThingAsync(thingId, id, ontologyId: ontologyId);
                 return (true, true);
             }
             catch (Exception)
@@ -2081,29 +2074,6 @@ namespace OpenTwinsV2.Twins.Services
     
         public async Task<List<JsonElement>> GetShapesFromShapeGraph(string shapeId)
         {
-            // using var txn = _client.NewTransaction();
-
-            // var query = $@"
-            // {{
-            //     shapeGraphs(func: eq(shapeId, ""{shapeId}"")) @recurse(depth: 100, loop: true) {{
-            //         uid
-            //         dgraph.type
-            //         expand(_all_)
-            //         ~*
-            //     }}
-            // }}";
-
-            // var res = await txn.Query(query);
-            // var json = res.Json.ToStringUtf8(); ;
-
-            // using var doc = JsonDocument.Parse(json);
-            // var root = doc.RootElement;
-
-            // if (!root.TryGetProperty("shapeGraphs", out JsonElement shapeGraphsArray) || shapeGraphsArray.GetArrayLength() == 0)
-            // {
-            //     return [];
-            // }
-
             var fullJson = await GetShapeGraphNestedFullJson(shapeId);
             if(fullJson is null)
                 return [];
@@ -2179,8 +2149,8 @@ namespace OpenTwinsV2.Twins.Services
 
             var query = $@"
             {{
-                nodeshapes as var(func: eq(shapeId, ""{shapeId}"")) @cascade {{
-                    ~hasThing @filter(eq(nodeShapeId, ""{nodeShapeId}""))
+                nodeshapes as var(func: eq(nodeShapeId, ""{nodeShapeId}"")) @cascade {{
+                    ~shapes @filter(eq(shapeId, ""{shapeId}""))
                 }}
 
                 nodeshape(func: uid(nodeshapes)) @recurse(depth: 100, loop: true) {{

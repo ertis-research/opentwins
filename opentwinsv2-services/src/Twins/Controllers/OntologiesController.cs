@@ -32,6 +32,7 @@ using VDS.RDF.Query.Datasets;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using OpenTwinsV2.Twins.Models;
 using Google.Rpc;
+using Twins.Services;
 
 
 namespace OpenTwinsV2.Twins.Controllers
@@ -42,17 +43,17 @@ namespace OpenTwinsV2.Twins.Controllers
     {
         private readonly DGraphService _dgraphService;
         private readonly ThingsService _thingsService;
-        private readonly ConverterService _converterService;
-        private readonly NQuadsService _nquadsService;
+        private readonly ExportService _exportService;
+        private readonly ImportService _importService;
         private readonly InstanciationService _instanciationService;
         // private const string ActorType = Actors.ThingActor;
 
-        public OntologiesController(DGraphService dgraphService, ThingsService thingsService, ConverterService converterService, NQuadsService nquadsService, InstanciationService instanciationService)
+        public OntologiesController(DGraphService dgraphService, ThingsService thingsService, ExportService exportService, ImportService importService, InstanciationService instanciationService)
         {
             _dgraphService = dgraphService;
             _thingsService = thingsService;
-            _converterService = converterService;
-            _nquadsService = nquadsService;
+            _exportService = exportService;
+            _importService = importService;
             _instanciationService = instanciationService;
         }
 
@@ -79,7 +80,6 @@ namespace OpenTwinsV2.Twins.Controllers
                 return StatusCode(500, $"Something wrong happened while looking for ontologies in Dgraph:\n{ex.GetType}: {ex.Message}");
             }
         }
-
         /// <summary>
         /// Creates a new Ontology from the TTL File provided and with the identifier provided.
         /// </summary>
@@ -107,27 +107,30 @@ namespace OpenTwinsV2.Twins.Controllers
                 return BadRequest($"File can only be of .ttl extension, instead recieved a {(extension is null ? "no extension" : extension.ToLower())} file");
             }
 
+            ontologyId = ontologyId.ToLowerInvariant();
+
             if (!await _dgraphService.ExistsOntologyByIdAsync(ontologyId))
             {
                 //Parse to rdf
                 //first we read the file data and save it in a IGraph variable
-                List<string>? nquads = null;
-                try
-                {
-                    nquads = _nquadsService.GetFullOntologyNQuadsFromFile(ontologyId, ontologyFile) ?? throw new Exception("The obtained NQuads list of the Ontology was null");
-                }
-                catch(Exception ex)
-                {
-                    return StatusCode(500, $"Something wrong happened while importing the Ontology to DGraph:\n{ex.GetType}: {ex.Message}");
-                }
+                ICollection<string>? nquads = null;
+                JsonArray shapeGraph = [];
+                // try
+                // {
+                    nquads = await _importService.GetFullOntologyNQuadsFromFile(ontologyId, ontologyFile, shapeGraph) ?? throw new Exception("The obtained NQuads list of the Ontology was null");
+                // }
+                // catch(Exception ex)
+                // {
+                //     return StatusCode(500, $"Something wrong happened while importing the Ontology to DGraph:\n{ex.GetType}: {ex.Message}");
+                // }
                 
                 //---------------------------------------------------------------------------------
                 //Upload the triples as a mutation to DGraph
 
-                var response = await _dgraphService.AddNQuadTripleAsync(nquads);
+                var response = await _dgraphService.AddNQuadTripleAsync(nquads.ToList());
 
                 return Ok($"{response} {nquads.ToArray().Length} triples added to DGraph successfully");
-                
+                // return Ok(nquads);
             }
             return Conflict("There is already an ontology with this id");
         }
@@ -534,7 +537,7 @@ namespace OpenTwinsV2.Twins.Controllers
             try
             {
                 var ns = await _dgraphService.GetNamespacesInOntologyAsync(ontologyId);
-                var json = await _converterService.getJsonWithNamespace(ontologyId, ns);
+                var json = await _exportService.GetJsonWithNamespace(ontologyId, ns);
                 return Ok(json);
             }catch(Exception ex)
             {
@@ -561,7 +564,7 @@ namespace OpenTwinsV2.Twins.Controllers
             }
 
             var ns = await _dgraphService.GetNamespacesInOntologyAsync(ontologyId);
-            var ontologyJson = await _converterService.getJsonWithNamespace(ontologyId, ns);
+            var ontologyJson = await _exportService.GetJsonWithNamespace(ontologyId, ns);
 
             if (ontologyJson == null)
             {
@@ -573,7 +576,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 return StatusCode(500, "Something wrong with the Ontology Json:\nNo namespace found");//error 500, json malformado
             }
 
-            var jsonLd = _converterService.GetJsonLDFromRegularJson(ontologyJson, ontologyId);
+            var jsonLd = ExportService.GetJsonLDFromRegularJson(ontologyJson, ontologyId);
 
             if (jsonLd is null)
             {
@@ -602,7 +605,7 @@ namespace OpenTwinsV2.Twins.Controllers
             }
             
             var ns = await _dgraphService.GetNamespacesInOntologyAsync(ontologyId);
-            var ontologyJson = await _converterService.getJsonWithNamespace(ontologyId, ns);
+            var ontologyJson = await _exportService.GetJsonWithNamespace(ontologyId, ns);
 
             if (ontologyJson == null)
             {
@@ -616,12 +619,18 @@ namespace OpenTwinsV2.Twins.Controllers
 
             try
             {
-                return File(_converterService.GetTTLFileFromRegularJson(ontologyId, ontologyJson), "text/turtle", $"{ontologyId}_ontology.ttl");
+                return File(FormatService.GetTTLFileFromRegularJson(ontologyId, ontologyJson), "text/turtle", $"{ontologyId}_ontology.ttl");
             }
             catch (Exception e)
             {
                 return StatusCode(500, $"Something wrong while parsing to TTL Format:{e}");
             }
+        }
+
+        [HttpGet("{ontologyId}/shapeGraph")]
+        public async Task<IActionResult> GetShapeGraph(string ontologyId)
+        {
+            return Ok(await _exportService.BuildShapeGraphFromOntology(ontologyId));
         }
 
         /// <summary>
@@ -664,7 +673,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
                 //get the ontologyJson, the namespaces and the RDF graph
                 var ns = await _dgraphService.GetNamespacesInOntologyAsync(ontologyId);
-                var results = await _converterService.RunSparQLQuery(ontologyId, ns, query);
+                var results = await _exportService.RunSparQLQuery(ontologyId, ns, query);
                 if(results is null)
                     throw new Exception("Either the Json or the Graph are null");
                 

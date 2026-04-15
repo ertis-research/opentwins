@@ -1,0 +1,94 @@
+@prefix : <http://example.org/smarthome#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+#################################################################
+# Ontology Header
+#################################################################
+
+:SmartHomeOntology a owl:Ontology ;
+    rdfs:label "Smart Home Ontology (Blank Node Examples)" .
+
+#################################################################
+# Classes
+#################################################################
+
+:Device a owl:Class .
+
+:Sensor a owl:Class ;
+    rdfs:subClassOf :Device .
+
+:Actuator a owl:Class ;
+    rdfs:subClassOf :Device .
+
+#################################################################
+# Properties
+#################################################################
+
+:controls a owl:ObjectProperty ;
+    rdfs:domain :Sensor ;
+    rdfs:range :Actuator .
+
+:hasPowerConsumption a owl:DatatypeProperty ;
+    rdfs:domain :Device ;
+    rdfs:range xsd:decimal .
+
+#################################################################
+# BLANK NODE EXAMPLE 1: Restriction
+# Every Sensor controls at least one Actuator
+#################################################################
+
+:Sensor rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :controls ;
+    owl:someValuesFrom :Actuator
+] .
+
+#################################################################
+# BLANK NODE EXAMPLE 2: Anonymous Intersection Class
+# SmartDevice ≡ Device AND (hasPowerConsumption some decimal)
+#################################################################
+
+:SmartDevice a owl:Class ;
+    owl:equivalentClass [
+        a owl:Class ;
+        owl:intersectionOf (
+            :Device
+            [
+                a owl:Restriction ;
+                owl:onProperty :hasPowerConsumption ;
+                owl:someValuesFrom xsd:decimal
+            ]
+        )
+    ] .
+
+#################################################################
+# BLANK NODE EXAMPLE 3: Anonymous Individual
+#################################################################
+
+:TemperatureSensor a :Sensor ;
+    :controls [
+        a :Actuator ;
+        :hasPowerConsumption "5.5"^^xsd:decimal
+    ] ;
+    :hasPowerConsumption "1.2"^^xsd:decimal .
+
+#################################################################
+# BLANK NODE EXAMPLE 4: Anonymous Class with Cardinality
+# EfficientDevice ≡ Device AND (hasPowerConsumption max 1 value)
+#################################################################
+
+:EfficientDevice a owl:Class ;
+    owl:equivalentClass [
+        a owl:Class ;
+        owl:intersectionOf (
+            :Device
+            [
+                a owl:Restriction ;
+                owl:onProperty :hasPowerConsumption ;
+                owl:maxCardinality "1"^^xsd:nonNegativeInteger
+            ]
+        )
+    ] .

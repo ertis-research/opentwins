@@ -1,0 +1,198 @@
+@prefix : <http://example.org/food#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+############################################################
+# Ontology
+############################################################
+
+:FoodOntology a owl:Ontology .
+
+############################################################
+# Basic Classes
+############################################################
+
+:Food a owl:Class .
+:Fruit a owl:Class ; rdfs:subClassOf :Food .
+:Vegetable a owl:Class ; rdfs:subClassOf :Food .
+:Meat a owl:Class ; rdfs:subClassOf :Food .
+:Dairy a owl:Class ; rdfs:subClassOf :Food .
+:Grain a owl:Class ; rdfs:subClassOf :Food .
+
+:Meal a owl:Class .
+:Ingredient a owl:Class .
+
+############################################################
+# Object Properties
+############################################################
+
+:hasIngredient a owl:ObjectProperty .
+:pairedWith a owl:ObjectProperty .
+
+############################################################
+# 1. UNION CLASS
+# PlantBasedFood ≡ Fruit ∪ Vegetable ∪ Grain
+############################################################
+
+:PlantBasedFood a owl:Class ;
+    owl:equivalentClass [
+        a owl:Class ;
+        owl:unionOf ( :Fruit :Vegetable :Grain )
+    ] .
+
+############################################################
+# 2. INTERSECTION CLASS
+# VeganMeal ≡ Meal AND (only PlantBasedFood ingredients)
+############################################################
+
+:VeganMeal a owl:Class ;
+    owl:equivalentClass [
+        a owl:Class ;
+        owl:intersectionOf (
+            :Meal
+            [
+                a owl:Restriction ;
+                owl:onProperty :hasIngredient ;
+                owl:allValuesFrom :PlantBasedFood
+            ]
+        )
+    ] .
+
+############################################################
+# 3. COMPLEMENT CLASS
+# NonVeganFood ≡ NOT PlantBasedFood
+############################################################
+
+:NonVeganFood a owl:Class ;
+    owl:equivalentClass [
+        a owl:Class ;
+        owl:complementOf :PlantBasedFood
+    ] .
+
+############################################################
+# 4. ENUMERATION (oneOf)
+############################################################
+
+:SpiceLevel a owl:Class ;
+    owl:oneOf ( :Mild :Medium :Hot ) .
+
+:Mild a :SpiceLevel .
+:Medium a :SpiceLevel .
+:Hot a :SpiceLevel .
+
+############################################################
+# 5. INTERSECTION + COMPLEMENT (nested)
+# VegetarianFood ≡ Food AND NOT Meat
+############################################################
+
+:VegetarianFood a owl:Class ;
+    owl:equivalentClass [
+        a owl:Class ;
+        owl:intersectionOf (
+            :Food
+            [
+                a owl:Class ;
+                owl:complementOf :Meat
+            ]
+        )
+    ] .
+
+############################################################
+# 6. UNION INSIDE INTERSECTION
+# BalancedMeal ≡ Meal AND (hasIngredient some (Fruit ∪ Vegetable))
+############################################################
+
+:BalancedMeal a owl:Class ;
+    owl:equivalentClass [
+        a owl:Class ;
+        owl:intersectionOf (
+            :Meal
+            [
+                a owl:Restriction ;
+                owl:onProperty :hasIngredient ;
+                owl:someValuesFrom [
+                    a owl:Class ;
+                    owl:unionOf ( :Fruit :Vegetable )
+                ]
+            ]
+        )
+    ] .
+
+############################################################
+# 7. ONEOF INSIDE RESTRICTION
+# SpicyMeal ≡ Meal AND (hasIngredient some {Hot})
+############################################################
+
+:SpicyMeal a owl:Class ;
+    owl:equivalentClass [
+        a owl:Class ;
+        owl:intersectionOf (
+            :Meal
+            [
+                a owl:Restriction ;
+                owl:onProperty :pairedWith ;
+                owl:someValuesFrom [
+                    a owl:Class ;
+                    owl:oneOf ( :Hot )
+                ]
+            ]
+        )
+    ] .
+
+############################################################
+# 8. COMPLEMENT INSIDE RESTRICTION
+# DairyFreeMeal ≡ Meal AND (hasIngredient only NOT Dairy)
+############################################################
+
+:DairyFreeMeal a owl:Class ;
+    owl:equivalentClass [
+        a owl:Class ;
+        owl:intersectionOf (
+            :Meal
+            [
+                a owl:Restriction ;
+                owl:onProperty :hasIngredient ;
+                owl:allValuesFrom [
+                    a owl:Class ;
+                    owl:complementOf :Dairy
+                ]
+            ]
+        )
+    ] .
+
+############################################################
+# 9. UNION OF COMPLEX EXPRESSIONS
+############################################################
+
+:FlexibleMeal a owl:Class ;
+    owl:equivalentClass [
+        a owl:Class ;
+        owl:unionOf (
+            :VeganMeal
+            :VegetarianFood
+            [
+                a owl:Class ;
+                owl:intersectionOf (
+                    :Meal
+                    [
+                        a owl:Restriction ;
+                        owl:onProperty :hasIngredient ;
+                        owl:someValuesFrom :Meat
+                    ]
+                )
+            ]
+        )
+    ] .
+
+############################################################
+# 10. ONEOF FOR SPECIFIC FOODS
+############################################################
+
+:FavoriteFoods a owl:Class ;
+    owl:oneOf ( :Pizza :Salad :Soup ) .
+
+:Pizza a :Food .
+:Salad a :Food .
+:Soup a :Food .

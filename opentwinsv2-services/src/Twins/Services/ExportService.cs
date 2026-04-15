@@ -11,6 +11,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.VisualBasic;
 using Newtonsoft.Json;
 using OpenTwinsV2.Shared.Constants;
+using Twins.Builders;
+using Twins.Services;
+using VDS.Common.Collections.Enumerations;
 using VDS.RDF;
 using VDS.RDF.Query;
 using VDS.RDF.Query.Datasets;
@@ -19,309 +22,17 @@ using VDS.RDF.Query.Expressions.Functions.XPath.Cast;
 namespace OpenTwinsV2.Twins.Services
 {
     /// <summary>
-    /// Reunites all export functions common to Ontologies and Twins controllers.
+    /// Reunites all export functions common to Ontologies, Twins and Shapes controllers.
     /// </summary>
-    public class ConverterService
+    public class ExportService
     {
         private readonly DGraphService _dgraphService;
         private readonly ThingsService _thingsService;
-        private const string ActorType = Actors.ThingActor;
-        public ConverterService(DGraphService dgraphService, ThingsService thingsService)
+
+        public ExportService(DGraphService dgraphService, ThingsService thingsService)
         {
             _dgraphService = dgraphService;
             _thingsService = thingsService;
-        }
-
-        /// <summary>
-        /// Sanitizes the uri from special characters adn retuens only the last valid part.
-        /// </summary>
-        /// <param name="uri">The uri to be sanitized.</param>
-        /// <returns>
-        /// Returns the last part of the uri without special characters.<br/>
-        /// Returns 'twin' if the whole uri were special characters.
-        /// </returns>
-        public string SanitizeTypeAndUIDValues(string uri)
-        {
-            //Check which character is last
-            char[] separators = { '#', '/', '&', ':' };
-
-            // Remove trailing separator if present at the end
-            while (uri.Length > 0 && separators.Contains(uri.Last()))
-            {
-                //Delete illegal characters at the end
-                uri = uri.Substring(0, uri.Length - 1);
-            }
-
-            //in case the whole uri were illegal characters (unlikely but possible)
-            if (uri.Length == 0)
-            {
-                return "twin"; //for example
-            }
-
-            // Find last separator after removing trailing char
-            int indx = uri.LastIndexOfAny(separators);
-
-            //return the substring or the whole uri in case none of the characters are present
-            return (indx >= 0 && indx < uri.Length - 1) ? uri.Substring(indx + 1) : uri;
-        }
-
-        /// <summary>
-        /// Separates the uri of the node into prefix and localName.
-        /// </summary>
-        /// <param name="nodeUri">The uri of the node.</param>
-        /// <param name="parentId">The identifier of the parent.</param>
-        /// <returns>
-        /// Returns the prefix and sanitized localName of the uri provided.<br/>
-        /// Returns a standard prefix and the localName of the uri if it didn't have a prefix.<br/>
-        /// Returns the prefix and 'twin' as localName if the whole uri were special characters.
-        /// </returns>
-        public (string Prefix, string LocalName) GetLocalName(string nodeUri, string parentId)
-        {
-
-            string? prefix = null;
-            string? localName = null;
-            //get the name right after the prefix
-            var parts = nodeUri.Split(':');
-            if (parts.Length >= 2)
-            {
-                prefix = parts[0];
-                localName = parts[1];
-            }
-
-            if (prefix is null || prefix.Length == 0)
-            {
-                //Get the last part of the URI
-                prefix = $"pref{parentId}";
-            }
-            if (localName is null || localName.Length == 0)
-            {
-                localName = SanitizeTypeAndUIDValues(nodeUri);
-            }
-            return (prefix, localName);
-        }
-
-        /// <summary>
-        /// Extracts from the provided node its prefix and localName.
-        /// </summary>
-        /// <param name="node">The node object.</param>
-        /// <param name="graph">The graph object.</param>
-        /// <param name="parentId">The identifier of the parent.</param>
-        /// <returns>
-        /// Returns the prefix and sanitized localName of the node's qname or uri.
-        /// </returns>
-        public (string Prefix, string LocalName) GetLocalName(VDS.RDF.INode node, IGraph graph, string parentId)
-        {
-            if (node is UriNode uriNode)
-            {
-                string qname;
-                string prefix;
-                string localName;
-                if (graph.NamespaceMap.ReduceToQName(uriNode.Uri.ToString(), out qname))
-                {
-                    (prefix, localName) = GetLocalName(qname, parentId);
-                }
-                else
-                {
-                    (prefix, localName) = GetLocalName(uriNode.Uri.ToString(), parentId);
-                }
-                return (prefix, localName);
-            }
-            return ($"pref{parentId}", $"{(node.NodeType.Equals(NodeType.Blank) ? "blank_" : "")}{ node.ToString()}");
-        }
-
-        /// <summary>
-        /// Extracts the uid of the node provided.
-        /// </summary>
-        /// <param name="node">The node object.</param>
-        /// <param name="graph">The graph object that contains the node.</param>
-        /// <returns>
-        /// Returns the uid of the node in the form of "_:{local}.
-        /// </returns>
-        public string GetUid(VDS.RDF.INode node, IGraph graph)
-        {
-            //get the uid omiting all prefixes
-            var (_, local) = GetLocalName(node, graph, "");
-            local ??= "nameless" + Guid.NewGuid();
-            return $"_:{local}";
-        }
-        
-        /// <summary>
-        /// Sanitizes Attribute values.
-        /// </summary>
-        /// <param name="value">The untreated value.</param>
-        /// <returns>
-        /// Returns the value with special characters scaped.
-        /// </returns>
-        public string SanitizeAttributeValue(string value)
-        {
-            if (string.IsNullOrEmpty(value))
-                return value;
-
-            return value
-                .Replace("\\", "\\\\")   // omit \
-                .Replace("\"", "\\\"")   // omit "
-                .Replace("\n", "\\n")    // omit \n
-                .Replace("\r", "\\r")    // omit \r
-                .Replace("\t", "\\t");   // omit \t
-        }
-
-        /// <summary>
-        /// Extracts from a Literal Node object its datatype and value.
-        /// </summary>
-        /// <param name="literal">The Literal Node object.</param>
-        /// <returns>
-        /// Returns the datatype and sanitized value of the Literal Node.<br/>
-        /// Returns string as the datatype if the node didn't have one and the sanitized value.
-        /// </returns>
-        public (string datatype, string value) GetLiteralCleanData(ILiteralNode literal)
-        {
-            string value = SanitizeAttributeValue(literal.Value);
-            string dataType = literal.DataType?.ToString() ?? "string";
-            dataType = SanitizeTypeAndUIDValues(dataType) ?? "string";
-
-            return (dataType, value);
-        }
-
-        /// <summary>
-        /// Extracts the datatype and santiized value of a literal string.
-        /// </summary>
-        /// <param name="literalString">The untreated string of the literal.</param>
-        /// <returns>
-        /// Returns the datatype and sanitized value from the literal string.<br/>
-        /// Returns string as datatype if the literal string didn't have one and the sanitiez value.
-        /// </returns>
-        public (string datatype, string value) GetLiteralCleanData(string literalString)
-        {
-            if (!literalString.Contains("^^"))
-                return ("string", literalString);
-
-            var parts = literalString.Split("^^");
-            var value = parts[0];
-            var (_, dataType) = GetLocalName(SanitizeTypeAndUIDValues(parts[1]), "");
-            return (dataType, value);
-        }
-
-        /// <summary>
-        /// Checks whether a Relation between Things is bidirectional or not.
-        /// </summary>
-        /// <param name="graph">The original parsed graph object.</param>
-        /// <param name="triple">The oroginal parsed triple object.</param>
-        /// <param name="uidSubj">The uid of the subject of the triple.</param>
-        /// <param name="uidObj">The uid of the object of the triple.</param>
-        /// <param name="predicate">The predicate of the Relation.</param>
-        /// <param name="nquads">The current list of NQuads of the Ontology.</param>
-        /// <returns>
-        /// Returns (true, true) if the Relation is bidirectional and already exists<br/>
-        /// Returns (true, false) if the Relation is bidirectional but doesn't exist yet.<br/>
-        /// Returns (false, true) if the Relation is currently not bidirectional and already exists.<br/>
-        /// Returns (false, false) if the Relation is currently not bidirectional and doesn't exist yet .
-        /// </returns>
-        public (bool, bool) isRelationBidirectional(IGraph graph, Triple triple, string uidSubj, string uidObj, string predicate, List<string> nquads)
-        {
-            bool bid = false;
-            bool exists = false;
-
-            //check if in Object there's: uidObj <predicate> uidSubj
-            /*look specifically for:
-            relUid <relatedTo> objUid 
-            and then:
-            relUid <relatedTo> subjUid
-            to make sure, supposedly if the first nquad is present it means 
-            */
-
-            var reversedTriple = new Triple(triple.Object, triple.Predicate, triple.Subject);
-            bid = uidSubj==uidObj ? false : graph.ContainsTriple(triple) && graph.ContainsTriple(reversedTriple);
-
-            if (bid)
-            {
-                var pattern = @"^(?<subject>\S+)\s+<(?<predicate>[^>]+)>\s+(?:(?<objectUri>\S+)|""(?<objectLit>[^""]+)"")";
-                var relUid = $"_:rel_{predicate}_";
-
-                var parsed = nquads
-                    .Select(line => new { line, match = Regex.Match(line, pattern) })
-                    .Where(x => x.match.Success)
-                    .ToList();
-
-                var relationsNquads = parsed
-                    .Where(x =>
-                        x.match.Groups["subject"].Value.Contains(relUid) &&
-                        x.match.Groups["predicate"].Value.Equals("relatedTo") &&
-                        x.match.Groups["objectUri"].Value.Equals(uidSubj) &&
-                        parsed.Any(y =>
-                            y.match.Groups["subject"].Value == x.match.Groups["subject"].Value &&
-                            y.match.Groups["predicate"].Value.Equals("relatedTo") &&
-                            y.match.Groups["objectUri"].Value.Equals(uidObj)))
-                    .Select(x => x.line)
-                    .ToList();
-
-                exists = relationsNquads.Count > 0;
-            }
-
-            return (bid, exists);
-        }
-
-        /// <summary>
-        /// Checks if the provided node is relevant for the Ontology.
-        /// </summary>
-        /// <param name="g">The graph object.</param>
-        /// <param name="node">The node object that belongs to the graph provided.</param>
-        /// <returns>
-        /// Returns true if the Blank node provided is relevant.<br/>
-        /// Returns false if the Blank node provided is irrelevant.
-        /// </returns>
-        public bool IsRelevantBlankNode(IGraph g, VDS.RDF.INode node)
-        {
-            var interestingPredicates = new[] {
-                "owl:oneOf", "owl:intersectionOf", "owl:unionOf",
-                "owl:someValuesFrom", "owl:allValuesFrom",
-                "rdf:first", "rdf:rest"
-            };
-
-            return g.GetTriplesWithSubject(node)
-                .Any(t => t.Predicate is IUriNode p &&
-                        interestingPredicates.Any(ip => p.ToString().Contains(ip)));
-        }
-
-        /// <summary>
-        /// Checks if the node provided is the first element of a RDF list.
-        /// </summary>
-        /// <param name="g">The graph object.</param>
-        /// <param name="node">The node that belongs to the graph and it is being checked.</param>
-        /// <returns>
-        /// Returns true if the node is the head of an RDF list.<br/>
-        /// Returns false if the node is not the head of an RDF list.
-        /// </returns>
-        public bool IsListHead(IGraph g, INode node)
-        {
-            var rdfFirst = g.CreateUriNode("rdf:first");
-            return g.GetTriplesWithSubjectPredicate(node, rdfFirst).Any();
-        }
-
-        /// <summary>
-        /// Reads through the RDF list that is headed by the node provided.
-        /// </summary>
-        /// <param name="g">The graph object.</param>
-        /// <param name="head">The head node object of the RDF list.</param>
-        /// <returns>Returns the list of node objects that are part of the RDF list.</returns>
-        public List<INode> ReadStrictList(IGraph g, INode head)
-        {
-            var items = new List<INode>();
-            var rdfFirst = g.CreateUriNode("rdf:first");
-            var rdfRest  = g.CreateUriNode("rdf:rest");
-            var rdfNil   = g.CreateUriNode("rdf:nil");
-
-            INode current = head;
-
-            while (!current.Equals(rdfNil))
-            {
-                var first = g.GetTriplesWithSubjectPredicate(current, rdfFirst).Single().Object;
-                items.Add(first);
-
-                var rest = g.GetTriplesWithSubjectPredicate(current, rdfRest).Single().Object;
-                current = rest;
-            }
-
-            return items;
         }
 
         /// <summary>
@@ -336,10 +47,10 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>
         /// Returns the cloned Json Node that was provided but with the necessary changes in the prefix field and changes on the namespace dictionary if needed.
         /// </returns>
-        private JsonNode? checkPrefixes(JsonNode? node, Dictionary<string, string> ns, string defaultPrefix, string defaultUri, string pType = "", string pName = "")
+        private void CheckPrefixes(JsonNode? node, Dictionary<string, string> ns, string defaultPrefix, string defaultUri, string pType = "", string pName = "")
         {
             if(node is null)
-                return null;
+                return;
             if (node is JsonObject obj)
             {
                 var pref = defaultPrefix;
@@ -359,7 +70,7 @@ namespace OpenTwinsV2.Twins.Services
                     string propertyName = string.IsNullOrWhiteSpace(pName) ? type.Equals("Thing") ? "thingId" : (type.Equals("Relation") ? "Relation.name" : "Attribute.key") : pName;
                     string? newName = null;
                     if (obj.TryGetPropertyValue(propertyName, out var name) && name is not null)
-                        (pref, newName) = GetLocalName(name.GetValue<string>(), defaultPrefix);
+                        (pref, newName) = FormatService.GetLocalName(name.GetValue<string>(), defaultPrefix);
                     
 
                     if (pref.Equals("otv2"))
@@ -369,9 +80,8 @@ namespace OpenTwinsV2.Twins.Services
                             obj[propertyName] = newName;
                     }
                     else
-                    {
                         pref = defaultPrefix;
-                    }
+                    
                         
                     //first, check if it has the otv2 prefix
                     //if not, we create the attribute with the info from the default's context
@@ -382,12 +92,8 @@ namespace OpenTwinsV2.Twins.Services
                     };
                 }
                 if (!ns.ContainsKey(pref))
-                {
                     ns.Add(pref, uri);
-                }
-
             }
-            return node.DeepClone();
         }
 
         /// <summary>
@@ -457,7 +163,7 @@ namespace OpenTwinsV2.Twins.Services
         /// Returns the Twin's Json if the namespace dictionary was not defined.<br/>
         /// Returns the Ontology's Json if the namespace dictionary was defined.
         /// </returns>
-        public async Task<JsonObject?> getJsonWithNamespace(string id, JsonElement? ns)
+        public async Task<JsonObject?> GetJsonWithNamespace(string id, JsonElement? ns)
         {
             var finalNode = new JsonObject
             {
@@ -465,7 +171,7 @@ namespace OpenTwinsV2.Twins.Services
                 ["namespace"] = ns is null ? new JsonArray() : JsonNode.Parse(ns.Value.GetProperty("namespace").GetRawText()),
                 ["things"] = new JsonArray()
             };
-            var idSanitized = SanitizeTypeAndUIDValues(id);
+            var idSanitized = FormatService.SanitizeTypeAndUIDValues(id);
             var defaultPrefix = $"pref{idSanitized}";
             var defaultUri = $"http://example.org/twin/{idSanitized}/";
             var nsDic = new Dictionary<string, string>
@@ -492,7 +198,7 @@ namespace OpenTwinsV2.Twins.Services
                         var thing = JsonNode.Parse(raw);
                         if (ns is null)
                         {
-                            thing = checkPrefixes(thing, nsDic, defaultPrefix, defaultUri);
+                            CheckPrefixes(thing, nsDic, defaultPrefix, defaultUri);
                             
                             //ATTRIBUTES
                             JsonArray attrs = new JsonArray();
@@ -506,8 +212,8 @@ namespace OpenTwinsV2.Twins.Services
                             {
                                 foreach (var attr in thing["hasAttribute"]!.AsArray())
                                 {
-                                    var newAttr = checkPrefixes(attr, nsDic, defaultPrefix, defaultUri)!.AsObject();
-                                    //TODO add states
+                                    JsonObject newAttr = attr!.DeepClone().AsObject();
+                                    CheckPrefixes(newAttr, nsDic, defaultPrefix, defaultUri);
                                     if (state is not null && state is JsonObject stateObj && stateObj.Count > 0 && attr!.AsObject().TryGetPropertyValue("Attribute.key", out var attrKey) && stateObj.TryGetPropertyValue(attrKey!.GetValue<string>(), out var stateInfo))
                                     {
                                         //it only enters here if state is not null, it has something and has something on the attribute we are in
@@ -524,7 +230,7 @@ namespace OpenTwinsV2.Twins.Services
                                         }
 
                                         //delete the state of this attribute, so when i finish iterating through the dgraph attributes i am left with the ones that are not
-                                        state.AsObject().Remove(attrKey!.GetValue<string>());
+                                        stateObj.Remove(attrKey!.GetValue<string>());
                                     }
                                     attrs.Add(newAttr);
                                 }
@@ -539,7 +245,8 @@ namespace OpenTwinsV2.Twins.Services
                                     {
                                         var stateNode = stateInfo.DeepClone();
                                         stateNode.AsObject().Add("Attribute.key", key);
-                                        attrs.Add(checkPrefixes(stateNode, nsDic, defaultPrefix, defaultUri));
+                                        CheckPrefixes(stateNode, nsDic, defaultPrefix, defaultUri);
+                                        attrs.Add(stateNode);
                                     }
                                 }
                             
@@ -600,7 +307,10 @@ namespace OpenTwinsV2.Twins.Services
                                 {
                                     foreach (var entry in arr)
                                     {
-                                        flattenedRel.Add((ns is not null) ? entry!.DeepClone() : checkPrefixes(entry, nsDic, defaultPrefix, defaultUri));
+                                        var nodeToAdd = entry!.DeepClone();
+                                        if(ns is null)
+                                            CheckPrefixes(entry, nsDic, defaultPrefix, defaultUri);
+                                        flattenedRel.Add(nodeToAdd);
                                     }
                                 }
                                 var arrChild = item?["hasChild"]?.AsArray();
@@ -608,7 +318,10 @@ namespace OpenTwinsV2.Twins.Services
                                 {
                                     foreach (var entry in arrChild)
                                     {
-                                        flattenedChild.Add((ns is not null) ? entry!.DeepClone() : checkPrefixes(entry, nsDic, defaultPrefix, defaultUri));
+                                        var nodeToAdd = entry!.DeepClone();
+                                        if(ns is null)
+                                            CheckPrefixes(entry, nsDic, defaultPrefix, defaultUri);
+                                        flattenedChild.Add(nodeToAdd);
                                     }
                                 }
                             }
@@ -620,7 +333,7 @@ namespace OpenTwinsV2.Twins.Services
                             JsonNode? groupNode = groupObj;
 
                             if (ns is null)
-                                groupNode = checkPrefixes(groupNode, nsDic, defaultPrefix, defaultUri);
+                                CheckPrefixes(groupNode, nsDic, defaultPrefix, defaultUri);
 
                             if(groupNode is not null)
                                 groupedArray.Add(groupNode.AsObject());
@@ -635,7 +348,6 @@ namespace OpenTwinsV2.Twins.Services
 
                         var mergedElement = JsonDocument.Parse(thing.ToJsonString()).RootElement;
                         finalNode["things"]!.AsArray().Add(JsonNode.Parse(mergedElement.GetRawText()));
-
                     }
                 }
             }
@@ -662,9 +374,9 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>
         /// Returns the Json of the Twin.
         /// </returns>
-        public async Task<JsonObject?> getJsonWithoutNamespace(string id)
+        public async Task<JsonObject?> GetJsonWithoutNamespace(string id)
         {
-            return await getJsonWithNamespace(id, null);
+            return await GetJsonWithNamespace(id, null);
         }
 
         /// <summary>
@@ -732,9 +444,9 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>
         /// Returns the duplicated parent Json Object with the parsed value.
         /// </returns>
-        private JsonObject GetCastedValue(JsonNode value, JsonNode parent, string key)
+        private void GetCastedValue(JsonNode value, JsonNode parent, string key)
         {
-            (_, var val) = GetLocalName(value["value"]!.ToString(), "");
+            (_, var val) = FormatService.GetLocalName(value["value"]!.ToString(), "");
                         //parse
             if(value["Value.type"]!.GetValue<string>() is var valType )
             {
@@ -757,7 +469,17 @@ namespace OpenTwinsV2.Twins.Services
                         break;
                 }
             }
-            return parent.DeepClone().AsObject();
+        }
+
+        private void MergeIntoParent(JsonObject parent, JsonNode element, string key)
+        {
+            if(parent[key] is not null)
+            {
+                if(parent[key] is not JsonArray)
+                    parent[key] = new JsonArray{parent[key]!.DeepClone()};
+                parent[key]!.AsArray().Add(element.DeepClone());
+            }else
+                parent[key] = JsonNode.Parse(element.ToJsonString());
         }
 
         /// <summary>
@@ -773,7 +495,8 @@ namespace OpenTwinsV2.Twins.Services
             if (og.TryGetPropertyValue("constraintId", out var constraintId) && constraintId is not null)
             {
                 var constraintIdStr = constraintId.GetValue<string>();
-                var cons = checkPrefixes(og, nsDic, defaultPrefix, defaultUri, "ShapeConstraint", constraintIdStr);
+                var cons = og.DeepClone();
+                CheckPrefixes(cons, nsDic, defaultPrefix, defaultUri, "ShapeConstraint", constraintIdStr);
                 
                 //build constraint key with prefix and constraintId
                 var key = $"{(cons!.AsObject().TryGetPropertyValue("ShapeConstraint.prefix", out var consPrefix) ? consPrefix!["prefix"] : defaultPrefix)}:{constraintIdStr}";
@@ -791,27 +514,52 @@ namespace OpenTwinsV2.Twins.Services
                 //Property
                 //Array (With elements of any type of the above)
             
-                //TODO: if it's an array
-                if(value is JsonArray && value.AsArray().Count>1)
+                if(value is JsonArray valueArr && valueArr.Count>1)
                 {
                     var newValueArray = new JsonArray();
-                    foreach(var valueElement in value.AsArray())
+                    foreach(var valueElement in valueArr)
                     {
+                        JsonNode? valueToAdd = null;
                         var valueType = valueElement!["dgraph.type"]!.AsArray()[0]!.GetValue<string>();
                         if (valueType.Equals("NodeShape"))
                         {
-                            newValueArray.Add(GetFlattenedNodeShape(valueElement, nsDic, defaultPrefix, defaultUri));
+                            valueToAdd = GetFlattenedNodeShape(valueElement, nsDic, defaultPrefix, defaultUri);
                         }else if (valueType.Equals("ShapeProperty"))
                         {
-                            newValueArray.Add(GetFlattenedShapeProperty(valueElement!.AsObject(), nsDic, defaultPrefix, defaultUri));
+                            valueToAdd = GetFlattenedShapeProperty(valueElement!.AsObject(), nsDic, defaultPrefix, defaultUri);
                         }else if (valueType.Equals("Value"))
                         {
-                            parent = GetCastedValue(value, parent, key);
+                            GetCastedValue(value, parent, key);
+                        }else if (valueType.Equals("Reference"))
+                        {
+                            var valueName = valueElement["Target.name"]!.GetValue<string>();
+                            // valueElement = CheckPrefixes(valueElement, nsDic, defaultPrefix, defaultUri, "Target", valueName);
+                            var valuePrefix = valueElement!["Target.prefix"]!["prefix"]!.GetValue<string>();
+                            valueToAdd = (new JsonObject{["@id"] = $"{valuePrefix}:{valueName}"});
+                        }else if (valueType.Contains("Constraint"))
+                        {
+                            
+                            var constraintKey = valueElement["constraintId"]?.GetValue<string>();
+                            if(constraintKey is null)
+                                continue;
+                            var existing = newValueArray.FirstOrDefault(o => o is JsonObject obj && obj.Count == 1 && obj[$"sh:{constraintKey}"] is not null);
+                            valueToAdd = GetFlattenedShapeConstraint(existing?.AsObject() ?? [], valueElement.AsObject(), nsDic, defaultPrefix, defaultUri);
+                            if(existing is null)
+                                newValueArray.Add(valueToAdd.DeepClone());
+                            continue;
                         }
-                        
+
+                        if(valueToAdd is not null)
+                        {
+                            var existing = newValueArray.Where(o => o is JsonObject obj && obj.Count == 1 && obj[key] is not null);
+                            if(existing.Any())
+                                MergeIntoParent(existing.First()!.AsObject(), valueToAdd, key);
+                            else    
+                                newValueArray.Add(valueToAdd);
+                        }
                     }
                     
-                    parent[key] = JsonNode.Parse(newValueArray.ToJsonString());
+                    MergeIntoParent(parent, newValueArray.Count == 1 ? newValueArray.First()! : newValueArray, key);
 
                 }else if(value is not null && value is JsonObject || (value is JsonArray && value.AsArray().Count == 1))
                 {
@@ -830,22 +578,23 @@ namespace OpenTwinsV2.Twins.Services
 
                     if (nodeValType.Equals("Value"))
                     {
-                        parent = GetCastedValue(value, parent, key);
+                        GetCastedValue(value, parent, key);
                         
                     }else if (nodeValType.Equals("Reference"))
                     {
                         var valueName = value["Target.name"]!.GetValue<string>();
-                        value = checkPrefixes(value, nsDic, defaultPrefix, defaultUri, "Target", valueName);
+                        CheckPrefixes(value, nsDic, defaultPrefix, defaultUri, "Target", valueName);
                         var valuePrefix = value!["Target.prefix"]!["prefix"]!.GetValue<string>();
-                        parent[key] = $"{valuePrefix}:{valueName}";
+                        MergeIntoParent(parent, $"{valuePrefix}:{valueName}", key);
                     }else if (nodeValType.Equals("NodeShape"))
                     {
                         //recursive call to flattened Node Shape
-                        parent[key] = JsonNode.Parse(GetFlattenedNodeShape(value, nsDic, defaultPrefix, defaultUri).ToJsonString());
+                        MergeIntoParent(parent, GetFlattenedNodeShape(value, nsDic, defaultPrefix, defaultUri), key);
                     }else if (nodeValType.Equals("ShapeProperty"))
                     {
-                        parent[key] = JsonNode.Parse(GetFlattenedShapeProperty(value.AsObject(), nsDic, defaultPrefix, defaultUri).ToJsonString());
-                    }
+                        MergeIntoParent(parent, GetFlattenedShapeProperty(value.AsObject(), nsDic, defaultPrefix, defaultUri), key);
+                    }else if(nodeValType.Contains("Constraint"))
+                        MergeIntoParent(parent, GetFlattenedShapeConstraint([], value.AsObject(), nsDic, defaultPrefix, defaultUri),key);
                 }     
             }
             return parent;
@@ -868,7 +617,7 @@ namespace OpenTwinsV2.Twins.Services
                 ShapeProperty.prefix (check if it's there, if not -> desfault)
             */
 
-            og = checkPrefixes(og, nsDic, defaultPrefix, defaultUri, "ShapeProperty", "property")!.AsObject();
+            CheckPrefixes(og, nsDic, defaultPrefix, defaultUri, "ShapeProperty", "property");
             var prop = new JsonObject();
 
             //Get path
@@ -884,8 +633,6 @@ namespace OpenTwinsV2.Twins.Services
                     prop = GetFlattenedShapeConstraint(prop, constraintNode!.AsObject(), nsDic, defaultPrefix, defaultUri);
                 //in each call, it returns a deep cloned prop node but with the new constraint added as a first level field
             }
-
-            // prop["SG_typeOfNode"] = "Property";
 
             return prop.DeepClone().AsObject();
         }
@@ -905,12 +652,12 @@ namespace OpenTwinsV2.Twins.Services
 
             //check namespace so we add it or not in the dictionary
             //we'll use the method checkPrefix (now adapted so it recieves the type)
-            JsonObject flattenedNodeShape = checkPrefixes(nodeShape, nsDic, defaultPrefix, defaultUri, "NodeShape")!.AsObject();
+            JsonObject flattenedNodeShape = nodeShape.DeepClone().AsObject();
+            CheckPrefixes(flattenedNodeShape, nsDic, defaultPrefix, defaultUri, "NodeShape");
             flattenedNodeShape["properties"] = new JsonArray();
             //then we iterate through the properties
             foreach(var propertyNode in nodeShape!["properties"]!.AsArray())
             {
-                // Console.WriteLine($"PROP NODE: {propertyNode.ToSafeString()}");
                 if(propertyNode is null)
                     continue;
                 if (propertyNode["uid"]!.GetValue<string>().Equals(defaultPropertyUid))
@@ -944,7 +691,7 @@ namespace OpenTwinsV2.Twins.Services
             flattenedNodeShape.Remove("NodeShape.createdAt");
             flattenedNodeShape.Remove("dgraph.type");
             flattenedNodeShape.Remove("uid");
-            return flattenedNodeShape.DeepClone().AsObject();
+            return flattenedNodeShape;
         }
 
         /// <summary>
@@ -998,7 +745,7 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>
         /// Returns the context of the JsonLD in a Json Object.
         /// </returns>
-        private JsonObject GetJsonLDContext(JsonObject json, string idSanitized)
+        private static JsonObject GetJsonLDContext(JsonObject json, string idSanitized)
         {
             var namespaces = json["namespace"]?.AsArray() ?? new JsonArray();
             var context = new JsonObject();
@@ -1006,10 +753,11 @@ namespace OpenTwinsV2.Twins.Services
             foreach (var ns in namespaces)
             {
                 if (ns == null)
-                {
                     continue;
-                }
-                var prefix = string.IsNullOrWhiteSpace(ns["prefix"]?.GetValue<string>()) ? $"blankNodePrefix_{idSanitized}" : ns["prefix"]?.ToString();
+                
+                var prefix = ns["prefix"]?.GetValue<string>() is null ? $"blankNodePrefix_{idSanitized}" : ns["prefix"]?.ToString();
+                if(string.IsNullOrWhiteSpace(prefix))
+                    prefix = "@vocab";
                 var uri = ns["uri"]?.GetValue<string>();
 
                 if (prefix is not null && uri is not null)
@@ -1028,13 +776,11 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>
         /// Returns the Thing in JsonLD format in Json Obejct.
         /// </returns>
-        private JsonObject GetJsonLDThing(JsonNode thingInfo, string idSanitized)
+        private static void GetJsonLDThing(JsonNode thingInfo, JsonObject thing, string idSanitized)
         {
-            var thing = new JsonObject();
-
             //obtain prefix
             var prefix = thingInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
-            prefix = string.IsNullOrWhiteSpace(prefix) ? $"blankNodePrefix_{idSanitized}" : prefix;
+            prefix ??= $"blankNodePrefix_{idSanitized}";
             //@id -> name (it's the thing id but without the ontology name as prefix)
             thing["@id"] = $"{prefix}:{thingInfo?[string.IsNullOrWhiteSpace(thingInfo?["name"]?.GetValue<string>()) ? "thingId" : "name"]}";
             //type of node is stored via hasType relation between Things (The Things that represent Types are ignored in the GetOntologyThings method) 
@@ -1049,8 +795,7 @@ namespace OpenTwinsV2.Twins.Services
                 foreach (var typeInfo in types.AsArray())
                 {
                     if(typeInfo is not null)
-                        thing = GetJsonLDTypes(typeInfo, thing, idSanitized, types.AsArray().Count).AsObject();
-                    
+                        GetJsonLDTypes(typeInfo, thing, idSanitized, types.AsArray().Count);
                 }
             }
 
@@ -1062,7 +807,7 @@ namespace OpenTwinsV2.Twins.Services
                 foreach (var attributeInfo in attributes.AsArray())
                 {
                     if(attributeInfo is not null)
-                        thing = GetJsonLDAttribute(attributeInfo, thing, idSanitized).AsObject();
+                        GetJsonLDAttribute(attributeInfo, thing, idSanitized);
                 }
             }
             var relations = thingInfo?["relations"];
@@ -1072,11 +817,9 @@ namespace OpenTwinsV2.Twins.Services
                 foreach (var relationInfo in relations.AsArray())
                 {
                     if(relationInfo is not null)
-                        thing = GetJsonLDRelation(relationInfo, thing, idSanitized).AsObject();
+                        GetJsonLDRelation(relationInfo, thing, idSanitized);
                 }
             }
-
-            return thing.DeepClone().AsObject();
         }
 
         /// <summary>
@@ -1089,28 +832,27 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>
         /// Returns the duplicated Thing Json Node with the parsed type info.
         /// </returns>
-        private JsonNode GetJsonLDTypes(JsonNode typeInfo, JsonNode thing, string idSanitized, int typeCount)
+        private static void GetJsonLDTypes(JsonNode typeInfo, JsonNode thing, string idSanitized, int typeCount)
         {
             var typeName = typeInfo?["name"]?.GetValue<string>();
             var typePrefix = typeInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
-            typePrefix = string.IsNullOrWhiteSpace(typePrefix) ? $"blankNodePrefix_{idSanitized}" : typePrefix;
+            typePrefix ??= $"blankNodePrefix_{idSanitized}";
 
             if (typeName is not null && (typeName.Length > 0))
             {
                 if (typeCount==1)
                 {
                     //only one type
-                    thing["@type"] = $"{((typePrefix == null || typePrefix.Length == 0) ? $"blankNodePrefix_{idSanitized}" : typePrefix)}:{typeName}";
+                    thing["@type"] = $"{typePrefix ?? $"blankNodePrefix_{idSanitized}"}:{typeName}";
                 }
                 else
                 {
                     if (thing["@type"] is null)
                         thing["@type"] = new JsonArray();
                     //more than one type
-                    thing["@type"]?.AsArray().Add($"{((typePrefix == null || typePrefix.Length == 0) ? $"blankNodePrefix_{idSanitized}" : typePrefix)}:{typeName}");
+                    thing["@type"]?.AsArray().Add($"{typePrefix ?? $"blankNodePrefix_{idSanitized}"}:{typeName}");
                 }
             }
-            return thing.DeepClone();
         }
 
         /// <summary>
@@ -1122,13 +864,12 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>
         /// Returns the modified Thing Json Node with the parsed Attribute info in JsonLD format.
         /// </returns>
-        private JsonNode GetJsonLDAttribute(JsonNode attributeInfo, JsonNode thing, string idSanitized)
+        private static void GetJsonLDAttribute(JsonNode attributeInfo, JsonNode thing, string idSanitized)
         {
-            //TODO prefix support
             var key = attributeInfo?["Attribute.key"]?.GetValue<string>();
             var value = attributeInfo?["Attribute.value"]?.GetValue<string>();
             var attPrefix = attributeInfo?["Attribute.prefix"]?["prefix"]?.GetValue<string>();
-            attPrefix = string.IsNullOrWhiteSpace(attPrefix) ? $"blankNodePrefix_{idSanitized}" : attPrefix;
+            attPrefix ??= $"blankNodePrefix_{idSanitized}";
 
             if ((key is not null) && (key.Length > 0))
             {
@@ -1157,7 +898,6 @@ namespace OpenTwinsV2.Twins.Services
                     thing[$"{attPrefix}:{key}"] = value;
                 }
             }
-            return thing.DeepClone();
         }
 
         /// <summary>
@@ -1169,17 +909,15 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>
         /// Returns the modified Thing Json Node with the parsed Relation info in JsonLD format.
         /// </returns>
-        private JsonNode GetJsonLDRelation(JsonNode relationInfo, JsonNode thing, string idSanitized)
+        private static void GetJsonLDRelation(JsonNode relationInfo, JsonNode thing, string idSanitized)
         {
-            //TODO prefix support
             var name = relationInfo?["Relation.name"]?.GetValue<string>();
             var relPrefix = relationInfo?["Relation.prefix"]?["prefix"]?.GetValue<string>();
-            relPrefix = string.IsNullOrWhiteSpace(relPrefix) ? $"blankNodePrefix_{idSanitized}" : relPrefix;
+            relPrefix ??= $"blankNodePrefix_{idSanitized}";
             var relatedNode = relationInfo?["relatedTo"] ?? relationInfo?["hasChild"];
             if (relatedNode is null)
-            {
-                return thing.DeepClone();
-            }
+                return;
+            
             //check if there is only one lement or more
             if (name is not null && name.Length > 0)
             {
@@ -1188,7 +926,7 @@ namespace OpenTwinsV2.Twins.Services
                 {
                     var relatedName = relatedThing?["name"]?.GetValue<string>();
                     var relatedPrefix = relatedThing?["Thing.prefix"]?["prefix"]?.GetValue<string>();
-                    relatedPrefix = string.IsNullOrWhiteSpace(relatedPrefix) ? $"blankNodePrefix_{idSanitized}" : relatedPrefix;
+                    relatedPrefix ??= $"blankNodePrefix_{idSanitized}";
                     if (relatedName is not null && relatedName.Length > 0)
                         relatedThingstr.Add($"{relatedPrefix}:{relatedName}");
                 }
@@ -1208,9 +946,6 @@ namespace OpenTwinsV2.Twins.Services
                     thing[$"{relPrefix}:{name}"] = jsonArray.Count == 1 ? jsonArray[0]!.DeepClone() : jsonArray;
                 }
             }
-
-            return thing.DeepClone();
-
         }
 
         /// <summary>
@@ -1222,12 +957,11 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>
         /// Returns the modified Shape Json Node with the added value into the key array.
         /// </returns>
-        private JsonNode AddNodeIntoJsonArray(JsonNode shape, string key, JsonNode value)
+        private static void AddNodeIntoJsonArray(JsonObject shape, string key, JsonNode value)
         {
             if(shape[key] is null)
                 shape[key] = new JsonArray();
             shape[key]!.AsArray().Add(value);
-            return shape.DeepClone();
         }
 
         /// <summary>
@@ -1238,10 +972,8 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>
         /// Returns the formatted Json Object of the Shapa Node in JsonLD format.
         /// </returns>
-        private JsonObject GetJsonLDNodeShape(JsonNode shapeInfo, string idSanitized)
+        private static void GetJsonLDNodeShape(JsonNode shapeInfo, JsonObject shape, string idSanitized)
         {
-            var shape = new JsonObject();
-
             shape["@id"] = $"{shapeInfo?["nodeShapeId"]}";
             shape["@type"] = "sh:NodeShape";
 
@@ -1258,18 +990,20 @@ namespace OpenTwinsV2.Twins.Services
                             foreach(var propertyInfo in shapeField.AsArray())
                             {
                                 if(propertyInfo is not null)
-                                    shape = AddNodeIntoJsonArray(shape, "sh:property", GetJsonLDShapeProperty(propertyInfo.AsObject(), idSanitized)).AsObject();
+                                {
+                                    var prop = new JsonObject();
+                                    GetJsonLDShapeProperty(propertyInfo.AsObject(), prop, idSanitized);
+                                    AddNodeIntoJsonArray(shape, "sh:property", prop);
+                                }       
                             }
                         }
                         else
                         {
-                            shape = GetJsonLDShapeConstraint(key, shapeField, shape, idSanitized).AsObject();
+                            GetJsonLDShapeConstraint(key, shapeField, shape, idSanitized);
                         }
                     }
                 }
             }
-
-            return shape.DeepClone().AsObject();
         }
 
         /// <summary>
@@ -1280,15 +1014,50 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>
         /// Returns the Json Object of the Shape Property in JsonLD format.
         /// </returns>
-        private JsonNode GetJsonLDShapeProperty(JsonObject propertyInfo, string idSanitized)
+        private static void GetJsonLDShapeProperty(JsonObject propertyInfo, JsonObject prop, string idSanitized)
         {
-            var prop = new JsonObject();
             foreach(var (propKey, propField) in propertyInfo)
             {
                 if(propField is not null)
-                    prop = GetJsonLDShapeConstraint(propKey, propField, prop, idSanitized).AsObject();
+                    GetJsonLDShapeConstraint(propKey, propField, prop, idSanitized);
             }
-            return prop.DeepClone();
+        }
+
+        private static bool IsShaClConstraint(string id)
+        {
+            return id switch
+            {
+                "and" or "or" or "not" or "xone" => true,
+                _ => false
+            };
+        }
+
+        private static bool IsAConstraintObject(JsonNode node)
+        {
+            if(node is JsonObject obj)
+                if(obj.Count!=1){
+                    return false;
+                }else
+                {
+                    foreach((var key, _) in obj) //always only one
+                    {
+                        var index = key.IndexOf(':');
+                        if( index == key.Length-1)
+                            return false;
+                        return key is not null && IsShaClConstraint(key[(index == -1 ? 0 : index+1)..]);
+                    }
+                        
+                }
+            
+            return false;
+            
+        }
+
+        private static bool IsAPropertyObject(JsonNode node)
+        {
+            if(node is JsonObject shapeObject)
+                return shapeObject.Any(p => p.Key.EndsWith("path", StringComparison.Ordinal));
+            return false;
         }
 
         /// <summary>
@@ -1300,12 +1069,12 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="idSanitized">The sanitized identifier of the object.</param>
         /// <param name="isArray">OPTIONAl. Whether the constraint value is known to be an array</param>
         /// <returns>Returns the modified Shape Json Node with the Shape Constraint in JsonLD format.</returns>
-        private JsonNode GetJsonLDShapeConstraint(string key, JsonNode shapeField, JsonNode shape, string idSanitized, bool isArray = false)
+        private static void GetJsonLDShapeConstraint(string key, JsonNode shapeField, JsonObject shape, string idSanitized, bool isArray = false)
         {
             if(shapeField is JsonValue shapeValue)
             {
                 //key: value
-                switch (key.Contains(":") ? key.Split(":").Last().ToLower() : key)
+                switch (key.Contains(':') ? key.Split(":").Last().ToLower() : key)
                 {
                     case "node":
                     case "and":
@@ -1314,6 +1083,7 @@ namespace OpenTwinsV2.Twins.Services
                     case "xone":
                     case "path":
                     case "datatype":
+                    case "class":
 
                         //set that the value should be { "@id": value }
 
@@ -1322,7 +1092,7 @@ namespace OpenTwinsV2.Twins.Services
                         
                         if (isArray)
                         {
-                            shape = AddNodeIntoJsonArray(shape, key, new JsonObject{["@id"] = shapeValue.DeepClone()});
+                            AddNodeIntoJsonArray(shape, key, new JsonObject{["@id"] = shapeValue.DeepClone()});
                         }
                         else
                         {
@@ -1332,11 +1102,14 @@ namespace OpenTwinsV2.Twins.Services
                     default:
                         if (isArray)
                         {
-                            shape= key.ToLower().Contains("target") ? AddNodeIntoJsonArray(shape, key, new JsonObject{["@id"] = shapeValue.DeepClone()}) : AddNodeIntoJsonArray(shape, key, shapeValue.DeepClone()) ;
+                            if(key.Contains("target", StringComparison.InvariantCultureIgnoreCase))
+                                AddNodeIntoJsonArray(shape, key, new JsonObject{["@id"] = shapeValue.DeepClone()});
+                            else
+                                AddNodeIntoJsonArray(shape, key, shapeValue.DeepClone()) ;
                         }
                         else
                         {
-                            shape[key] = key.ToLower().Contains("target") ? new JsonObject{["@id"] = shapeValue.DeepClone()} : shapeValue.DeepClone();
+                            shape[key] = key.Contains("target", StringComparison.InvariantCultureIgnoreCase) ? new JsonObject{["@id"] = shapeValue.DeepClone()} : shapeValue.DeepClone();
                         }
                         break;
                 }
@@ -1346,24 +1119,26 @@ namespace OpenTwinsV2.Twins.Services
                 foreach(var element in shapeField.AsArray())
                 {
                     if(element is not null)
-                        shape = GetJsonLDShapeConstraint(key, element, shape, idSanitized, true);
+                        GetJsonLDShapeConstraint(key, element, shape, idSanitized, true);
                 }
 
             }else if(shapeField is JsonObject shapeObject)
             {
-                //We don't know whether it's a nodeshape or a property
+                //We don't know whether it's a nodeshape, property or a constraint
                 //properties always have path field
-
-                if (isArray)
-                {
-                    shape = AddNodeIntoJsonArray(shape, key, shapeObject.Any(p => p.Key.EndsWith("path", StringComparison.Ordinal)) ? GetJsonLDShapeProperty(shapeObject, idSanitized) : GetJsonLDNodeShape(shapeObject, idSanitized) );
-                }
+                var node = new JsonObject();
+                
+                if(IsAPropertyObject(shapeObject))
+                    GetJsonLDShapeProperty(shapeObject, node, idSanitized);
+                else if(IsAConstraintObject(shapeObject))
+                    GetJsonLDShapeConstraint(shapeObject.Select(pair => pair.Key).First()!, shapeObject[shapeObject.Select(pair => pair.Key).First()!]!, node, idSanitized, shapeObject[shapeObject.Select(pair => pair.Key).First()!] is JsonArray);
                 else
-                {
-                    shape[key] = shapeObject.Any(p => p.Key.EndsWith("path", StringComparison.Ordinal)) ? GetJsonLDShapeProperty(shapeObject, idSanitized) : GetJsonLDNodeShape(shapeObject, idSanitized);
-                }
+                    GetJsonLDNodeShape(shapeObject, node, idSanitized);
+                if (isArray)
+                    AddNodeIntoJsonArray(shape, key, node);
+                else
+                    shape[key] = node;
             }
-            return shape.DeepClone();
         }
 
         /// <summary>
@@ -1373,9 +1148,9 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="id">The identifier of the object.</param>
         /// <param name="shape">OPTIONAl. Whether the Json corresponds to a Shape Graph or not.</param>
         /// <returns>Returns the JsonLd equivalent to the Json provided.</returns>
-        public JsonObject? GetJsonLDFromRegularJson(JsonObject json, string id, bool shape = false)
+        public static JsonObject? GetJsonLDFromRegularJson(JsonObject json, string id, bool shape = false)
         {
-            string idSanitized = SanitizeTypeAndUIDValues(id);
+            string idSanitized = FormatService.SanitizeTypeAndUIDValues(id);
             var nodes = json[shape ? "shapes" : "things"]?.AsArray() ?? new JsonArray();
 
             //initialize the context with the namespaces info
@@ -1394,7 +1169,15 @@ namespace OpenTwinsV2.Twins.Services
             {
                 //add final thing to the things jsonArray
                 if(node is not null)
-                    finalNodes.Add(shape ? GetJsonLDNodeShape(node, idSanitized): GetJsonLDThing(node, idSanitized));
+                {
+                    var insert = new JsonObject();
+                    if(shape)
+                        GetJsonLDNodeShape(node, insert, idSanitized);
+                    else
+                        GetJsonLDThing(node, insert, idSanitized);
+                    
+                    finalNodes.Add(insert);
+                }
             }
 
             //assemble the final json
@@ -1407,13 +1190,45 @@ namespace OpenTwinsV2.Twins.Services
             return jsonLd;
         }
 
+        public async Task<JsonObject> BuildShapeGraphFromOntology(string ontologyId)
+        {
+            var ns = await _dgraphService.GetNamespacesInOntologyAsync(ontologyId) ?? throw new Exception($"Got null namespace of {ontologyId} Ontology");
+            var json = await GetJsonWithNamespace(ontologyId, ns) ?? throw new Exception($"Got null regular Json of {ontologyId} Ontology");
+            var jsonLd = GetJsonLDFromRegularJson(json, ontologyId) ?? throw new Exception($"Got null JsonLD from the {ontologyId} Ontology Json");
+
+            var context = jsonLd["@context"]!.DeepClone();
+            if(context["xsd"] is not null)
+                context["xsd"] = "http://www.w3.org/2001/XMLSchema#";
+            context["sh"]="http://www.w3.org/ns/shacl#";
+            var graphArray = new JsonArray();
+            var shapeGraph = new JsonObject{
+                ["@context"] = context,
+                ["@graph"] = graphArray
+            };
+
+            var graphIndex = graphArray
+                .Where(n => n is not null && n?["@id"] != null)
+                .ToDictionary(n => n!["@id"]!.GetValue<string>(), n => n!.AsObject())!;  
+            
+
+            foreach(var thing in jsonLd["@graph"]!.AsArray())
+            {
+                if(thing is null)
+                    continue;
+                ShapeBuilder.BuildShapeAlgorithm(ontologyId, thing, graphArray, graphIndex);
+                ShapeBuilder.BuildShapeAlgorithm(ontologyId, thing, graphArray, graphIndex, relations:false);
+            }
+            
+            return shapeGraph;
+        }
+
         /// <summary>
         /// Loads into the RDF Graph the namespaces provided.
         /// </summary>
         /// <param name="namespaces">The array of the namespaces.</param>
         /// <param name="graph">The graph object.</param>
         /// <param name="ontologyId">The identifier of the Ontology.</param>
-        private void LoadNamespaceIntoGraph(JsonArray namespaces, IGraph graph, string ontologyId)
+        private static void LoadNamespaceIntoGraph(JsonArray namespaces, IGraph graph, string ontologyId)
         {
             foreach (var ns in namespaces)
             {
@@ -1431,7 +1246,7 @@ namespace OpenTwinsV2.Twins.Services
                 }
 
 
-                graph.NamespaceMap.AddNamespace(string.IsNullOrWhiteSpace(prefix.ToString()) ? $"blankNodePrefix_{ontologyId}" : prefix.ToString(), new Uri(uri.ToString()));
+                graph.NamespaceMap.AddNamespace((prefix ?? $"blankNodePrefix_{ontologyId}").ToString(), new Uri(uri.ToString()));
             }
         }
 
@@ -1441,12 +1256,12 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="namespaces">The JsonObject of the namespaces.</param>
         /// <param name="graph">The graoh object.</param>
         /// <param name="ontologyId">The identifier of the Ontology.</param>
-        private void LoadNamespaceIntoGraph(JsonObject namespaces, IGraph graph, string ontologyId)
+        public static void LoadNamespaceIntoGraph(JsonObject namespaces, IGraph graph, string ontologyId)
         {
             foreach (var (prefix, uri) in namespaces)
             {
                 if(uri is not JsonObject)
-                    graph.NamespaceMap.AddNamespace(string.IsNullOrWhiteSpace(prefix.ToString()) ? $"blankNodePrefix_{ontologyId}" : prefix.ToString(), new Uri(uri!.ToString()));
+                    graph.NamespaceMap.AddNamespace((prefix ?? $"blankNodePrefix_{ontologyId}").ToString(), new Uri(uri!.ToString()));
             }
         }
 
@@ -1456,7 +1271,7 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="namespaces">The JsonNode of the namespaces. Must be either Json Array or Json Object.</param>
         /// <param name="graph">The graoh object.</param>
         /// <param name="ontologyId">The identiier of the Ontology.</param>
-        private void LoadNamespaceIntoGraph(JsonNode namespaces, IGraph graph, string ontologyId)
+        public static void LoadNamespaceIntoGraph(JsonNode namespaces, IGraph graph, string ontologyId)
         {
             if(namespaces is JsonArray nsArr)
             {
@@ -1465,64 +1280,6 @@ namespace OpenTwinsV2.Twins.Services
             {
                 LoadNamespaceIntoGraph(nsObj, graph, ontologyId);
             }
-        }
-
-        /// <summary>
-        /// Obtains the RDF Graph equivalent of the Json provided.
-        /// </summary>
-        /// <param name="json">The Json object.</param>
-        /// <param name="id">The identifier of the object.</param>
-        /// <param name="ld">OPTIONAl. Whether the Json provided is in JsonLD format. By default is false.</param>
-        /// <returns>Returns the RDF Graph of the Json.</returns>
-        public VDS.RDF.Graph GetRDFGraphFromJson(JsonObject json, string id, bool ld = false)
-        {
-            var idSanitized = SanitizeTypeAndUIDValues(id);
-            var store = new TripleStore();
-            var jsonLd = ld ? json : GetJsonLDFromRegularJson(json, idSanitized);
-            var jsonString = System.Text.Json.JsonSerializer.Serialize(jsonLd);
-            var parser = new VDS.RDF.Parsing.JsonLdParser();
-            using var reader = new StringReader(jsonString);
-            parser.Load(store, reader);
-
-            var mergedGraph = new VDS.RDF.Graph();
-            //extract the namespaces from the Json
-            
-            JsonArray nsArr = new JsonArray();
-            json.TryGetPropertyValue(ld ? "@context" :"namespace", out var nsJson);
-            var ns = nsJson ?? new JsonObject();
-            
-            //load namespaces into graph for eventual prefix parsing to uri
-            LoadNamespaceIntoGraph(ns, mergedGraph, idSanitized);
-
-            foreach (var g in store.Graphs)
-            {
-                mergedGraph.Merge(g, true); // true = keep namespace mappings
-            }
-            return mergedGraph;
-
-        }
-
-        /// <summary>
-        /// Obtains the TTL File equivalent of the Json provided.
-        /// </summary>
-        /// <param name="id">The identifier of the object.</param>
-        /// <param name="json">The Json object.</param>
-        /// <param name="ld">OPTIONAL. Whether the Json provided has JsonLD format. By default is false.</param>
-        /// <returns></returns>
-        public MemoryStream GetTTLFileFromRegularJson(string id, JsonObject json, bool ld = false)
-        {
-            var mergedGraph = GetRDFGraphFromJson(json, id, ld);
-
-            var ttlWriter = new VDS.RDF.Writing.CompressingTurtleWriter();
-            using var sw = new StringWriter();
-            ttlWriter.Save(mergedGraph, sw);
-            string ttlString = sw.ToString();
-
-            //convert the string to bytes
-            var ttlBytes = System.Text.Encoding.UTF8.GetBytes(ttlString);
-            var stream = new MemoryStream(ttlBytes);
-
-            return stream;
         }
         
         /// <summary>
@@ -1537,10 +1294,10 @@ namespace OpenTwinsV2.Twins.Services
         /// </returns>
         public async Task<SparqlResultSet?> RunSparQLQuery(string id, JsonElement? ns, SparqlQuery query)
         {
-            var json = ns is null ? await getJsonWithoutNamespace(id) : await getJsonWithNamespace(id, ns);
+            var json = ns is null ? await GetJsonWithoutNamespace(id) : await GetJsonWithNamespace(id, ns);
             if (json is null)
                 return null;
-            var graph = GetRDFGraphFromJson(json, id);
+            var graph = FormatService.GetRDFGraphFromJson(json, id);
             if(graph is null)
                 return null;
             var store = new TripleStore();

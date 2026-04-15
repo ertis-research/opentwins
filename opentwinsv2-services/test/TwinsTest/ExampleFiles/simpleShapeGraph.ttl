@@ -1,0 +1,28 @@
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix trial: <http://example.org/trial#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+
+#################################################################
+# Shape for trial:Node
+#################################################################
+
+trial:NodeShape
+    a sh:NodeShape ;
+    sh:targetClass trial:Node ;
+
+    # ---- relA constraint ----
+    sh:property [
+        sh:path trial:relA ;
+        sh:class trial:Node ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+
+    # ---- relB constraint ----
+    sh:property [
+        sh:path trial:relB ;
+        sh:class trial:Node ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] .

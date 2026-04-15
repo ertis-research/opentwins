@@ -12,6 +12,7 @@ using AngleSharp.Dom;
 using VDS.RDF.Parsing;
 using VDS.RDF.Query;
 using VDS.RDF.Query.Datasets;
+using Twins.Services;
 
 namespace OpenTwinsV2.Twins.Controllers
 {
@@ -21,17 +22,19 @@ namespace OpenTwinsV2.Twins.Controllers
     {
         private readonly DGraphService _dgraphService;
         private readonly ThingsService _thingsService;
-        private readonly ConverterService _converterService;
+        private readonly ExportService _exportService;
         private readonly IJsonNquadsConverter _converter;
         private readonly ILogger<TwinsController> _logger;
+        private readonly InstanciationService _instanciationService;
 
-        public TwinsController(DGraphService dgraphService, ThingsService thingsService, IJsonNquadsConverter converter, ILogger<TwinsController> logger, ConverterService converterService)
+        public TwinsController(DGraphService dgraphService, ThingsService thingsService, IJsonNquadsConverter converter, ILogger<TwinsController> logger, ExportService exportService, InstanciationService instanciationService)
         {
             _dgraphService = dgraphService;
             _thingsService = thingsService;
             _converter = converter;
             _logger = logger;
-            _converterService = converterService;
+            _exportService = exportService;
+            _instanciationService = instanciationService;
         }
 
         /// <summary>
@@ -73,30 +76,41 @@ namespace OpenTwinsV2.Twins.Controllers
         /// Returns 500 Internal Sevrer Error if there was any issue creating the Thing.
         /// </returns>
         [HttpPost("{twinId}")]
-        public async Task<IActionResult> CreateTwin(string twinId)
+        public async Task<IActionResult> CreateTwin(string twinId, [FromBody] JsonElement graph, string? shapeId = null)
         {
-            if (!await _dgraphService.ExistsThingByIdAsync(twinId))
-            {
-                var payload = new JsonObject
+
+            // if shapeId is not null, validate graph with the corresponding shapeGraph
+            if (await _dgraphService.ExistsThingByIdAsync(twinId))
+                return Conflict("There is already a twin with this id");
+            if(!string.IsNullOrWhiteSpace(shapeId))
+                try
                 {
-                    ["@context"] = new JsonArray("https://www.w3.org/2019/wot/td/v1"),
-                    ["id"] = twinId,
-                    ["title"] = "",
-                    ["properties"] = new JsonObject { },
-                    ["actions"] = new JsonObject { },
-                    ["events"] = new JsonObject { }
-                };
+                    if(!await _dgraphService.ExistsShapeGraphByIdAsync(shapeId))
+                        return NotFound("There is no Shape Graph with the provided identifier.");
+                    else
+                    {
+                        string? report = await _instanciationService.ValidateGraphThroughShapeGraph(twinId, graph, shapeId);
+                        if(!string.IsNullOrWhiteSpace(report))
+                            return BadRequest(new {Message=$"Could not instanciate because the given graph does not validate {shapeId} Shape Graph", Report=report});
+                    }
+                }catch(Exception ex)
+                {
+                    return StatusCode(500, $"Something went wrong while validating the Graph: {ex.Message}");
+                }
 
-                var thingsResponse = await _thingsService.CreateThingAsync(payload);
-                if (!thingsResponse) return StatusCode(500, "Failed to create twin in things service");
+            //Up to this point, if it needed validation it is already validated, go on with instanciation
 
-                var dgraphResponse = await _dgraphService.AddThingAsync(ThingBuilder.BuildTwin(twinId));
-                bool dgraphOk = dgraphResponse != null && dgraphResponse.Uids != null && dgraphResponse.Uids.Count > 0;
-                if (!dgraphOk) return StatusCode(500, "Failed to create twin in DGraph: " + dgraphResponse?.ToString());
-
-                return Ok(new { message = "Twin created successfully" });
+            try
+            {
+                if(!(graph.TryGetProperty("@graph", out var graphEl) && graphEl.AsNode() is JsonArray graphArr))
+                    throw new InvalidDataException("The graph is of bad format.");
+                await _instanciationService.InstanciateThingGraph(graphArr, twinId);
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while instanciating the Twin and its Things: {ex.Message}");
             }
-            return Conflict("There is already a twin with this id");
+
+            return Ok(new { message = "Twin created successfully" });
         }
 
         /// <summary>
@@ -366,7 +380,7 @@ namespace OpenTwinsV2.Twins.Controllers
             }
             try
             {
-                var json = await _converterService.getJsonWithoutNamespace(twinId);
+                var json = await _exportService.GetJsonWithoutNamespace(twinId);
                 return Ok(json);
             }
             catch (Exception ex)
@@ -396,7 +410,7 @@ namespace OpenTwinsV2.Twins.Controllers
             JsonObject json;
             try
             {
-                json = await _converterService.getJsonWithoutNamespace(twinId) ?? throw new Exception($"Obtained null value from the Json");
+                json = await _exportService.GetJsonWithoutNamespace(twinId) ?? throw new Exception($"Obtained null value from the Json");
             }
             catch (Exception ex)
             {
@@ -404,7 +418,7 @@ namespace OpenTwinsV2.Twins.Controllers
             }
             try
             {
-                return Ok(_converterService.GetJsonLDFromRegularJson(json, twinId) ?? throw new Exception("Obtained null value from the JsonLd"));
+                return Ok(ExportService.GetJsonLDFromRegularJson(json, twinId) ?? throw new Exception("Obtained null value from the JsonLd"));
             }
             catch (Exception ex)
             {
@@ -432,7 +446,7 @@ namespace OpenTwinsV2.Twins.Controllers
             JsonObject json;
             try
             {
-                json = await _converterService.getJsonWithoutNamespace(twinId) ?? throw new Exception("Obtained null value");
+                json = await _exportService.GetJsonWithoutNamespace(twinId) ?? throw new Exception("Obtained null value");
             }
             catch (Exception ex)
             {
@@ -441,7 +455,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
             try
             {
-                return File(_converterService.GetTTLFileFromRegularJson(twinId, json), "text/turtle", $"{twinId}.ttl");
+                return File(FormatService.GetTTLFileFromRegularJson(twinId, json), "text/turtle", $"{twinId}.ttl");
             }
             catch (Exception e)
             {
@@ -484,7 +498,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 {
                     return BadRequest($"Only SELECT queries are available, \"{stringQuery}\" is a \n{query.QueryType.ToString()} query");
                 }
-                var results = await _converterService.RunSparQLQuery(twinId, null, query);
+                var results = await _exportService.RunSparQLQuery(twinId, null, query);
                 if(results is null)
                     throw new Exception("Either the Json or the Graph are null");
                 

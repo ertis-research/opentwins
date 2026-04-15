@@ -1,0 +1,239 @@
+@prefix : <http://example.org/research#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+############################################################
+# Ontology
+############################################################
+
+:ResearchOntology a owl:Ontology .
+
+############################################################
+# Classes
+############################################################
+
+:Project a owl:Class .
+:Researcher a owl:Class .
+:Institution a owl:Class .
+:Dataset a owl:Class .
+:Publication a owl:Class .
+:Grant a owl:Class .
+:Laboratory a owl:Class .
+:Equipment a owl:Class .
+:Experiment a owl:Class .
+
+############################################################
+# Object Properties
+############################################################
+
+:worksOn a owl:ObjectProperty .
+:affiliatedWith a owl:ObjectProperty .
+:hostsProject a owl:ObjectProperty .
+:producesDataset a owl:ObjectProperty .
+:usesEquipment a owl:ObjectProperty .
+:fundedBy a owl:ObjectProperty .
+:generatesPublication a owl:ObjectProperty .
+:locatedIn a owl:ObjectProperty .
+:partOfProject a owl:ObjectProperty .
+:usesDataset a owl:ObjectProperty .
+
+############################################################
+# Datatype Properties
+############################################################
+
+:grantAmount a owl:DatatypeProperty .
+:year a owl:DatatypeProperty .
+:impactScore a owl:DatatypeProperty .
+
+############################################################
+# Inverse Properties
+############################################################
+
+:hostsProject owl:inverseOf :affiliatedWith .
+:producesDataset owl:inverseOf :usesDataset .
+
+############################################################
+# 1. Researcher restrictions
+############################################################
+
+:Researcher rdfs:subClassOf
+    [
+        a owl:Restriction ;
+        owl:onProperty :worksOn ;
+        owl:someValuesFrom :Project
+    ] ,
+    [
+        a owl:Restriction ;
+        owl:onProperty :affiliatedWith ;
+        owl:allValuesFrom :Institution
+    ] ,
+    [
+        a owl:Restriction ;
+        owl:onProperty :worksOn ;
+        owl:minCardinality "1"^^xsd:nonNegativeInteger
+    ] .
+
+############################################################
+# 2. Institution restrictions
+############################################################
+
+:Institution rdfs:subClassOf
+    [
+        a owl:Restriction ;
+        owl:onProperty :hostsProject ;
+        owl:someValuesFrom :Project
+    ] ,
+    [
+        a owl:Restriction ;
+        owl:onProperty :locatedIn ;
+        owl:maxCardinality "1"^^xsd:nonNegativeInteger
+    ] .
+
+############################################################
+# 3. Project restrictions (nested)
+############################################################
+
+:Project rdfs:subClassOf
+    [
+        a owl:Restriction ;
+        owl:onProperty :fundedBy ;
+        owl:someValuesFrom :Grant
+    ] ,
+    [
+        a owl:Restriction ;
+        owl:onProperty :producesDataset ;
+        owl:allValuesFrom :Dataset
+    ] ,
+    [
+        a owl:Restriction ;
+        owl:onProperty :generatesPublication ;
+        owl:minCardinality "1"^^xsd:nonNegativeInteger
+    ] .
+
+############################################################
+# 4. Dataset restrictions
+############################################################
+
+:Dataset rdfs:subClassOf
+    [
+        a owl:Restriction ;
+        owl:onProperty [ owl:inverseOf :producesDataset ] ;
+        owl:someValuesFrom :Project
+    ] ,
+    [
+        a owl:Restriction ;
+        owl:onProperty :year ;
+        owl:someValuesFrom xsd:gYear
+    ] .
+
+############################################################
+# 5. Publication restrictions
+############################################################
+
+:Publication rdfs:subClassOf
+    [
+        a owl:Restriction ;
+        owl:onProperty :impactScore ;
+        owl:minCardinality "1"^^xsd:nonNegativeInteger
+    ] ,
+    [
+        a owl:Restriction ;
+        owl:onProperty [ owl:inverseOf :generatesPublication ] ;
+        owl:someValuesFrom :Project
+    ] .
+
+############################################################
+# 6. Experiment restrictions
+############################################################
+
+:Experiment rdfs:subClassOf
+    [
+        a owl:Restriction ;
+        owl:onProperty :usesEquipment ;
+        owl:someValuesFrom :Equipment
+    ] ,
+    [
+        a owl:Restriction ;
+        owl:onProperty :usesDataset ;
+        owl:allValuesFrom :Dataset
+    ] ,
+    [
+        a owl:Restriction ;
+        owl:onProperty :partOfProject ;
+        owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ;
+        owl:onClass :Project
+    ] .
+
+############################################################
+# 7. Complex defined class with nested restrictions
+############################################################
+
+:HighImpactProject a owl:Class ;
+    owl:equivalentClass
+        [
+            a owl:Class ;
+            owl:intersectionOf (
+                :Project
+                [
+                    a owl:Restriction ;
+                    owl:onProperty :generatesPublication ;
+                    owl:someValuesFrom
+                        [
+                            a owl:Restriction ;
+                            owl:onProperty :impactScore ;
+                            owl:someValuesFrom xsd:decimal
+                        ]
+                ]
+            )
+        ] .
+
+############################################################
+# 8. Union class with restrictions
+############################################################
+
+:ResearchActivity a owl:Class ;
+    owl:equivalentClass
+        [
+            a owl:Class ;
+            owl:unionOf (
+                :Experiment
+                [
+                    a owl:Restriction ;
+                    owl:onProperty :producesDataset ;
+                    owl:someValuesFrom :Dataset
+                ]
+            )
+        ] .
+
+############################################################
+# 9. Complement class example
+############################################################
+
+:UnfundedProject a owl:Class ;
+    owl:equivalentClass
+        [
+            a owl:Class ;
+            owl:intersectionOf (
+                :Project
+                [
+                    a owl:Class ;
+                    owl:complementOf
+                        [
+                            a owl:Restriction ;
+                            owl:onProperty :fundedBy ;
+                            owl:someValuesFrom :Grant
+                        ]
+                ]
+            )
+        ] .
+
+############################################################
+# 10. Property chain axiom
+############################################################
+
+:usesDataset owl:propertyChainAxiom (
+    :partOfProject
+    :producesDataset
+) .

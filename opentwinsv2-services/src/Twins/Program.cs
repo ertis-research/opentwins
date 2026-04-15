@@ -7,6 +7,7 @@ using Dgraph4Net.ActiveRecords;
 using OpenTwinsV2.Shared.Models;
 using OpenTwinsV2.Twins.Handlers;
 using OpenTwinsV2.Twins.Services;
+using Twins.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 //builder.Services.AddDaprPubSubClient();
@@ -16,8 +17,8 @@ builder.Services.AddScoped<IJsonNquadsConverter, JsonNquadsConverter>();
 builder.Services.AddScoped<LinkEventsHandler>();
 builder.Services.AddScoped<DGraphService>();
 builder.Services.AddScoped<ThingsService>();
-builder.Services.AddScoped<ConverterService>();
-builder.Services.AddScoped<NQuadsService>();
+builder.Services.AddScoped<ExportService>();
+builder.Services.AddScoped<ImportService>();
 builder.Services.AddScoped<InstanciationService>();
 builder.Services.AddControllers().AddDapr();
 

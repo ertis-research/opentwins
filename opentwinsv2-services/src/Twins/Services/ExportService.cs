@@ -163,7 +163,7 @@ namespace OpenTwinsV2.Twins.Services
         /// Returns the Twin's Json if the namespace dictionary was not defined.<br/>
         /// Returns the Ontology's Json if the namespace dictionary was defined.
         /// </returns>
-        public async Task<JsonObject?> GetJsonWithNamespace(string id, JsonElement? ns)
+        public async Task<JsonObject> GetJsonWithNamespace(string id, JsonElement? ns)
         {
             var finalNode = new JsonObject
             {
@@ -179,7 +179,7 @@ namespace OpenTwinsV2.Twins.Services
                 { defaultPrefix, defaultUri }
             };
 
-            var things = ns is null ? await _dgraphService.GetThingsInTwinAsync(id) : await _dgraphService.GetThingsInOntologyAsync(id);
+            var things = ns is null ? await _dgraphService.GetThingsInTwinAsync(id) : (await _dgraphService.GetThingsInOntologyAsync(id)).TryGetProperty("things", out var thingsInOntology) ? [.. thingsInOntology.EnumerateArray()] : [];
 
             var thingStates = new JsonObject();
             if(ns is null)
@@ -772,6 +772,7 @@ namespace OpenTwinsV2.Twins.Services
         /// Formats the Thing Json Node in regular Json format into a JsonLD format.
         /// </summary>
         /// <param name="thingInfo">The Thing in regular Json format.</param>
+        /// <param name="thing">The Json of the Thing in regular Json format.</param>
         /// <param name="idSanitized">The sanitized identifier of the object.</param>
         /// <returns>
         /// Returns the Thing in JsonLD format in Json Obejct.
@@ -798,6 +799,13 @@ namespace OpenTwinsV2.Twins.Services
                         GetJsonLDTypes(typeInfo, thing, idSanitized, types.AsArray().Count);
                 }
             }
+
+            //Inheritance
+            var parent = thingInfo?["inheritsFrom"];
+            if(parent is not null && parent is JsonArray parentArr && parentArr.Count>0)
+                foreach(var parentInfo in parentArr)
+                    if(parentInfo is not null)
+                        GetJsonLdThingInheritance(parentInfo, thing, idSanitized);
 
             //Attributes:
             var attributes = thingInfo?["hasAttribute"];
@@ -948,6 +956,27 @@ namespace OpenTwinsV2.Twins.Services
             }
         }
 
+        private static void GetJsonLdThingInheritance(JsonNode parentInfo, JsonNode thing, string idSanitized)
+        {
+            var name = parentInfo?["name"]?.GetValue<string>();
+            // Console.WriteLine($"name: {name}");
+            var prefix = parentInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
+            prefix ??=  $"blankNodePrefix_{idSanitized}";
+
+            if(name is null)
+                return;
+
+            var inheritanceNode = thing["rdfs:subClassOf"];
+            JsonObject idNode = new() { ["@id"] = $"{prefix}:{name}" };
+
+            if(inheritanceNode is null)
+                thing["rdfs:subClassOf"] = idNode;
+            else if(inheritanceNode is JsonObject inheritanceObject)
+                thing["rdfs:subClassOf"] = new JsonArray{inheritanceObject, idNode};
+            else if(inheritanceNode is JsonArray inheritanceArray)
+                inheritanceArray.Add(idNode);
+        }
+
         /// <summary>
         /// Adds the value into the array identified by the key in the Shape Json Node.
         /// </summary>
@@ -968,6 +997,7 @@ namespace OpenTwinsV2.Twins.Services
         /// Obtains and formats into JsonLD the info of the Shape Node.
         /// </summary>
         /// <param name="shapeInfo">The Json Node with the Shape Node info in regular Json format.</param>
+        /// <param name="shape">The Json of the shape in regular Json format.</param>
         /// <param name="idSanitized">The sanitized identifier of the object.</param>
         /// <returns>
         /// Returns the formatted Json Object of the Shapa Node in JsonLD format.
@@ -1010,6 +1040,7 @@ namespace OpenTwinsV2.Twins.Services
         /// Obtains the formatted JsonLD equivalent Json Node of the Shape Property.
         /// </summary>
         /// <param name="propertyInfo">The Json Object with the info in regular Json format.</param>
+        /// <param name="prop">The Json of the property in regular Json format.</param>
         /// <param name="idSanitized">The sanitized identifier of the object.</param>
         /// <returns>
         /// Returns the Json Object of the Shape Property in JsonLD format.
@@ -1148,7 +1179,7 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="id">The identifier of the object.</param>
         /// <param name="shape">OPTIONAl. Whether the Json corresponds to a Shape Graph or not.</param>
         /// <returns>Returns the JsonLd equivalent to the Json provided.</returns>
-        public static JsonObject? GetJsonLDFromRegularJson(JsonObject json, string id, bool shape = false)
+        public static JsonObject GetJsonLDFromRegularJson(JsonObject json, string id, bool shape = false)
         {
             string idSanitized = FormatService.SanitizeTypeAndUIDValues(id);
             var nodes = json[shape ? "shapes" : "things"]?.AsArray() ?? new JsonArray();

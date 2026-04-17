@@ -60,6 +60,7 @@ namespace OpenTwinsV2.Twins.Services
                 Ontology.name: string @index(term) . 
                 hasThing: [uid] @reverse .
                 namespace: [uid] @reverse .
+                defaultShapeGraph: [uid] @reverse .
 
                 twins: [uid] @reverse .
                 domains: [uid] @reverse .
@@ -253,6 +254,7 @@ namespace OpenTwinsV2.Twins.Services
                     namespace
                     createdAt
                     hasThing
+                    defaultShapeGraph
                 } 
 
                 type Twin {
@@ -1187,6 +1189,28 @@ namespace OpenTwinsV2.Twins.Services
             }
         } 
 
+        private async Task<string?> GetOntologyUid(string ontologyId)
+        {
+            using var txn = _client.NewTransaction();
+            var query = $@"
+            {{
+                ontology(func: eq(ontologyId, ""{ontologyId}"")){{
+                    uid
+                }}
+            }}";
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8(); ;
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if(!root.TryGetProperty("ontology", out var ontology))
+                return null;
+
+            return ontology.EnumerateArray().Select(s => s.TryGetProperty("uid", out var uid) ? uid.GetString() : null).FirstOrDefault(uid => uid is not null);
+        }
+
         public async Task<List<string>> GetAllThingFromOntologyNodesUidAsync(string ontologyId, string thingId)
         {
             var txn = _client.NewTransaction();
@@ -1238,25 +1262,28 @@ namespace OpenTwinsV2.Twins.Services
                     {{
                         ontology as var (func: eq(ontologyId, ""{ontologyId}""))
 
-                    ontologies(func: uid(ontology)){{
-                        uid
-                        namespace{{
+                        ontologies(func: uid(ontology)){{
                             uid
+                            namespace{{
+                                uid
+                            }}
+                            hasThing{{
+                                uid
+                                hasAttribute{{
+                                    uid
+                                }}
+                                inheritsFrom{{
+                                    uid
+                                }}
+                                ~relatedTo{{
+                                    uid
+                                }}
+                                ~hasType{{
+                                    uid
+                                }}
+                            }}
                         }}
-                        hasThing{{
-                            uid
-                            hasAttribute{{
-                                uid
-                            }}
-                            ~relatedTo{{
-                                uid
-                            }}
-                            ~hasType{{
-                                uid
-                            }}
-                        }}
-                    }}
-                }}     
+                    }}     
                 ";
 
                 var res = await txn.Query(query);
@@ -1469,17 +1496,23 @@ namespace OpenTwinsV2.Twins.Services
             return false;
         }
 
-        public async Task<List<JsonElement>> GetThingsInOntologyAsync(string ontologyId)
+        public async Task<JsonElement> GetThingsInOntologyAsync(string ontologyId)
         {
             using var txn = _client.NewTransaction();
 
             var query = $@"
             {{
                 ontologies(func: eq(ontologyId, ""{ontologyId}"")) {{
-                    hasThing{{
+                    defaultShapeGraph{{
+                        shapeId
+                    }}
+                    things: hasThing{{
                         uid
                         name
                         thingId
+                        inheritsFrom{{
+                            thingId
+                        }}
                     }}
                 }}
             }}";
@@ -1490,16 +1523,11 @@ namespace OpenTwinsV2.Twins.Services
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            // Acceder a things[0]["~twins"]
-            if (!root.TryGetProperty("ontologies", out JsonElement thingsArray) || thingsArray.GetArrayLength() == 0)
+            if (!root.TryGetProperty("ontologies", out JsonElement ontologies) || ontologies.GetArrayLength() == 0)
             {
-                return [];
+                return new JsonElement();
             }
-
-
-            var ontologyProp = thingsArray[0].GetProperty("hasThing");
-            var things = JsonSerializer.Deserialize<List<JsonElement>>(ontologyProp.GetRawText());
-            return things ?? [];
+            return ontologies[0].Deserialize<JsonElement>();
         }
 
         public async Task<List<string>> GetOntologiesOfTwinAsync(string twinId)
@@ -1595,6 +1623,15 @@ namespace OpenTwinsV2.Twins.Services
                     name
                     createdAt
                     hasType{{
+                        thingId
+                        name
+                        Thing.prefix{{
+                            namespaceId
+                            prefix
+                            uri
+                        }}
+                    }}
+                    inheritsFrom{{
                         thingId
                         name
                         Thing.prefix{{
@@ -1986,7 +2023,7 @@ namespace OpenTwinsV2.Twins.Services
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
-                if(!root.TryGetProperty("thing", out var thing) || thing.AsNode()!.AsArray().Count()==0)
+                if(!root.TryGetProperty("thing", out var thing) || thing.AsNode()!.AsArray().Count == 0)
                     return null;
                 
                 return thing.AsNode()!.AsArray().First()!["uid"]!.GetValue<string>();
@@ -1997,6 +2034,184 @@ namespace OpenTwinsV2.Twins.Services
                 await txn.DisposeAsync();
                 throw;
             }
+        }
+
+        public async Task<IEnumerable<string>> GetThingsChildrenInOntology(string ontologyId, string thingId)
+        {
+            using var txn = _client.NewTransaction();
+            try
+            {
+                var query = @$"
+                    {{
+                        thing as var(func: eq(thingId, ""{thingId}"")) @cascade{{
+                            ~hasThing @filter(eq(ontologyId, ""{ontologyId}""))
+                        }}
+
+                        children (func: has(inheritsFrom)) @cascade{{
+                            thingId
+                            inheritsFrom @filter(uid(thing))
+                        }}
+                    }}
+                ";
+
+                var response = await txn.Query(query);
+                var json = response.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if(!root.TryGetProperty("children", out var children) || !children.EnumerateArray().Any())
+                    return [];
+
+                var childrenNode = children.AsNode();
+                if(childrenNode is null || childrenNode is not JsonArray)
+                    return [];
+
+                return [.. children.EnumerateArray()
+                    .Where(child => child.TryGetProperty("thingId", out _))
+                    .Select(child => child.GetProperty("thingId").GetString() ?? "")
+                    .Where(id => !string.IsNullOrWhiteSpace(id))];
+            }
+            catch (Exception)
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
+        public async Task<string?> GetThingsParentInOntology(string ontologyId, string thingId)
+        {
+            using var txn = _client.NewTransaction();
+            try
+            {
+                var query = @$"
+                {{
+                    thing as var(func: eq(thingId, ""{thingId}"")) @cascade{{
+                        ~hasThing @filter(eq(ontologyId, ""{ontologyId}""))
+                    }}
+
+                    thingInfo (func: uid(thing)){{
+                        inheritsFrom{{
+                            thingId
+                        }}
+                    }}
+                }}
+                ";
+
+                var response = await txn.Query(query);
+                var json = response.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if(!root.TryGetProperty("thingInfo", out var thing))
+                    return null;
+
+                Console.WriteLine(thing);
+
+                return thing.EnumerateArray().Where(p => {Console.WriteLine(p); return p.TryGetProperty("inheritsFrom", out _);})
+                    .Select(p=> {
+                        var arr = p.GetProperty("inheritsFrom").EnumerateArray();
+                        if(arr.Any() && arr.First().TryGetProperty("thingId", out var id))
+                            return id.GetString();
+                        return null;
+                    }).FirstOrDefault();
+            }
+            catch (Exception)
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
+        public async Task<IEnumerable<string>> GetOntologysDefaultShapeGraphs(string ontologyId)
+        {
+            using var txn = _client.NewTransaction();
+            try
+            {
+                var query = @$"
+                {{
+
+                    ontology (func: eq(ontologyId, ""{ontologyId}"")){{
+                        defaultShapeGraph{{
+                            shapeId
+                        }}
+                    }}
+                }}
+                ";
+
+                var response = await txn.Query(query);
+                var json = response.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if(!root.TryGetProperty("ontology", out var ontology) && !ontology.EnumerateArray().Any())
+                    return [];
+
+                var notempty = ontology.EnumerateArray()
+                    .Any(o => o.TryGetProperty("defaultShapeGraph", out _));
+
+                return notempty ? [.. ontology.EnumerateArray()
+                    .First(o => o.TryGetProperty("defaultShapeGraph", out _))
+                    .GetProperty("defaultShapeGraph").EnumerateArray()
+                    .Select(ds => ds.GetProperty("shapeId").GetString() ?? "")
+                    .Where(id => !string.IsNullOrWhiteSpace(id))] : [];
+            }
+            catch (Exception)
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
+        public async Task<bool> AddDefaultShapeGraphInOntology(string ontologyId, string shapeId)
+        {
+            string? shapeUid = await GetShapeGraphUid(shapeId);
+            string? ontologyUid = await GetOntologyUid(ontologyId);
+
+            if(shapeUid is null || ontologyUid is null)
+                return false;
+
+            try
+            {
+                await AddNQuadTripleAsync([$"<{ontologyUid}> <defaultShapeGraph> <{shapeUid}> ."]);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"ERROR: {ex.Message}");
+                return false;
+            }
+
+            return true;
+        }
+
+        public async Task<bool> DeleteDefaultShapeGraphInOntology(string ontologyId, string shapeId)
+        {
+            string? shapeUid = await GetShapeGraphUid(shapeId);
+            string? ontologyUid = await GetOntologyUid(ontologyId);
+
+            if(shapeUid is null || ontologyUid is null)
+                return false;
+
+            try
+            {
+                var txn = _client.NewTransaction();
+                var mutation = new Mutation
+                {
+                    DelNquads = ByteString.CopyFromUtf8($"<{ontologyUid}> <defaultShapeGraph> <{shapeUid}> .")
+                };
+
+                await txn.Mutate(mutation);
+                await txn.Commit();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"ERROR: {ex.Message}");
+                return false;
+            }
+
+            return true;
         }
 
         #endregion
@@ -2171,6 +2386,28 @@ namespace OpenTwinsV2.Twins.Services
                 return null;
 
             return JsonSerializer.Deserialize<JsonElement>(nodeshapeArray[0].GetRawText());
+        }
+
+        public async Task<string?> GetShapeGraphUid(string shapeId)
+        {
+            using var txn = _client.NewTransaction();
+            var query = $@"
+            {{
+                shapeGraph(func: eq(shapeId, ""{shapeId}"")){{
+                    uid
+                }}
+            }}";
+
+            var res = await txn.Query(query);
+            var json = res.Json.ToStringUtf8(); ;
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if(!root.TryGetProperty("shapeGraph", out var shapeGraph))
+                return null;
+
+            return shapeGraph.EnumerateArray().Select(s => s.TryGetProperty("uid", out var uid) ? uid.GetString() : null).FirstOrDefault(uid => uid is not null);
         }
 
         private async Task<List<string>> GetAllShapeGraphRelatedNodesUidAsync(string shapeId)

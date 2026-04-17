@@ -28,6 +28,7 @@ namespace OpenTwinsV2.Twins.Services
         /// </summary>
         /// <param name="node">The node object.</param>
         /// <param name="graph">The graph object that contains the node.</param>
+        /// <param name="prefix">OPTIONAL. The prefix to add in the uid.</param>
         /// <returns>
         /// Returns the uid of the node in the form of "_:{local}.
         /// </returns>
@@ -222,9 +223,9 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="predicate">The predicate of the Relation.</param>
         /// <param name="obj">The uid of the object of the Relation.</param>
         /// <param name="bidirectional">Whether the relation is bidirectional or not.</param>
-        /// <param name="createdAt">The timestamp of the creation of the node.</param>
         /// <param name="ontology">The identifier of the Ontology of the nodes.</param>
         /// <param name="prefix">The prefix of the Relation.</param>
+        /// <param name="nquads">The list of NQuads.</param>
         public static void AddNQuadThingRelationTriples(string subject, string predicate, string obj, bool bidirectional, string ontology, string prefix, ICollection<string> nquads)
         {
             /*
@@ -255,9 +256,9 @@ namespace OpenTwinsV2.Twins.Services
         /// </summary>
         /// <param name="uid">The uid of the Thing.</param>
         /// <param name="thingId">the identifier of the thing.</param>
-        /// <param name="createdAt">The timestamp of the creation of the node.</param>
         /// <param name="ontology">The identifier of the Ontology of the nodes.</param>
         /// <param name="prefix">The prefix of the Thing.</param>
+        /// <param name="nquads">The list of NQuads.</param>
         /// <returns></returns>
         public static void AddNQuadThingNodeTriples(string uid, string thingId, string ontology, string prefix, ICollection<string> nquads)
         {
@@ -279,7 +280,7 @@ namespace OpenTwinsV2.Twins.Services
         /// Adds to the list of necessary NQuads of the Ontology Node.
         /// </summary>
         /// <param name="ontologyId">The identifier of the Ontology.</param>
-        /// <param name="createdAt">The timestamp of the creation of the node.</param>
+        /// <param name="nquads">The list of NQuads.</param>
         public static void AddNQuadsOntologyTriples(string ontologyId, ICollection<string> nquads)
         {
             var ontology_uid = $"_:{ontologyId}";
@@ -319,9 +320,9 @@ namespace OpenTwinsV2.Twins.Services
         /// Add to the list of necessary NQuads of the Namespace Node depending on its id, prefix and uri.
         /// </summary>
         /// <param name="id">The identifier of the parent.</param>
-        /// <param name="createdAt">The timestamp of the creation of the node.</param>
         /// <param name="prefix">The prefix of the namespace.</param>
         /// <param name="uri">The uri of the namespace.</param>
+        /// <param name="nquads">The list of NQuads.</param>
         public static void AddNQuadsNamespaceTriples(string id, string prefix, string uri, ICollection<string> nquads)
         {
             /*

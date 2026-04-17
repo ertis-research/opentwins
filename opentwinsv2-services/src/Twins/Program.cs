@@ -1,5 +1,6 @@
 // dapr run --app-id twins-service --app-port 5013 --resources-path ./Infrastructure/DaprComponentsLocal -- dotnet run --urls=http://localhost:5013/
 // dapr run --app-id things-service --app-port 5001 --resources-path ./Infrastructure/DaprComponentsLocal  -- dotnet run --urls=http://localhost:5001  
+using System.Reflection;
 using System.Text.Json;
 using Dapr;
 using Dapr.Messaging.PublishSubscribe;
@@ -23,7 +24,11 @@ builder.Services.AddScoped<InstanciationService>();
 builder.Services.AddControllers().AddDapr();
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    var xmlFilename = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, xmlFilename));
+});
 
 var app = builder.Build();
 

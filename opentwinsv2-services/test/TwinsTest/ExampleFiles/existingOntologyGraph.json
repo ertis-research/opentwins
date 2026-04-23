@@ -1,0 +1,39 @@
+{
+    "@context": {
+        "ex": "http://example.org/",
+        "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+        "foaf": "http://xmlns.com/foaf/0.1/",
+        "schema": "http://schema.org/"
+    },
+    "@graph": [
+        {
+            "@id": "movie1",
+            "id": "movie1",
+            "@type": "ontologiaprueba:movie1",
+            "ontologiaprueba:name": "The Adventure Begins",
+            "ontologiaprueba:director": {
+                "@id": "director1"
+            },
+            "ontologiaprueba:actor": {
+                "@id": "actor1"
+            }
+        },
+        {
+            "@id": "actor1",
+            "id": "actor1",
+            "@type": "ontologiaprueba:actor1",
+            "ontologiaprueba:name": "Carol White",
+            "ontologiaprueba:birthDate": "1990-02-14",
+            "ontologiaprueba:actedIn": {
+                "@id": "movie1"
+            }
+        },
+        {
+            "@id": "director1",
+            "id": "director1",
+            "@type": "ontologiaprueba:director1",
+            "ontologiaprueba:name": "Alice Johnson",
+            "ontologiaprueba:birthDate": "1980-05-20"
+        }
+    ]
+}

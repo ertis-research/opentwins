@@ -1,100 +1,202 @@
+# --- Ontology declarations ---
+_:anothertestontology <dgraph.type> "Ontology" .
+_:anothertestontology <ontologyId> "anothertestontology" .
+
 # --- Thing declarations ---
-_:alice <thingId> "Alice" .
+_:Person <thingId> "anothertestontology:Person" .
+_:Person <name> "Person" .
+_:Person <dgraph.type> "Thing" .
+_:anothertestontology <hasThing> _:Person .
+_:Person <Thing.prefix> _:anothertestontologynamespace_foaf .
+
+_:Organization <thingId> "anothertestontology:Organization" .
+_:Organization <name> "Organization" .
+_:Organization <dgraph.type> "Thing" .
+_:anothertestontology <hasThing> _:Organization .
+_:Organization <Thing.prefix> _:anothertestontologynamespace_foaf .
+
+_:alice <thingId> "anothertestontology:Alice" .
+_:alice <name> "Alice" .
 _:alice <dgraph.type> "Thing" .
-_:ontologiaPrueba <hasThing> _:alice .
+_:anothertestontology <hasThing> _:alice .
+_:alice <hasType> _:Person .
+_:alice <Thing.prefix> _:anothertestontologynamespace_ex .
 
-_:bob <thingId> "Bob" .
+_:bob <thingId> "anothertestontology:Bob" .
+_:bob <name> "Bob" .
 _:bob <dgraph.type> "Thing" .
-_:ontologiaPrueba <hasThing> _:bob .
+_:anothertestontology <hasThing> _:bob .
+_:bob <hasType> _:Person .
+_:bob <Thing.prefix> _:anothertestontologynamespace_ex .
 
-_:carol <thingId> "Carol" .
+_:carol <thingId> "anothertestontology:Carol" .
+_:carol <name> "Carol" .
 _:carol <dgraph.type> "Thing" .
-_:ontologiaPrueba <hasThing> _:carol .
+_:anothertestontology <hasThing> _:carol .
+_:carol <hasType> _:Person .
+_:carol <Thing.prefix> _:anothertestontologynamespace_ex .
 
-_:dave <thingId> "Dave" .
+_:dave <thingId> "anothertestontology:Dave" .
+_:dave <name> "Dave" .
 _:dave <dgraph.type> "Thing" .
-_:ontologiaPrueba <hasThing> _:dave .
+_:anothertestontology <hasThing> _:dave .
+_:dave <hasType> _:Person .
+_:dave <Thing.prefix> _:anothertestontologynamespace_ex .
 
-_:bookClub <thingId> "Local Book Club" .
+_:bookClub <thingId> "anothertestontology:bookClub" .
+_:bookClub <name> "bookClub" .
 _:bookClub <dgraph.type> "Thing" .
-_:ontologiaPrueba <hasThing> _:bookClub .
+_:anothertestontology <hasThing> _:bookClub .
+_:bookClub <hasType> _:Organization .
+_:bookClub <Thing.prefix> _:anothertestontologynamespace_ex .
 
-_:chessClub <thingId> "City Chess Club" .
+_:chessClub <thingId> "anothertestontology:chessClub" .
+_:chessClub <name> "chessClub" .
 _:chessClub <dgraph.type> "Thing" .
-_:ontologiaPrueba <hasThing> _:chessClub .
+_:anothertestontology <hasThing> _:chessClub .
+_:chessClub <hasType> _:Organization .
+_:chessClub <Thing.prefix> _:anothertestontologynamespace_ex .
+
+# --- Namespace ---
+
+_:anothertestontologynamespace_rdf <dgraph.type> "Namespace" .
+_:anothertestontologynamespace_rdf <Namespace.createdAt> "2026-04-20T09:54:40.0709822Z" .
+_:anothertestontologynamespace_rdf <namespaceId> "anothertestontology:namespace:rdf" .
+_:anothertestontologynamespace_rdf <Namespace.name> "anothertestontology:namespace:rdf" .
+_:anothertestontologynamespace_rdf <prefix> "rdf" .
+_:anothertestontologynamespace_rdf <uri> "http://www.w3.org/1999/02/22-rdf-syntax-ns#" .
+_:anothertestontology <namespace> _:anothertestontologynamespace_rdf .
+_:anothertestontologynamespace_rdfs <dgraph.type> "Namespace" .
+_:anothertestontologynamespace_rdfs <Namespace.createdAt> "2026-04-20T09:54:40.0712482Z" .
+_:anothertestontologynamespace_rdfs <namespaceId> "anothertestontology:namespace:rdfs" .
+_:anothertestontologynamespace_rdfs <Namespace.name> "anothertestontology:namespace:rdfs" .
+_:anothertestontologynamespace_rdfs <prefix> "rdfs" .
+_:anothertestontologynamespace_rdfs <uri> "http://www.w3.org/2000/01/rdf-schema#" .
+_:anothertestontology <namespace> _:anothertestontologynamespace_rdfs .
+_:anothertestontologynamespace_xsd <dgraph.type> "Namespace" .
+_:anothertestontologynamespace_xsd <Namespace.createdAt> "2026-04-20T09:54:40.0713262Z" .
+_:anothertestontologynamespace_xsd <namespaceId> "anothertestontology:namespace:xsd" .
+_:anothertestontologynamespace_xsd <Namespace.name> "anothertestontology:namespace:xsd" .
+_:anothertestontologynamespace_xsd <prefix> "xsd" .
+_:anothertestontologynamespace_xsd <uri> "http://www.w3.org/2001/XMLSchema#" .
+_:anothertestontology <namespace> _:anothertestontologynamespace_xsd .
+_:anothertestontologynamespace_ex <dgraph.type> "Namespace" .
+_:anothertestontologynamespace_ex <Namespace.createdAt> "2026-04-20T09:54:40.0713325Z" .
+_:anothertestontologynamespace_ex <namespaceId> "anothertestontology:namespace:ex" .
+_:anothertestontologynamespace_ex <Namespace.name> "anothertestontology:namespace:ex" .
+_:anothertestontologynamespace_ex <prefix> "ex" .
+_:anothertestontologynamespace_ex <uri> "http://example.org/" .
+_:anothertestontology <namespace> _:anothertestontologynamespace_ex .
+_:anothertestontologynamespace_schema <dgraph.type> "Namespace" .
+_:anothertestontologynamespace_schema <Namespace.createdAt> "2026-04-20T09:54:40.0713390Z" .
+_:anothertestontologynamespace_schema <namespaceId> "anothertestontology:namespace:schema" .
+_:anothertestontologynamespace_schema <Namespace.name> "anothertestontology:namespace:schema" .
+_:anothertestontologynamespace_schema <prefix> "schema" .
+_:anothertestontologynamespace_schema <uri> "http://schema.org/" .
+_:anothertestontology <namespace> _:anothertestontologynamespace_schema .
+_:anothertestontologynamespace_foaf <dgraph.type> "Namespace" .
+_:anothertestontologynamespace_foaf <Namespace.createdAt> "2026-04-20T09:54:40.0713455Z" .
+_:anothertestontologynamespace_foaf <namespaceId> "anothertestontology:namespace:foaf" .
+_:anothertestontologynamespace_foaf <Namespace.name> "anothertestontology:namespace:foaf" .
+_:anothertestontologynamespace_foaf <prefix> "foaf" .
+_:anothertestontologynamespace_foaf <uri> "http://xmlns.com/foaf/0.1/" .
+_:anothertestontology <namespace> _:anothertestontologynamespace_foaf .
 
 # --- Attributes (literals) ---
 _:attr1 <dgraph.type> "Attribute" .
-_:attr1 <Attribute.key> "foaf:age" .
+_:attr1 <Attribute.key> "age" .
 _:attr1 <Attribute.type> "int" .
 _:attr1 <Attribute.value> "30" .
+_:attr1 <Attribute.prefix> _:anothertestontologynamespace_foaf .
 _:alice <hasAttribute> _:attr1 .
 
 _:attr2 <dgraph.type> "Attribute" .
-_:attr2 <Attribute.key> "foaf:age" .
+_:attr2 <Attribute.key> "age" .
 _:attr2 <Attribute.type> "int" .
 _:attr2 <Attribute.value> "25" .
+_:attr2 <Attribute.prefix> _:anothertestontologynamespace_foaf .
 _:bob <hasAttribute> _:attr2 .
 
 _:attr3 <dgraph.type> "Attribute" .
-_:attr3 <Attribute.key> "foaf:age" .
+_:attr3 <Attribute.key> "age" .
 _:attr3 <Attribute.type> "int" .
 _:attr3 <Attribute.value> "28" .
+_:attr3 <Attribute.prefix> _:anothertestontologynamespace_foaf .
 _:carol <hasAttribute> _:attr3 .
 
 _:attr4 <dgraph.type> "Attribute" .
-_:attr4 <Attribute.key> "foaf:age" .
+_:attr4 <Attribute.key> "age" .
 _:attr4 <Attribute.type> "int" .
 _:attr4 <Attribute.value> "35" .
+_:attr4 <Attribute.prefix> _:anothertestontologynamespace_foaf .
 _:dave <hasAttribute> _:attr4 .
 
 # --- Relations (object links) ---
 _:rel_foaf:knows_234567876543 <dgraph.type> "Relation" .
-_:rel_foaf:knows_234567876543 <Relation.name> "foaf:knows" .
+_:rel_foaf:knows_234567876543 <Relation.name> "knows" .
 _:rel_foaf:knows_234567876543 <relatedTo> _:alice .
 _:rel_foaf:knows_234567876543 <relatedTo> _:bob .
+_:rel_foaf:knows_234567876543 <Relation.prefix> _:anothertestontologynamespace_foaf .
 
 _:rel_foaf:knows_987656787654 <dgraph.type> "Relation" .
-_:rel_foaf:knows_987656787654 <Relation.name> "foaf:knows" .
+_:rel_foaf:knows_987656787654 <Relation.name> "knows" .
 _:rel_foaf:knows_987656787654 <relatedTo> _:alice .
 _:rel_foaf:knows_987656787654 <relatedTo> _:carol .
+_:rel_foaf:knows_987656787654 <Relation.prefix> _:anothertestontologynamespace_foaf .
+
 
 _:rel_foaf:knows_456543456542 <dgraph.type> "Relation" .
-_:rel_foaf:knows_456543456542 <Relation.name> "foaf:knows" .
+_:rel_foaf:knows_456543456542 <Relation.name> "knows" .
 _:rel_foaf:knows_456543456542 <relatedTo> _:bob .
 _:rel_foaf:knows_456543456542 <relatedTo> _:alice .
+_:rel_foaf:knows_456543456542 <Relation.prefix> _:anothertestontologynamespace_foaf .
 
 _:rel4 <dgraph.type> "Relation" .
-_:rel4 <Relation.name> "foaf:knows" .
+_:rel4 <Relation.name> "knows" .
 _:rel4 <relatedTo> _:bob .
 _:rel4 <relatedTo> _:dave .
+_:rel4 <Relation.prefix> _:anothertestontologynamespace_foaf .
+
 
 _:rel5 <dgraph.type> "Relation" .
-_:rel5 <Relation.name> "foaf:knows" .
+_:rel5 <Relation.name> "knows" .
 _:rel5 <relatedTo> _:carol .
 _:rel5 <relatedTo> _:alice .
+_:rel5 <Relation.prefix> _:anothertestontologynamespace_foaf .
+
 
 _:rel6 <dgraph.type> "Relation" .
-_:rel6 <Relation.name> "foaf:knows" .
+_:rel6 <Relation.name> "knows" .
 _:rel6 <relatedTo> _:dave .
 _:rel6 <relatedTo> _:bob .
+_:rel6 <Relation.prefix> _:anothertestontologynamespace_foaf .
+
+_:rel_likes <dgraph.type> "Relation" .
+_:rel_likes <Relation.name> "likes" .
+_:rel_likes <Relation.prefix> _:anothertestontologynamespace_foaf .
+_:rel_likes <relatedTo> _:alice .
+_:rel_likes <relatedFrom> _:bob .
 
 _:rel7 <dgraph.type> "Relation" .
-_:rel7 <Relation.name> "schema:memberOf" .
-_:rel7 <relatedTo> _:alice .
+_:rel7 <Relation.name> "memberOf" .
+_:rel7 <relatedFrom> _:alice .
 _:rel7 <relatedTo> _:bookClub .
+_:rel7 <Relation.prefix> _:anothertestontologynamespace_schema .
 
 _:rel8 <dgraph.type> "Relation" .
-_:rel8 <Relation.name> "schema:memberOf" .
-_:rel8 <relatedTo> _:bob .
+_:rel8 <Relation.name> "memberOf" .
+_:rel8 <relatedFrom> _:bob .
 _:rel8 <relatedTo> _:chessClub .
+_:rel8 <Relation.prefix> _:anothertestontologynamespace_schema .
 
 _:rel9 <dgraph.type> "Relation" .
-_:rel9 <Relation.name> "schema:memberOf" .
-_:rel9 <relatedTo> _:carol .
+_:rel9 <Relation.name> "memberOf" .
+_:rel9 <relatedFrom> _:carol .
 _:rel9 <relatedTo> _:bookClub .
+_:rel9 <Relation.prefix> _:anothertestontologynamespace_schema .
 
 _:rel10 <dgraph.type> "Relation" .
-_:rel10 <Relation.name> "schema:memberOf" .
-_:rel10 <relatedTo> _:dave .
+_:rel10 <Relation.name> "memberOf" .
+_:rel10 <relatedFrom> _:dave .
 _:rel10 <relatedTo> _:chessClub .
+_:rel10 <Relation.prefix> _:anothertestontologynamespace_schema .

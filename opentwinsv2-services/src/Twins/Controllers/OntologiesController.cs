@@ -134,7 +134,8 @@ namespace OpenTwinsV2.Twins.Controllers
                 //Upload the triples as a mutation to DGraph
 
                 var response = await _dgraphService.AddNQuadTripleAsync(nquads.ToList());
-
+                foreach(var nq in nquads)
+                    Console.WriteLine(nq);
                 return Ok($"{response} {nquads.ToArray().Length} triples added to DGraph successfully.{(shapeGraph.Count>0 ? $" Created Shape Graph with id {ontologyId}_defaultshapegraph." : "")}");
                 // return Ok(nquads);
             }
@@ -333,7 +334,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 if(parent is null)
                     return NoContent();
                 else
-                    return Ok(await _dgraphService.GetThingInOntologyByIdAsync(ontologyId, thingId)); //ASK: restricted to only ontology, is that right?
+                    return Ok(await _dgraphService.GetThingInOntologyByIdAsync(ontologyId, parent)); //ASK: restricted to only ontology, is that right?
 
             }catch(Exception ex)
             {
@@ -637,6 +638,7 @@ namespace OpenTwinsV2.Twins.Controllers
         [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> InstanciateSubGraphOfOntology(string ontologyId, [FromBody] JsonElement subgraph)
         {
+            Console.WriteLine($"JSON : {subgraph}");
             if(string.IsNullOrWhiteSpace(ontologyId))
                 return BadRequest("The Ontology id provided is either null or empty");
             
@@ -655,16 +657,16 @@ namespace OpenTwinsV2.Twins.Controllers
             if(_instanciationService.AreThereConflictingIdsOnSubGraph(graphNode))
                 return Conflict($"There are at least one conflicting id between some nodes of the subgraph provided.");
 
-            try
-            {
-                await _instanciationService.ValidateGraph(ontologyId, subgraph);
-            }catch(InvalidDataException ex)
-            {
-                return BadRequest(ex.Message);
-            }catch(Exception ex)
-            {
-                return StatusCode(500, $"Something went wrong while validating the Graph: {ex.Message}");
-            }
+            // try
+            // {
+            //     await _instanciationService.ValidateGraph(ontologyId, subgraph);
+            // }catch(InvalidDataException ex)
+            // {
+            //     return BadRequest(ex.Message);
+            // }catch(Exception ex)
+            // {
+            //     return StatusCode(500, $"Something went wrong while validating the Graph: {ex.Message}");
+            // }
 
             try
             {
@@ -824,10 +826,9 @@ namespace OpenTwinsV2.Twins.Controllers
         /// <response code="404">The Ontology was not found.</response>
         /// <response code="500">Either the namespace or the JSON of the Ontology obtained were null, or there was any issue generating the TTL File.</response>
         [HttpGet("{ontologyId}/export/TTL")]
-        [Produces("application/octet-stream")]
-        [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
-        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
+        [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK, "application/octet-stream")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound, "application/json")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError, "application/json")]
         public async Task<IActionResult> ExportOntologyInTTLFormat(string ontologyId)
         {
             var check = await _dgraphService.ExistsOntologyByIdAsync(ontologyId);

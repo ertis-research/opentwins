@@ -1,102 +1,245 @@
+# --- Ontology declarations ---
+_:ontologiaprueba <dgraph.type> "Ontology" .
+_:ontologiaprueba <ontologyId> "ontologiaprueba" .
+
 # --- Thing declarations ---
-_:movie1 <thingId> "The Adventure Begins" .
+
+_:Person <dgraph.type> "Thing" .
+_:Person <thingId> "ontologiaprueba:Person" .
+_:Person <name> "Person" .
+_:Person <Thing.prefix> _:ontologiapruebanamespace_schema .
+_:ontologiaprueba <hasThing> _:Person .
+
+_:Actor <thingId> "ontologiaprueba:Actor" .
+_:Actor <name> "Actor" .
+_:Actor <dgraph.type> "Thing" .
+_:Actor <inheritsFrom> _:Person .
+_:ontologiaprueba <hasThing> _:Actor .
+
+_:Movie <dgraph.type> "Thing" .
+_:Movie <thingId> "ontologiaprueba:Movie" .
+_:Movie <name> "Movie" .
+_:Movie <Thing.prefix> _:ontologiapruebanamespace_schema .
+_:ontologiaprueba <hasThing> _:Movie .
+
+_:Series <dgraph.type> "Thing" .
+_:Series <thingId> "ontologiaprueba:Series" .
+_:Series <name> "Series" .
+_:Series <Thing.prefix> _:ontologiapruebanamespace_schema .
+_:ontologiaprueba <hasThing> _:Series .
+
+_:movie1 <thingId> "ontologiaprueba:movie1" .
+_:movie1 <name> "movie1" .
 _:movie1 <dgraph.type> "Thing" .
-_:ontologiaPrueba <hasThing> _:movie1 .
+_:movie1 <Thing.prefix> _:ontologiapruebanamespace_ex .
+_:ontologiaprueba <hasThing> _:movie1 .
+_:movie1 <hasType> _:Movie .
 
-_:movie2 <thingId> "Mystery of the Lost City" .
+_:movie2 <thingId> "ontologiaprueba:movie2" .
+_:movie2 <name> "movie2" .
 _:movie2 <dgraph.type> "Thing" .
-_:ontologiaPrueba <hasThing> _:movie2 .
+_:movie2 <Thing.prefix> _:ontologiapruebanamespace_ex .
+_:ontologiaprueba <hasThing> _:movie2 .
+_:movie2 <hasType> _:Movie .
+_:movie2 <hasType> _:Series .
 
-_:director1 <thingId> "Alice Johnson" .
+_:director1 <thingId> "ontologiaprueba:director1" .
+_:director1 <name> "director1" .
 _:director1 <dgraph.type> "Thing" .
-_:ontologiaPrueba <hasThing> _:director1 .
+_:director1 <Thing.prefix> _:ontologiapruebanamespace_ex .
+_:ontologiaprueba <hasThing> _:director1 .
+_:director1 <hasType> _:Person .
 
-_:director2 <thingId> "Bob Smith" .
+_:director2 <thingId> "ontologiaprueba:director2" .
+_:director2 <name> "director2" .
 _:director2 <dgraph.type> "Thing" .
-_:ontologiaPrueba <hasThing> _:director2 .
+_:director2 <Thing.prefix> _:ontologiapruebanamespace_ex .
+_:ontologiaprueba <hasThing> _:director2 .
+_:director2 <hasType> _:Person .
 
-_:actor1 <thingId> "Carol White" .
+_:actor1 <thingId> "ontologiaprueba:actor1" .
+_:actor1 <name> "actor1" .
 _:actor1 <dgraph.type> "Thing" .
-_:ontologiaPrueba <hasThing> _:actor1 .
+_:actor1 <Thing.prefix> _:ontologiapruebanamespace_ex .
+_:ontologiaprueba <hasThing> _:actor1 .
+_:actor1 <hasType> _:Actor .
 
-_:actor2 <thingId> "David Brown" .
+_:actor2 <thingId> "ontologiaprueba:actor2" .
+_:actor2 <name> "actor2" .
 _:actor2 <dgraph.type> "Thing" .
-_:ontologiaPrueba <hasThing> _:actor2 .
+_:actor2 <Thing.prefix> _:ontologiapruebanamespace_ex .
+_:ontologiaprueba <hasThing> _:actor2 .
+_:actor2 <hasType> _:Actor .
 
-_:actor3 <thingId> "Eve Black" .
+_:actor3 <thingId> "ontologiaprueba:actor3" .
+_:actor3 <name> "actor3" .
 _:actor3 <dgraph.type> "Thing" .
-_:ontologiaPrueba <hasThing> _:actor3 .
+_:actor3 <Thing.prefix> _:ontologiapruebanamespace_ex .
+_:ontologiaprueba <hasThing> _:actor3 .
+_:actor3 <hasType> _:Actor .
+
+# --- Namespace ---
+
+_:ontologiapruebanamespace_rdf <dgraph.type> "Namespace" .
+_:ontologiapruebanamespace_rdf <Namespace.createdAt> "2026-04-20T09:54:40.0709822Z" .
+_:ontologiapruebanamespace_rdf <namespaceId> "ontologiaprueba:namespace:rdf" .
+_:ontologiapruebanamespace_rdf <Namespace.name> "ontologiaprueba:namespace:rdf" .
+_:ontologiapruebanamespace_rdf <prefix> "rdf" .
+_:ontologiapruebanamespace_rdf <uri> "http://www.w3.org/1999/02/22-rdf-syntax-ns#" .
+_:ontologiaprueba <namespace> _:ontologiapruebanamespace_rdf .
+
+_:ontologiapruebanamespace_rdfs <dgraph.type> "Namespace" .
+_:ontologiapruebanamespace_rdfs <Namespace.createdAt> "2026-04-20T09:54:40.0712482Z" .
+_:ontologiapruebanamespace_rdfs <namespaceId> "ontologiaprueba:namespace:rdfs" .
+_:ontologiapruebanamespace_rdfs <Namespace.name> "ontologiaprueba:namespace:rdfs" .
+_:ontologiapruebanamespace_rdfs <prefix> "rdfs" .
+_:ontologiapruebanamespace_rdfs <uri> "http://www.w3.org/2000/01/rdf-schema#" .
+_:ontologiaprueba <namespace> _:ontologiapruebanamespace_rdfs .
+
+_:ontologiapruebanamespace_xsd <dgraph.type> "Namespace" .
+_:ontologiapruebanamespace_xsd <Namespace.createdAt> "2026-04-20T09:54:40.0713262Z" .
+_:ontologiapruebanamespace_xsd <namespaceId> "ontologiaprueba:namespace:xsd" .
+_:ontologiapruebanamespace_xsd <Namespace.name> "ontologiaprueba:namespace:xsd" .
+_:ontologiapruebanamespace_xsd <prefix> "xsd" .
+_:ontologiapruebanamespace_xsd <uri> "http://www.w3.org/2001/XMLSchema#" .
+_:ontologiaprueba <namespace> _:ontologiapruebanamespace_xsd .
+
+_:ontologiapruebanamespace_ex <dgraph.type> "Namespace" .
+_:ontologiapruebanamespace_ex <Namespace.createdAt> "2026-04-20T09:54:40.0713325Z" .
+_:ontologiapruebanamespace_ex <namespaceId> "ontologiaprueba:namespace:ex" .
+_:ontologiapruebanamespace_ex <Namespace.name> "ontologiaprueba:namespace:ex" .
+_:ontologiapruebanamespace_ex <prefix> "ex" .
+_:ontologiapruebanamespace_ex <uri> "http://example.org/" .
+_:ontologiaprueba <namespace> _:ontologiapruebanamespace_ex .
+
+_:ontologiapruebanamespace_schema <dgraph.type> "Namespace" .
+_:ontologiapruebanamespace_schema <Namespace.createdAt> "2026-04-20T09:54:40.0713390Z" .
+_:ontologiapruebanamespace_schema <namespaceId> "ontologiaprueba:namespace:schema" .
+_:ontologiapruebanamespace_schema <Namespace.name> "ontologiaprueba:namespace:schema" .
+_:ontologiapruebanamespace_schema <prefix> "schema" .
+_:ontologiapruebanamespace_schema <uri> "http://schema.org/" .
+_:ontologiaprueba <namespace> _:ontologiapruebanamespace_schema .
+
+_:ontologiapruebanamespace_foaf <dgraph.type> "Namespace" .
+_:ontologiapruebanamespace_foaf <Namespace.createdAt> "2026-04-20T09:54:40.0713455Z" .
+_:ontologiapruebanamespace_foaf <namespaceId> "ontologiaprueba:namespace:foaf" .
+_:ontologiapruebanamespace_foaf <Namespace.name> "ontologiaprueba:namespace:foaf" .
+_:ontologiapruebanamespace_foaf <prefix> "foaf" .
+_:ontologiapruebanamespace_foaf <uri> "http://xmlns.com/foaf/0.1/" .
+_:ontologiaprueba <namespace> _:ontologiapruebanamespace_foaf .
+
+_:ontologiapruebanamespace_prefontologiaprueba <dgraph.type> "Namespace" .
+_:ontologiapruebanamespace_prefontologiaprueba <Namespace.createdAt> "2026-04-20T09:54:40.0714056Z" .
+_:ontologiapruebanamespace_prefontologiaprueba <namespaceId> "ontologiaprueba:namespace:prefontologiaprueba" .
+_:ontologiapruebanamespace_prefontologiaprueba <Namespace.name> "ontologiaprueba:namespace:prefontologiaprueba" .
+_:ontologiapruebanamespace_prefontologiaprueba <prefix> "prefontologiaprueba" .
+_:ontologiapruebanamespace_prefontologiaprueba <uri> "http://example.org/ontology/ontologiaprueba" .
+_:ontologiaprueba <namespace> _:ontologiapruebanamespace_prefontologiaprueba .
 
 # --- Attributes (literals) ---
 _:attr1 <dgraph.type> "Attribute" .
-_:attr1 <Attribute.key> "schema:datePublished" .
-_:attr1 <Attribute.type> "string" .
+_:attr1 <Attribute.key> "datePublished" .
+_:attr1 <Attribute.type> "date" .
 _:attr1 <Attribute.value> "2021-07-01" .
+_:attr1 <Attribute.prefix> _:ontologiapruebanamespace_schema .
 _:movie1 <hasAttribute> _:attr1 .
 
 _:attr2 <dgraph.type> "Attribute" .
-_:attr2 <Attribute.key> "schema:datePublished" .
-_:attr2 <Attribute.type> "string" .
+_:attr2 <Attribute.key> "datePublished" .
+_:attr2 <Attribute.type> "date" .
 _:attr2 <Attribute.value> "2022-03-15" .
+_:attr2 <Attribute.prefix> _:ontologiapruebanamespace_schema .
 _:movie2 <hasAttribute> _:attr2 .
 
 _:attr3 <dgraph.type> "Attribute" .
-_:attr3 <Attribute.key> "schema:birthDate" .
-_:attr3 <Attribute.type> "string" .
+_:attr3 <Attribute.key> "birthDate" .
+_:attr3 <Attribute.type> "date" .
 _:attr3 <Attribute.value> "1980-05-20" .
+_:attr3 <Attribute.prefix> _:ontologiapruebanamespace_schema .
 _:director1 <hasAttribute> _:attr3 .
 
 _:attr4 <dgraph.type> "Attribute" .
-_:attr4 <Attribute.key> "schema:birthDate" .
-_:attr4 <Attribute.type> "string" .
+_:attr4 <Attribute.key> "birthDate" .
+_:attr4 <Attribute.type> "date" .
 _:attr4 <Attribute.value> "1975-11-02" .
+_:attr4 <Attribute.prefix> _:ontologiapruebanamespace_schema .
 _:director2 <hasAttribute> _:attr4 .
 
 _:attr5 <dgraph.type> "Attribute" .
-_:attr5 <Attribute.key> "schema:birthDate" .
-_:attr5 <Attribute.type> "string" .
+_:attr5 <Attribute.key> "birthDate" .
+_:attr5 <Attribute.type> "date" .
 _:attr5 <Attribute.value> "1990-02-14" .
+_:attr5 <Attribute.prefix> _:ontologiapruebanamespace_schema .
 _:actor1 <hasAttribute> _:attr5 .
 
 _:attr6 <dgraph.type> "Attribute" .
-_:attr6 <Attribute.key> "schema:birthDate" .
-_:attr6 <Attribute.type> "string" .
+_:attr6 <Attribute.key> "birthDate" .
+_:attr6 <Attribute.type> "date" .
 _:attr6 <Attribute.value> "1985-08-09" .
+_:attr6 <Attribute.prefix> _:ontologiapruebanamespace_schema .
 _:actor2 <hasAttribute> _:attr6 .
 
 _:attr7 <dgraph.type> "Attribute" .
-_:attr7 <Attribute.key> "schema:birthDate" .
-_:attr7 <Attribute.type> "string" .
+_:attr7 <Attribute.key> "birthDate" .
+_:attr7 <Attribute.type> "date" .
 _:attr7 <Attribute.value> "1992-12-30" .
+_:attr7 <Attribute.prefix> _:ontologiapruebanamespace_schema .
 _:actor3 <hasAttribute> _:attr7 .
+
+_:attr8 <dgraph.type> "Attribute" .
+_:attr8 <Attribute.key> "name" .
+_:attr8 <Attribute.type> "string" .
+_:attr8 <Attribute.value> "Carol White" .
+_:attr8 <Attribute.prefix> _:ontologiapruebanamespace_foaf .
+_:actor1 <hasAttribute> _:attr8 .
+
+_:attr9 <dgraph.type> "Attribute" .
+_:attr9 <Attribute.key> "name" .
+_:attr9 <Attribute.type> "string" .
+_:attr9 <Attribute.value> "David Brown" .
+_:attr9 <Attribute.prefix> _:ontologiapruebanamespace_foaf .
+_:actor2 <hasAttribute> _:attr9 .
+
+_:attr10 <dgraph.type> "Attribute" .
+_:attr10 <Attribute.key> "name" .
+_:attr10 <Attribute.type> "string" .
+_:attr10 <Attribute.value> "Eve Black" .
+_:attr10 <Attribute.prefix> _:ontologiapruebanamespace_foaf .
+_:actor2 <hasAttribute> _:attr10 .
 
 # --- Relations (object links) ---
 _:rel1 <dgraph.type> "Relation" .
-_:rel1 <Relation.name> "schema:director" .
-_:rel1 <relatedTo> _:movie1 .
+_:rel1 <Relation.name> "director" .
+_:rel1 <relatedFrom> _:movie1 .
 _:rel1 <relatedTo> _:director1 .
+_:rel1 <Relation.prefix> _:ontologiapruebanamespace_schema .
 
 _:rel2 <dgraph.type> "Relation" .
-_:rel2 <Relation.name> "schema:director" .
-_:rel2 <relatedTo> _:movie2 .
+_:rel2 <Relation.name> "director" .
+_:rel2 <relatedFrom> _:movie2 .
 _:rel2 <relatedTo> _:director2 .
+_:rel2 <Relation.prefix> _:ontologiapruebanamespace_schema .
 
 _:rel3 <dgraph.type> "Relation" .
-_:rel3 <Relation.name> "schema:actor" .
-_:rel3 <relatedTo> _:movie1 .
+_:rel3 <Relation.name> "actor" .
+_:rel3 <relatedFrom> _:movie1 .
 _:rel3 <relatedTo> _:actor1 .
+_:rel3 <Relation.prefix> _:ontologiapruebanamespace_schema .
 
 _:rel4 <dgraph.type> "Relation" .
-_:rel4 <Relation.name> "schema:actor" .
-_:rel4 <relatedTo> _:movie1 .
+_:rel4 <Relation.name> "actor" .
+_:rel4 <relatedFrom> _:movie1 .
 _:rel4 <relatedTo> _:actor2 .
+_:rel4 <Relation.prefix> _:ontologiapruebanamespace_schema .
 
 _:rel5 <dgraph.type> "Relation" .
-_:rel5 <Relation.name> "schema:actor" .
-_:rel5 <relatedTo> _:movie2 .
+_:rel5 <Relation.name> "actor" .
+_:rel5 <relatedFrom> _:movie2 .
 _:rel5 <relatedTo> _:actor2 .
+_:rel5 <Relation.prefix> _:ontologiapruebanamespace_schema .
 
 _:rel6 <dgraph.type> "Relation" .
-_:rel6 <Relation.name> "schema:actor" .
-_:rel6 <relatedTo> _:movie2 .
+_:rel6 <Relation.name> "actor" .
+_:rel6 <relatedFrom> _:movie2 .
 _:rel6 <relatedTo> _:actor3 .
+_:rel6 <Relation.prefix> _:ontologiapruebanamespace_schema .

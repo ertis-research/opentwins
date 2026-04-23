@@ -2111,8 +2111,13 @@ namespace OpenTwinsV2.Twins.Services
 
                 return thing.EnumerateArray().Where(p => {Console.WriteLine(p); return p.TryGetProperty("inheritsFrom", out _);})
                     .Select(p=> {
-                        var arr = p.GetProperty("inheritsFrom").EnumerateArray();
-                        if(arr.Any() && arr.First().TryGetProperty("thingId", out var id))
+                        var el = p.GetProperty("inheritsFrom");
+                        JsonElement parentThing;
+                        if(el.AsNode() is JsonArray)
+                            parentThing = el.EnumerateArray().First();
+                        else
+                            parentThing = el;
+                        if(parentThing.TryGetProperty("thingId", out var id))
                             return id.GetString();
                         return null;
                     }).FirstOrDefault();

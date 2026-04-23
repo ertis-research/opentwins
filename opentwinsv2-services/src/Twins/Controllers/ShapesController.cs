@@ -97,6 +97,8 @@ namespace OpenTwinsV2.Twins.Controllers
                 try
                 {
                     nquads = _importService.GetFullShapeGraphNquads(shapeId.ToLowerInvariant(), shapeFile) ?? throw new Exception("The obtained list of NQuads of the Shape Graph was null");
+                    foreach(var n in nquads)
+                        Console.WriteLine(n);
                 }
                 catch (Exception ex)
                 {

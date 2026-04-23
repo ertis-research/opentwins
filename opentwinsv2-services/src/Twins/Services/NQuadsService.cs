@@ -139,7 +139,7 @@ namespace OpenTwinsV2.Twins.Services
             {
                 //the Thing doesn't exist, we have to create it
                 //typeOfNode is the thingId, but we need the prefix too
-                typeUid = $"_:typeThing{typeOfNode}";
+                typeUid = $"_:{ontologyId}:{typeOfNode}";
                 AddNQuadThingNodeTriples(typeUid, typeOfNode, ontologyId, typePrefix, nquads);
             } 
             return typeUid;

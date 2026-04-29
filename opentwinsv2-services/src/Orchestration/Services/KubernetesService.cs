@@ -551,8 +551,8 @@ namespace Orchestration.Services
             }
             catch (Exception ex)
             {
-                var logs = FormatPodLogs(safeJobId, namespaceName);
-                await DeleteBenthosJob(jobId, namespaceName, deleteConfig: deleteConfigOnFailure);
+                var logs = await FormatPodLogs(safeJobId, namespaceName);
+                //await DeleteBenthosJob(jobId, namespaceName, deleteConfig: deleteConfigOnFailure);
                 throw new Exception($"Original: {ex.Message}\nLogs right before failure and deletion: {logs}");
             }
 
@@ -630,10 +630,8 @@ namespace Orchestration.Services
 
             //check if it's a connector -> obtain thing id
             //otherwise, only the jobId
-            var thingId = "";
-            if(connector)
-                thingId = GetOriginalValue(pod, connector);
-            var jobId = connector ? GetOriginalValue(pod, false) : thingId;            
+            var jobId = GetOriginalValue(pod, thingId: false);
+            var thingId = connector ? GetOriginalValue(pod, thingId: true) : "";
 
             //2 - Delete the Pod, but not the configMap (mark false flag)
             await DeleteBenthosJob(jobId, namespaceName, deleteConfig: false);

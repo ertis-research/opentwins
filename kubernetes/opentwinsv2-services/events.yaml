@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: opentwinsv2-events
-          image: registry.ertis.uma.es/opentwinsv2-events:0.0.1 
+          image: docker.ertis.uma.es/opentwinsv2/opentwinsv2-events:0.0.2 
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

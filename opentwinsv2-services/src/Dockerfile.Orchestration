@@ -1,0 +1,26 @@
+# Build image
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+# Copy csproj files first
+COPY Orchestration/Orchestration.csproj Orchestration/
+COPY Shared/Shared.csproj Shared/
+RUN dotnet restore Orchestration/Orchestration.csproj
+
+# Copy the rest of the source
+COPY Orchestration/ Orchestration/
+COPY Shared/ Shared/
+
+# Publish
+RUN dotnet publish Orchestration/Orchestration.csproj -c Release -o /App/out
+
+# Runtime image with digest
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+WORKDIR /App
+COPY --from=build /App/out .
+
+EXPOSE 8080
+
+ENTRYPOINT ["dotnet", "Orchestration.dll"]
+# docker build -t docker.ertis.uma.es/opentwinsv2/opentwinsv2-orchestration:0.0.2 -f Dockerfile.Orchestration .
+#docker push docker.ertis.uma.es/opentwinsv2/opentwinsv2-orchestration:0.0.2

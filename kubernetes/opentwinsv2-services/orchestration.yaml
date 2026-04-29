@@ -1,0 +1,99 @@
+# 1. Creamos la cuenta de servicio específica para tu app
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orchestration-sa
+  namespace: opentwinsv2
+
+---
+# 2. Definimos los permisos (poder crear namespaces)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: otv2-orchestration-creator-role
+rules:
+# 1. Gestión de Namespaces
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "create", "watch"]
+
+# 2. Gestión completa de Pods (crear, borrar, listar...)
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+
+# 3. Permiso para leer los Logs de los Pods (vital para tu método FormatPodLogs)
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
+
+# 4. Gestión completa de ConfigMaps (tu código los crea y los borra)
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
+
+---
+# 3. Unimos la cuenta de servicio con los permisos
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: otv2-orchestration-namespace-binding
+subjects:
+- kind: ServiceAccount
+  name: orchestration-sa        # <-- Cambiado: ya no usa "default"
+  namespace: opentwinsv2
+roleRef:
+  kind: ClusterRole
+  name: otv2-orchestration-creator-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# 4. Tu Deployment, ahora usando la cuenta con permisos
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opentwinsv2-orchestration-deploy
+  namespace: opentwinsv2
+  labels:
+    app: opentwinsv2-orchestration
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opentwinsv2-orchestration
+  template:
+    metadata:
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "orchestration-service"
+        dapr.io/app-port: "8080"
+        dapr.io/config: "dapr-config"
+      labels:
+        app: opentwinsv2-orchestration
+    spec:
+      serviceAccountName: orchestration-sa  # <-- Añadido: Damos la identidad al Pod
+      containers:
+        - name: opentwinsv2-orchestration
+          image: docker.ertis.uma.es/opentwinsv2/opentwinsv2-orchestration:0.0.2 
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:8080"
+
+---
+# 5. Tu servicio interno
+apiVersion: v1
+kind: Service
+metadata:
+  name: opentwinsv2-orchestration-svc
+  namespace: opentwinsv2
+spec:
+  type: NodePort
+  selector:
+    app: opentwinsv2-orchestration
+  ports:
+    - port: 80
+      targetPort: 8080
+      nodePort: 30355

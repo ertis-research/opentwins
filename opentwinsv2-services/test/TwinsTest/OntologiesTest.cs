@@ -23,25 +23,21 @@ using Json.More;
 using Api;
 using System.Text;
 
-[CollectionDefinition("Ontologies collection")]
+[CollectionDefinition("Twins Tests")]
 public class OntologiesCollection : ICollectionFixture<TwinsAPIFixture>
 {
     //marker for xunit
 }
 
-[Collection("Ontologies collection")]
-public class OntologiesTest
+[Collection("Twins Tests")]
+public abstract class OntologiesTest : IAsyncLifetime
 {
     private readonly HttpClient _client;
     private readonly TwinsAPIFixture _fixture;
-    public DGraphService _dgraphService = null!;
-    public ThingsService _thingsService = null!;
-
     public readonly string _ontologyId;
     public readonly string _importedOntologyId;
     public readonly string _shapeId;
     public readonly string _importedShapeId;
-    public readonly int _initCount;
     public readonly string _thingId;
     public readonly string? _childId;
     public readonly string? _parentId;
@@ -60,67 +56,27 @@ public class OntologiesTest
         _shapeId = _fixture.shapeId;
         _importedShapeId = fixture.shapeIdImported;
         _client = fixture.OntologiesClient;
-        _dgraphService = fixture.DGraphService;
-        _thingsService = fixture.ThingsService;
         _thingId = fixture.thingId;
         _childId = fixture.child;
         _parentId = fixture.parent;
         _orphanId = fixture.orphan;
         _childlessId = fixture.childless;
-        _initCount = fixture.initCount;
         _relationName = fixture.relationName;
         _attributeKey = fixture.attributeKey;
         _instaciatedThingId = fixture.instanciatedThingId;
         _thingsClient = fixture.ThingsClient;
     }
 
-    private JsonElement GetJsonRoot(string jsonString)
+    public async Task DisposeAsync()
     {
-        using var jsonDoc = JsonDocument.Parse(jsonString);
-        return jsonDoc.RootElement.Clone();
+        await CleanupAfterTestAsync();
     }
 
-    private string GetMimeType(string filePath)
+    protected virtual Task CleanupAfterTestAsync() => Task.CompletedTask;
+
+    public Task InitializeAsync()
     {
-        string extension = Path.GetExtension(filePath).ToLowerInvariant();
-        return extension switch
-        {
-            ".ttl" => "text/turtle",
-            ".txt" => "text/plain",
-            ".json" => "application/json",
-            ".csv" => "text/csv",
-            ".xml" => "application/xml",
-            ".html" => "text/html",
-            _ => "application/octet-stream", // fallback
-        };
-    }
-
-    private HttpContent GetHttpContentForPostRequest(string path)
-    {
-        var fileStream = File.OpenRead(path);
-        var content = new MultipartFormDataContent();
-
-        // Add the file content
-        var fileContent = new StreamContent(fileStream);
-        fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse(GetMimeType(path)); //appropriate MIME type
-        string fileName = Path.GetFileName(path);
-        content.Add(fileContent, "ontologyFile", fileName);
-
-        return content;
-    }
-
-    private async Task<int> GetActualCount()
-    {
-        var response = await _client.GetAsync("");
-        var jsonStr = await response.Content.ReadAsStringAsync();
-        return GetActualCount(jsonStr);
-    }
-
-    private int GetActualCount(string jsonStr)
-    {
-        using var jsonDoc = JsonDocument.Parse(jsonStr);
-        int count = jsonDoc.RootElement.TryGetProperty("totalCount", out var countEl) ? countEl.GetInt32() : 0;
-        return count;
+        return Task.CompletedTask;
     }
 
     public class GetAllOntologiesTest : OntologiesTest
@@ -131,45 +87,45 @@ public class OntologiesTest
         [Fact]
         public async Task GetOntologies_Nothing_200AndPagedResult()
         {
+            var initCount = await _fixture.GetOntologyCount();
             var responseGet = await _client.GetAsync("");
             var jsonString = await responseGet.Content.ReadAsStringAsync();
-            var count = GetActualCount(jsonString);
+            var count = TwinsAPIFixture.GetActualCount(jsonString);
 
             Assert.True(responseGet.IsSuccessStatusCode);
-            Assert.Equal(_initCount, count);
+            Assert.Equal(initCount, count);
         }
     }
 
     public class UploadOntologyTest : OntologiesTest
     {
         public UploadOntologyTest(TwinsAPIFixture fixture) : base(fixture) { }
-
-        //The uploaded file is null
+        private readonly string ontologyId = "anotherontologyid";
+        
         [Fact]
         public async Task UploadOntology_NullFile_BadRequest()
         {
-            string ontologyId = "anotherontologyid";
-            var initCount = await GetActualCount();
+            var initCount = await _fixture.GetOntologyCount();
             var response = await _client.PostAsync($"{ontologyId}", null);
 
             Assert.False(response.IsSuccessStatusCode);
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-            Assert.True(initCount >= await GetActualCount());
+            Assert.True(initCount >= await _fixture.GetOntologyCount());
         }
 
         //The uploaded file is not of ttl type
         [Fact]
         public async Task UploadOntology_NotTTLExtension_BadRequest()
         {
-            string ontologyId = "anotherontologyid";
+            var initCount = await _fixture.GetOntologyCount();
             string path = Path.Combine(AppContext.BaseDirectory, "ExampleFiles", "emptyFile.txt");
-            using var content = GetHttpContentForPostRequest(path);
+            using var content = TwinsAPIFixture.GetHttpContentForPostRequest(path, "ontologyFile");
             var responsePost = await _client.PostAsync($"{ontologyId}", content);
             var responseGet = await _client.GetAsync($"{ontologyId}");
 
             Assert.False(responsePost.IsSuccessStatusCode);
             Assert.Equal(HttpStatusCode.BadRequest, responsePost.StatusCode);
-            Assert.Equal(_initCount, await GetActualCount());
+            Assert.Equal(initCount, await _fixture.GetOntologyCount());
             Assert.False(responseGet.IsSuccessStatusCode);
         }
 
@@ -177,33 +133,38 @@ public class OntologiesTest
         [Fact]
         public async Task UploadOntology_TTLExtensionButIdOnUse_Conflict()
         {
+            var initCount = await _fixture.GetOntologyCount();
             string ontologyId = _ontologyId; //same id as the already existing ontology
             string path = Path.Combine(AppContext.BaseDirectory, "ExampleFiles", "importingOntology.ttl");
-            using var content = GetHttpContentForPostRequest(path);
+            using var content = TwinsAPIFixture.GetHttpContentForPostRequest(path, "ontologyFile");
             var response = await _client.PostAsync($"{ontologyId}", content);
 
             Assert.False(response.IsSuccessStatusCode);
             Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-            Assert.Equal(_initCount, await GetActualCount());
+            Assert.Equal(initCount, await _fixture.GetOntologyCount());
         }
 
         //The uploaded file is correct and the id is unused
         [Fact]
         public async Task UploadOntology_TTLExtensionAndIdUnused_ImportedOntology()
         {
-            string ontologyId = "anotherontologyid"; //same id as the already existing ontology
+            var initCount = await _fixture.GetOntologyCount();
             string path = Path.Combine(AppContext.BaseDirectory, "ExampleFiles", "importingOntology.ttl");
-            using var content = GetHttpContentForPostRequest(path);
+            using var content = TwinsAPIFixture.GetHttpContentForPostRequest(path, "ontologyFile");
             var responsePost = await _client.PostAsync($"{ontologyId}", content);
             var responseGet = await _client.GetAsync($"{ontologyId}");
             var jsonString = await responseGet.Content.ReadAsStringAsync();
-            var jsonRoot = GetJsonRoot(jsonString);
+            var jsonRoot = TwinsAPIFixture.GetJsonRoot(jsonString);
 
             Assert.True(responsePost.IsSuccessStatusCode);
             Assert.True(responseGet.IsSuccessStatusCode);
-            Assert.Equal(_initCount+1, await GetActualCount());
+            Assert.Equal(initCount+1, await _fixture.GetOntologyCount());
+        }
 
-            await _fixture.DeleteOntology(ontologyId);
+        protected override async Task CleanupAfterTestAsync()
+        {
+            if(await _fixture.ExistsOntology(ontologyId))
+                await _fixture.DeleteOntology(ontologyId);
         }
     }
 
@@ -217,7 +178,6 @@ public class OntologiesTest
         {
             //Act
             var response = await _client.GetAsync($"{_ontologyId}");
-            var jsonString = await response.Content.ReadAsStringAsync();
 
             Assert.True(response.IsSuccessStatusCode);
         }
@@ -249,7 +209,7 @@ public class OntologiesTest
             //Act
             var response = await _client.GetAsync($"{_ontologyId}/things/{_thingId}");
             var jsonString = await response.Content.ReadAsStringAsync();
-            var jsonRoot = GetJsonRoot(jsonString);
+            var jsonRoot = TwinsAPIFixture.GetJsonRoot(jsonString);
 
             // Assert
             Assert.True(response.IsSuccessStatusCode); //Recieves a 2xx code
@@ -294,7 +254,7 @@ public class OntologiesTest
             //Act
             var response = await _client.GetAsync($"{_ontologyId}/relations/{_relationName}");
             var jsonString = await response.Content.ReadAsStringAsync();
-            var jsonRoot = GetJsonRoot(jsonString);
+            var jsonRoot = TwinsAPIFixture.GetJsonRoot(jsonString);
             // Assert
             Assert.True(response.IsSuccessStatusCode); //Recieves a 2xx code
             Assert.NotEqual(JsonValueKind.Undefined, jsonRoot.ValueKind); //recieves something
@@ -341,7 +301,7 @@ public class OntologiesTest
             //Act
             var response = await _client.GetAsync($"{_ontologyId}/attributes/{_attributeKey}");
             var jsonString = await response.Content.ReadAsStringAsync();
-            var jsonRoot = GetJsonRoot(jsonString);
+            var jsonRoot = TwinsAPIFixture.GetJsonRoot(jsonString);
             // Assert
             Assert.True(response.IsSuccessStatusCode); //Recieves a 2xx code
             Assert.NotEqual(JsonValueKind.Undefined, jsonRoot.ValueKind); //recieves something
@@ -388,7 +348,7 @@ public class OntologiesTest
 
             string ontologyId = _importedOntologyId;
             await _fixture.ImportSampleOntology();
-            var initCount = await GetActualCount();
+            var initCount = await _fixture.GetOntologyCount();
 
             //Act
             var responseDelete = await _client.DeleteAsync($"{ontologyId}");
@@ -398,9 +358,7 @@ public class OntologiesTest
             //Assert
             Assert.True(responseDelete.IsSuccessStatusCode);
             Assert.False(responseGet.IsSuccessStatusCode);
-            Assert.Equal(initCount-1, await GetActualCount());
-
-            await _fixture.DeleteOntology(_importedOntologyId);
+            Assert.Equal(initCount-1, await _fixture.GetOntologyCount());
         }
 
         //The ontology doesn't exist
@@ -417,6 +375,12 @@ public class OntologiesTest
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
             Assert.Equal(initCount, await _fixture.GetOntologyCount());
         }
+
+        protected override async Task CleanupAfterTestAsync()
+        {
+            if(await _fixture.ExistsOntology(_importedOntologyId))
+                await _fixture.DeleteOntology(_importedOntologyId);
+        }
     }
 
     public class DeleteThingFromOntologyTest : OntologiesTest
@@ -430,7 +394,6 @@ public class OntologiesTest
             string ontologyId = _importedOntologyId;
             await _fixture.ImportSampleOntology();
             string thingId = _fixture.thingIdOfImported ?? "";
-            Console.WriteLine($"THINGID :{thingId}");
             //Act
             var responseDelete = await _client.DeleteAsync($"{ontologyId}/things/{thingId}");
             var responseGet = await _client.GetAsync($"{ontologyId}/things/{thingId}");
@@ -438,8 +401,6 @@ public class OntologiesTest
             Assert.True(responseDelete.IsSuccessStatusCode);
             Assert.False(responseGet.IsSuccessStatusCode);
             Assert.Equal(HttpStatusCode.NotFound, responseGet.StatusCode);
-
-            await _fixture.DeleteOntology(ontologyId);
         }
 
         //The Ontology exists but the Thing does not
@@ -510,29 +471,43 @@ public class OntologiesTest
             Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         }
 
-        //TODO: The Ontology exists and the graph is valid
-        // [Fact]
-        // public async Task InstanciateGraphFromOntology_ValidGraph_200AndInstanciatedThings()
-        // {
-        //     var graph = await _fixture.GetOntologyGraph("existingOntologyGraph.json");
-        //     var thingIds = graph.GetProperty("@graph").EnumerateArray().Select(thing => thing.GetProperty("id").GetString() ?? "");
+        //The Ontology exists and the graph is valid
+        [Fact]
+        public async Task InstanciateGraphFromOntology_ValidGraph_200AndInstanciatedThings()
+        {
+            var graph = await _fixture.GetJsonGraph("instanciatingOntologyGraph.json");
+            var thingIds = graph.GetProperty("@graph").EnumerateArray().Select(thing => thing.GetProperty("id").GetString() ?? "");
             
-        //     var response = await _client.PutAsync($"{_ontologyId}/instanciate", new StringContent(graph.ToJsonString(), Encoding.UTF8, "application/json"));
-        //     bool allInstanciated = true;
+            var response = await _client.PutAsync($"{_ontologyId}/instanciate", new StringContent(graph.ToJsonString(), Encoding.UTF8, "application/json"));
+            bool allInstanciated = true;
 
-        //     await Task.Delay(30000);
-        //     foreach(var id in thingIds){
-        //         var responseGet = await _thingsClient.GetAsync($"{id}");
-        //         allInstanciated = allInstanciated && responseGet.IsSuccessStatusCode;
-        //         Console.WriteLine($"{id} --> {responseGet.StatusCode}");
-        //     }
+            foreach(var id in thingIds){
+                var responseGet = await _fixture.ExistsThing(id);
+                allInstanciated = allInstanciated && responseGet;
+                Console.WriteLine($"{id} --> {responseGet}");
+            }
 
-        //     Assert.True(response.IsSuccessStatusCode);
-        //     Assert.True(allInstanciated);
+            Assert.True(response.IsSuccessStatusCode);
+            Assert.True(allInstanciated);
+        }
 
-        //     foreach(var id in thingIds)
-        //         await _thingsClient.DeleteAsync(id);
-        // }
+        protected override async Task CleanupAfterTestAsync()
+        {
+            var graph = await _fixture.GetJsonGraph("instanciatingOntologyGraph.json");
+            var thingIds = graph.GetProperty("@graph").EnumerateArray().Select(thing => thing.GetProperty("id").GetString() ?? "");
+            foreach(var id in thingIds){
+                try
+                {
+                    await _fixture.DeleteThing(id);
+                }
+                catch (KeyNotFoundException) { }
+                try
+                {
+                    await _fixture.DeleteThingInDGraph(id);
+                }
+                catch (KeyNotFoundException) { }
+            }
+        }
     }
 
     public class GetChildrenOfThingInOntologyTest : OntologiesTest
@@ -579,7 +554,7 @@ public class OntologiesTest
         {
             var response = await _client.GetAsync($"{_ontologyId}/things/{_parentId}/children");
             var jsonString = await response.Content.ReadAsStringAsync();
-            var jsonDoc = GetJsonRoot(jsonString);
+            var jsonDoc = TwinsAPIFixture.GetJsonRoot(jsonString);
 
             Assert.True(response.IsSuccessStatusCode);
             Assert.False(string.IsNullOrWhiteSpace(jsonString));
@@ -631,7 +606,7 @@ public class OntologiesTest
         {
             var response = await _client.GetAsync($"{_ontologyId}/things/{_childId}/parent");
             var jsonString = await response.Content.ReadAsStringAsync();
-            var root = GetJsonRoot(jsonString);
+            var root = TwinsAPIFixture.GetJsonRoot(jsonString);
 
             Assert.True(response.IsSuccessStatusCode);
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -674,7 +649,7 @@ public class OntologiesTest
         {
             var response = await _client.GetAsync($"{_ontologyId}/things/{_thingId}/relations/dependencies");
             var jsonString = await response.Content.ReadAsStringAsync();
-            var root = GetJsonRoot(jsonString);
+            var root = TwinsAPIFixture.GetJsonRoot(jsonString);
 
             Assert.True(response.IsSuccessStatusCode);
             Assert.False(string.IsNullOrWhiteSpace(jsonString));
@@ -705,7 +680,7 @@ public class OntologiesTest
         {
             var response = await _client.GetAsync($"{_ontologyId}/defaultShapeGraphs");
             var jsonString = await response.Content.ReadAsStringAsync();
-            var root = GetJsonRoot(jsonString);
+            var root = TwinsAPIFixture.GetJsonRoot(jsonString);
             var idArr = root.EnumerateArray();
 
             Assert.True(response.IsSuccessStatusCode);
@@ -755,8 +730,6 @@ public class OntologiesTest
 
             Assert.False(response.IsSuccessStatusCode);
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-
-            await _fixture.DeleteOntology(ontologyId);
         }
 
         //The Ontology exists and has in its defaults the Shape Graph
@@ -766,14 +739,19 @@ public class OntologiesTest
             var responseDelete = await _client.DeleteAsync($"{_ontologyId}/defaultShapeGraphs/{_shapeId}");
             var responseGet = await _client.GetAsync($"{_ontologyId}/defaultShapeGraphs");
             var jsonString = await responseGet.Content.ReadAsStringAsync();
-            var root = GetJsonRoot(jsonString);
+            var root = TwinsAPIFixture.GetJsonRoot(jsonString);
             var idArr = root.EnumerateArray().Select(id => id.GetString() ?? "");
 
 
             Assert.True(responseDelete.IsSuccessStatusCode);
             Assert.True(responseGet.IsSuccessStatusCode);
             Assert.DoesNotContain(_shapeId, idArr);
+        }
 
+        protected override async Task CleanupAfterTestAsync()
+        {
+            if(await _fixture.ExistsOntology(_importedOntologyId))
+                await _fixture.DeleteOntology(_importedOntologyId);
             await _fixture.LinkOntologyToShapeGraph(_ontologyId, _shapeId);
         }
     }
@@ -826,14 +804,18 @@ public class OntologiesTest
             var responsePut = await _client.PutAsync($"{_ontologyId}/defaultShapeGraphs/{shapeId}", null);
             var responseGet = await _client.GetAsync($"{_ontologyId}/defaultShapeGraphs");
             var jsonString = await responseGet.Content.ReadAsStringAsync();
-            var root = GetJsonRoot(jsonString);
+            var root = TwinsAPIFixture.GetJsonRoot(jsonString);
             var arrEl = root.EnumerateArray().Select(id => id.GetString() ?? "");
 
             Assert.True(responsePut.IsSuccessStatusCode);
             Assert.True(responseGet.IsSuccessStatusCode);
             Assert.Contains(shapeId, arrEl);
+        }
 
-            await _fixture.DeleteShapeGraph(shapeId);
+        protected override async Task CleanupAfterTestAsync()
+        {
+            if(await _fixture.ExistsShapeGraph(_importedShapeId))
+                await _fixture.DeleteShapeGraph(_importedShapeId);
         }
     }
 
@@ -862,21 +844,19 @@ public class OntologiesTest
 
             var responseGet1 = await _client.GetAsync($"{ontologyId}/defaultShapeGraphs");
             var jsonStringGet1 = await responseGet1.Content.ReadAsStringAsync();
-            var rootGet1 = GetJsonRoot(jsonStringGet1);
+            var rootGet1 = TwinsAPIFixture.GetJsonRoot(jsonStringGet1);
             var arrInit = rootGet1.EnumerateArray();
             
             var responseDelete = await _client.DeleteAsync($"{ontologyId}/defaultShapeGraphs/");
 
             var responseGet2 = await _client.GetAsync($"{ontologyId}/defaultShapeGraphs");
             var jsonStringGet2 = await responseGet2.Content.ReadAsStringAsync();
-            var rootGet2 = GetJsonRoot(jsonStringGet2);
+            var rootGet2 = TwinsAPIFixture.GetJsonRoot(jsonStringGet2);
             var arr = rootGet2.EnumerateArray();
 
             Assert.True(responseDelete.IsSuccessStatusCode);
             Assert.Empty(arr);
             Assert.Equal(arrInit.Count(), arr.Count());
-
-            await _fixture.DeleteOntology(ontologyId);
         }
 
         //The Ontology has defaults
@@ -889,21 +869,27 @@ public class OntologiesTest
 
             var responseGet1 = await _client.GetAsync($"{_ontologyId}/defaultShapeGraphs");
             var jsonStringGet1 = await responseGet1.Content.ReadAsStringAsync();
-            var rootGet1 = GetJsonRoot(jsonStringGet1);
+            var rootGet1 = TwinsAPIFixture.GetJsonRoot(jsonStringGet1);
             var arrInit = rootGet1.EnumerateArray();
             
             var responseDelete = await _client.DeleteAsync($"{_ontologyId}/defaultShapeGraphs/");
             
             var responseGet2 = await _client.GetAsync($"{_ontologyId}/defaultShapeGraphs");
             var jsonStringGet2 = await responseGet2.Content.ReadAsStringAsync();
-            var rootGet2 = GetJsonRoot(jsonStringGet2);
+            var rootGet2 = TwinsAPIFixture.GetJsonRoot(jsonStringGet2);
             var arr = rootGet2.EnumerateArray();
 
             Assert.True(responseDelete.IsSuccessStatusCode);
             Assert.Empty(arr);
             Assert.True(arrInit.Count() > arr.Count());
+        }
 
-            await _fixture.DeleteShapeGraph(shapeId);
+        protected override async Task CleanupAfterTestAsync()
+        {
+            if(await _fixture.ExistsShapeGraph(_importedShapeId))
+                await _fixture.DeleteShapeGraph(_importedShapeId);
+            if(await _fixture.ExistsOntology(_importedOntologyId))
+                await _fixture.DeleteOntology(_importedOntologyId);
             await _fixture.LinkOntologyToShapeGraph(_ontologyId, _shapeId);
         }
 
@@ -931,7 +917,7 @@ public class OntologiesTest
         {
             var response = await _client.GetAsync($"{_ontologyId}/export/Json");
             var jsonString = await response.Content.ReadAsStringAsync();
-            var root = GetJsonRoot(jsonString);
+            var root = TwinsAPIFixture.GetJsonRoot(jsonString);
 
             Assert.True(response.IsSuccessStatusCode);
             Assert.False(string.IsNullOrWhiteSpace(jsonString));
@@ -961,7 +947,7 @@ public class OntologiesTest
         {
             var response = await _client.GetAsync($"{_ontologyId}/export/JsonLd");
             var jsonString = await response.Content.ReadAsStringAsync();
-            var root = GetJsonRoot(jsonString);
+            var root = TwinsAPIFixture.GetJsonRoot(jsonString);
 
             Assert.True(response.IsSuccessStatusCode);
             Assert.False(string.IsNullOrWhiteSpace(jsonString));
@@ -1084,7 +1070,7 @@ public class OntologiesTest
 
             var response = await _client.PostAsync($"{_ontologyId}/query", new FormUrlEncodedContent(formValues));
             var jsonString = await response.Content.ReadAsStringAsync();
-            var root = GetJsonRoot(jsonString);
+            var root = TwinsAPIFixture.GetJsonRoot(jsonString);
 
             Assert.True(response.IsSuccessStatusCode);
             Assert.False(string.IsNullOrWhiteSpace(jsonString));

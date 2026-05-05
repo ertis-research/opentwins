@@ -1,0 +1,14 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix ontologiaprueba: <http://example.org/> .
+@prefix ex: <http://example.org/shapes/> .
+
+ex:ActorShape
+    a sh:NodeShape ;
+    sh:targetClass ontologiaprueba:actor1 ;
+
+    sh:property [
+        sh:path ontologiaprueba:birthDate ;
+        sh:datatype xsd:date ;
+        sh:minCount 1 ;
+    ] .

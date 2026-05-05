@@ -1153,7 +1153,7 @@ namespace Twins.Services
             }
 
             var nquads = await GetFullOntologyNQuadsAndShapesFromGraph(ontologyId, graph, shapeGraph);
-            File.WriteAllLines("nquads.txt", nquads);
+            // File.WriteAllLines("nquads.txt", nquads);
             return nquads;
         }
     }

@@ -47,6 +47,24 @@
     <None Update="ExampleFiles\importingShapeGraphNQuads.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="ExampleFiles\importingShapeGraph.ttl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="ExampleFiles\existingTwinShapeGraphNotValidates.ttl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="ExampleFiles\existingTwinShapeGraphNotValidatesNQuads.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="ExampleFiles\existingTwinShapeGraphValidates.ttl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="ExampleFiles\existingTwinShapeGraphValidatesNQuads.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="ExampleFiles\importingTwinGraph.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="ExampleFiles\existingShapeGraphNQuads.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -54,6 +72,9 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="ExampleFiles\existingOntologyGraph.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="ExampleFiles\instanciatingOntologyGraph.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>

@@ -440,7 +440,7 @@ namespace OpenTwinsV2.Twins.Services
                 ["actions"] = new JsonObject { },
                 ["events"] = new JsonObject { }
             };
-            var thingsResponse = await _thingsService.CreateThingAsync(payload);
+            var thingsResponse = await _thingsService.CreateThingAsync(twinId, payload);
             if(!thingsResponse)
                 throw new Exception("Response from Things Service while creating Twin Thing was unsuccessful.");
             var dgraphResponse = await _dgraphService.AddThingAsync(ThingBuilder.BuildTwin(twinId));
@@ -474,7 +474,7 @@ namespace OpenTwinsV2.Twins.Services
                 var thingId = thing!["@type"]!.GetValue<string>();
                 var id = thing["@id"]!.GetValue<string>();
                 await _dgraphService.CreateInstanciatedThingAsync(thingId, id, ontologyId: ontologyId, twinUid: twinUid);
-                var thingsResponse = await _thingsService.CreateThingAsync(payload);
+                var thingsResponse = await _thingsService.CreateThingAsync(id, payload);
                 if(!thingsResponse)
                     throw new Exception("Things Instanciation failed in Things Service");
             }
@@ -498,7 +498,7 @@ namespace OpenTwinsV2.Twins.Services
                 var thingId = thing!["@type"]!.GetValue<string>();
                 var id = thing["@id"]!.GetValue<string>();
                 await _dgraphService.CreateInstanciatedThingAsync(thingId, id, twinUid: twinUid);
-                var thingsResponse = await _thingsService.CreateThingAsync(payload);
+                var thingsResponse = await _thingsService.CreateThingAsync(id, payload);
                 if(!thingsResponse)
                     throw new Exception("Things Instanciation failed in Things Service");
             }

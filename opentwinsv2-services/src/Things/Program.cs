@@ -33,7 +33,7 @@ builder.Services.AddActors(options =>
         MaxStackDepth = 16,
     };
 
-    options.ActorIdleTimeout = TimeSpan.FromSeconds(30);           // idleTimeout
+    options.ActorIdleTimeout = TimeSpan.FromSeconds(60);           // idleTimeout
     options.ActorScanInterval = TimeSpan.FromSeconds(10);          // scanInterval
     options.DrainOngoingCallTimeout = TimeSpan.FromSeconds(30);    // drainOngoingCallTimeout
     options.DrainRebalancedActors = true;

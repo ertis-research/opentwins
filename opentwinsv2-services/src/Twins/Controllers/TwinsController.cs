@@ -14,6 +14,9 @@ using VDS.RDF.Query;
 using VDS.RDF.Query.Datasets;
 using Twins.Services;
 using Api;
+using VDS.RDF.Query.Expressions.Functions.Sparql.Boolean;
+using System.Net;
+using System.Runtime.CompilerServices;
 
 namespace OpenTwinsV2.Twins.Controllers
 {
@@ -78,6 +81,7 @@ namespace OpenTwinsV2.Twins.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(string), StatusCodes.Status409Conflict)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> CreateTwin(string twinId, [FromBody] JsonElement graph, string? shapeId = null)
         {
@@ -106,7 +110,7 @@ namespace OpenTwinsV2.Twins.Controllers
             try
             {
                 if(!(graph.TryGetProperty("@graph", out var graphEl) && graphEl.AsNode() is JsonArray graphArr))
-                    throw new InvalidDataException("The graph is of bad format.");
+                    return BadRequest("The graph is of bad format.");
                 await _instanciationService.InstanciateThingGraph(graphArr, twinId);
             }catch(Exception ex)
             {
@@ -124,10 +128,9 @@ namespace OpenTwinsV2.Twins.Controllers
         /// <response code="404">Either the Twin was not found or no Things were found associated to the Twin.</response>
         /// <response code="500">There was an issue while retieving the Twin.</response>
         [HttpGet("{twinId}")]
-        [Produces("application/n-quads")]
-        [ProducesResponseType(typeof(ContentResult), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
-        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
+        [ProducesResponseType(typeof(ContentResult), StatusCodes.Status200OK, "application/n-quads")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound, "application/json")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError, "application/json")]
         public async Task<IActionResult> GetTwin(string twinId)
         {
             try
@@ -146,7 +149,7 @@ namespace OpenTwinsV2.Twins.Controllers
                     .Where(t => t.TryGetProperty("thingId", out var id) && id.ValueKind == JsonValueKind.String)
                     .Select(t => t.GetProperty("thingId").GetString()!).Distinct().ToList();
 
-                if (thingIds is null)
+                if (thingIds is null || thingIds.Count == 0)
                     return NotFound($"No things found for twin {twinId}");
 
                 var states = await _thingsService.GetThingsStatesAsync(thingIds);
@@ -295,13 +298,15 @@ namespace OpenTwinsV2.Twins.Controllers
         /// </summary>
         /// <param name="twinId">The identifier of the Twin.</param>
         /// <param name="thingIds">The list of Thing identifiers separated by commas.</param>
-        /// <response code="200">The responses obtained.</response>
+        /// <response code="200">The single successful response obtained.</response>
+        /// <response code="207">The obtained responses for each id.</response>
         /// <response code="400">The list is not of appropiate format.</response>
         /// <response code="404">The Twin was not found.</response>
         /// <response code="500">There was an uncontrolled issue while adding the Things into the Twin.</response>
         [HttpPut("{twinId}/things/{thingIds}")]
         [Produces("application/json")]
         [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(JsonElement), StatusCodes.Status207MultiStatus)]
         [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
@@ -309,43 +314,70 @@ namespace OpenTwinsV2.Twins.Controllers
         {
             try
             {
-                var thingIdList = thingIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                var thingIdList = thingIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);                
 
                 var twinUid = await _dgraphService.GetUidsByThingIdsAsync([twinId]);
                 if (twinUid == null || twinUid.Count < 1) return NotFound("TwinId not found");
 
-                var responses = new List<object>();
+                var responses = new List<dynamic>();
 
                 foreach (var thingId in thingIdList)
                 {
                     if (!await _dgraphService.ExistsThingByIdAsync(thingId))
                     {
-                        ThingDescription td = await _thingsService.GetThingAsync(thingId);
+                        try
+                        {
+                            ThingDescription td = await _thingsService.GetThingAsync(thingId);
+                            var hrefs = td.Links?.Select(l => l.Href.ToString()).Distinct();
+                            var uidTargets = await _dgraphService.GetUidsByThingIdsAsync(hrefs ?? []);
+
+                            var payload = ThingBuilder.BuildPayloadWithLinks(td, twinUid[twinId], uidTargets);
+                            Console.WriteLine(JsonSerializer.Serialize(payload));
+
+                            var response = await _dgraphService.AddEntitiesAsync(payload);
+                            responses.Add(new
+                            {
+                                Id = thingId,
+                                Status = HttpStatusCode.OK,
+                                Message = response.ToSafeString()
+                            });
+                        }
+                        catch (KeyNotFoundException)
+                        {
+                            responses.Add(new
+                            {
+                                Id = thingId,
+                                Status = HttpStatusCode.NotFound,
+                                Message = "The Thing does not exist"
+                            });
+                            continue;
+                        }
                         //var thing = ThingBuilder.MapToThing(td);
                         //thing = ThingBuilder.AddTwinToThing(thing, twinUid[twinId]);
-
-                        var hrefs = td.Links?.Select(l => l.Href.ToString()).Distinct();
-                        var uidTargets = await _dgraphService.GetUidsByThingIdsAsync(hrefs ?? []);
-
-                        var payload = ThingBuilder.BuildPayloadWithLinks(td, twinUid[twinId], uidTargets);
-                        Console.WriteLine(JsonSerializer.Serialize(payload));
-
-                        var response = await _dgraphService.AddEntitiesAsync(payload);
-                        responses.Add(response);
                     }
                     else
                     {
                         _logger.LogDebug("Thing {ThingId} already exists -> add twin relation only", thingId);
                         var response = await _dgraphService.AddThingToTwinAsync(thingId, twinId);
-                        responses.Add(response);
+                        responses.Add(new
+                        {
+                            Id = thingId,
+                            Status = HttpStatusCode.OK,
+                            Message = response.ToSafeString()
+                        });
                     }
                 }
 
-                return Ok(responses.Count == 1 ? responses.First() : responses);
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound(ex.Message);
+                if(responses.Count == 1)
+                {
+                    var resp = responses.First();
+                    if(resp.Status == HttpStatusCode.OK)
+                        return Ok(resp);
+                    else
+                        return NotFound(resp);
+                }else
+                    return StatusCode(207, responses);
+
             }
             catch (InvalidDataException ex)
             {
@@ -463,10 +495,9 @@ namespace OpenTwinsV2.Twins.Controllers
         /// <response code="404">The Twin was not found.</response>
         /// <response code="500">There was an issue while obtaining either the JSON or the TTL File of the Twin.</response>
         [HttpGet("{twinId}/export/TTL")]
-        [Produces("application/octet-stream")]
-        [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
-        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
+        [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK, "application/octet-stream")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound, "application/json")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError, "application/json")]
         public async Task<IActionResult> ExportTwinInTTLFormat(string twinId)
         {
             var check = await _dgraphService.ExistsThingByIdAsync(twinId);

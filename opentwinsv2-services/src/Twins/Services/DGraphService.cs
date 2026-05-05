@@ -808,7 +808,7 @@ namespace OpenTwinsV2.Twins.Services
                 if(!root.TryGetProperty("twin", out var twinArr))
                     return false;
                 
-                return twinArr.AsNode()!.AsArray().Count==1;
+                return twinArr.AsNode()!.AsArray().Any();
             }
             catch (Exception)
             {
@@ -1856,7 +1856,7 @@ namespace OpenTwinsV2.Twins.Services
 
                 var mutation = new Mutation
                 {
-                    SetJson = ByteString.CopyFromUtf8(JsonSerializer.Serialize(ThingBuilder.BuildThing(thingId, id, typeUid: uid, twinUid: string.IsNullOrWhiteSpace(twinUid) ? null : twinUid)))
+                    SetJson = ByteString.CopyFromUtf8(JsonSerializer.Serialize(ThingBuilder.BuildThing(id, typeUid: uid, twinUid: string.IsNullOrWhiteSpace(twinUid) ? null : twinUid)))
                 };
                 await txn.Mutate(mutation);
                 await txn.Commit();

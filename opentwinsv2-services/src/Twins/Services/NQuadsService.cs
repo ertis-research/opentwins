@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Runtime.Serialization;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Nodes;
 using System.Xml;
@@ -37,7 +38,7 @@ namespace OpenTwinsV2.Twins.Services
             //get the uid omiting all prefixes
             var (_, local) = FormatService.GetLocalName(node, graph, "");
             local ??= "nameless" + Guid.NewGuid();
-            return $"_:{$"{prefix}:" ?? ""}{local}";
+            return $"_:{$"{FormatService.SanitizeTypeAndUIDValues(prefix ?? "")}_"}{FormatService.SanitizeTypeAndUIDValues(local)}";
         }
 
     /// <summary>
@@ -48,7 +49,7 @@ namespace OpenTwinsV2.Twins.Services
     /// <returns>Returns the uid of the namespace in the form _:{id}namespace_{prefix}.</returns>
         private static string GetNamespaceUid(string id, string prefix)
         {
-            return $"_:{id}namespace_{prefix.ToLowerInvariant()}";
+            return $"_:{id}namespace_{FormatService.SanitizeTypeAndUIDValues(prefix.ToLowerInvariant())}";
         }
 
         /// <summary>
@@ -60,7 +61,7 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>Returns the uid of the reference in the form _:{id}reference_{prefix}_{reference}.</returns>
         public static string GetReferenceUid(string id, string reference, string prefix)
         {
-            return $"_:{id}reference_{prefix}_{reference}";
+            return $"_:{FormatService.SanitizeTypeAndUIDValues(id)}reference_{FormatService.SanitizeTypeAndUIDValues(prefix)}_{FormatService.SanitizeTypeAndUIDValues(reference)}";
         }
 
         /// <summary>
@@ -70,7 +71,7 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>Returns the uid of the default Property in the form _:{id}defaultproperty.</returns>
         private static string GetDefaultPropertyUid(string id)
         {
-            return $"_:{id}defaultproperty";
+            return $"_:{FormatService.SanitizeTypeAndUIDValues(id)}defaultproperty";
         }
 
         /// <summary>
@@ -81,7 +82,7 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>Returns the uid of the default Property in the form _:{id}_{shape}defaultproperty.</returns>
         private static string GetDefaultPropertyUid(string id, string shape)
         {
-            return $"_:{id}_{shape.Replace("_:", "")}defaultproperty";
+            return $"_:{FormatService.SanitizeTypeAndUIDValues(id)}_{shape.Replace("_:", "")}defaultproperty";
         }
 
         /// <summary>
@@ -104,7 +105,7 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>The uid of the ShapeConstraint in the form {parentUid}_{prefix}_{constraint}constraint</returns>
         public static string GetConstraintUid(string parentUid, string prefix, string constraint)
         {
-            return $"{parentUid}_{prefix}_{constraint}constraint";
+            return $"{parentUid}_{FormatService.SanitizeTypeAndUIDValues(prefix)}_{constraint}constraint";
         }
 
         /// <summary>

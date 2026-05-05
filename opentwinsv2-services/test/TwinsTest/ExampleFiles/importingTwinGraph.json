@@ -1,0 +1,38 @@
+{
+  "@context": {
+    "ex": "http://example.org/",
+    "ontologiaprueba": "http://example.org/",
+    "xsd": "http://www.w3.org/2001/XMLSchema#"
+  },
+  "@graph": [
+    {
+      "@id": "urn:movie2",
+      "id": "urn:movie2",
+      "@type": "ontologiaprueba:movie1",
+      "ontologiaprueba:name": "Another Adventure",
+      "ontologiaprueba:director": {
+        "@id": "urn:director2"
+      },
+      "ontologiaprueba:actor": {
+        "@id": "urn:actor2"
+      }
+    },
+    {
+      "@id": "urn:actor2",
+      "id": "urn:actor2",
+      "@type": "ontologiaprueba:actor1",
+      "ontologiaprueba:name": "John Smith",
+      "ontologiaprueba:birthDate": "1985-07-10",
+      "ontologiaprueba:actedIn": {
+        "@id": "urn:movie2"
+      }
+    },
+    {
+      "@id": "urn:director2",
+      "id": "urn:director2",
+      "@type": "ontologiaprueba:director1",
+      "ontologiaprueba:name": "Maria Lopez",
+      "ontologiaprueba:birthDate": "1975-03-25"
+    }
+  ]
+}

@@ -10,12 +10,18 @@ namespace TwinsTest
     using System.Text.Json.Nodes;
     using System.Net.Http.Json;
     using System.Text.Json;
+    using System.Net.Http.Headers;
+    using Json.More;
+    using OpenTwinsV2.Shared.Models;
+    using OpenTwinsV2.Twins.Builders;
+    using VDS.RDF;
 
     public class TwinsAPIFixture : IAsyncLifetime
     {
         public HttpClient OntologiesClient { get; private set; } = null!;
         public HttpClient ThingsClient { get; private set; } = null!;
         public HttpClient ShapesClient {get; private set;} = null!;
+        public HttpClient TwinsClient {get; private set;} = null!;
         private WebApplicationFactory<Twins.TestMaker> _factory = null!;
         public DGraphService DGraphService { get; private set; } = null!;
         public ThingsService ThingsService { get; private set; } = null!;
@@ -32,24 +38,28 @@ namespace TwinsTest
         public string? childless = null!;
         public string? orphan = null!;
         public string instanciatedThingId = "instanciatedThingId";
-        public int initCount = 0;
+        public int ontologyInitCount = 0;
 
         // --------------------- Shape related ---------------------
 
         public string shapeId = "shapeprueba";
         public string shapeIdImported = "anothertestshapegraph";
+        public int shapeInitCount = 0;
+        public string nodeShapeId = null!;
 
+        // --------------------- Twin related ---------------------
 
-        public async Task DisposeAsync()
-        {
-            Console.WriteLine("ENTRA EN AFTERALL");
-            await ThingsClient.DeleteAsync($"{instanciatedThingId}");
-            await DGraphService.DeleteByOntologyId(ontologyId);
-            await DGraphService.DeleteShapeGraphByIdAsync(shapeId);
-            _factory!.Dispose();
-        }
+        public string twinId = "urn:twinprueba";
+        private string twinUid = null!;
+        public string twinIdImported = "urn:anothertesttwin";
+        public string shapeIdValidates = "validatingexistingshapegraph";
+        public string shapeIdNotValidates = "unvalidatingexistingshapegraph";
+        public string thingIdInTwin = null!;
+        public string thingIdInTwinImported = null!;
 
-        public async Task InitializeAsync()
+        #region Before All
+
+        public async Task InitializeAsync() 
         {
             await WaitForServiceReadyAsync("http://localhost:5001/health");
             await WaitForServiceReadyAsync("http://localhost:5013/health");
@@ -67,6 +77,7 @@ namespace TwinsTest
             ThingsClient = _factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost:5001/things/") });
             ShapesClient = _factory.CreateClient(new WebApplicationFactoryClientOptions{ BaseAddress = new Uri("http://localhost:5013/shapes/") });
             OntologiesClient = _factory.CreateClient(new WebApplicationFactoryClientOptions{ BaseAddress = new Uri("http://localhost:5013/ontologies/")});
+            TwinsClient = _factory.CreateClient(new WebApplicationFactoryClientOptions{ BaseAddress = new Uri("http://localhost:5013/twins/")});
 
             DGraphService = _factory.Services.GetRequiredService<DGraphService>();
             ThingsService = _factory.Services.GetRequiredService<ThingsService>();
@@ -74,58 +85,122 @@ namespace TwinsTest
             await LoadNQuadsIntoDGraph("existingOntologyNQuads.txt", existing: true, shape: false);
             await LoadNQuadsIntoDGraph("existingShapeGraphNQuads.txt", existing: true, shape: true);
             await LinkOntologyToShapeGraph(ontologyId, shapeId); //by default, linked
+            await InitializeSampleThingsAndTwin(twinId, "existingOntologyGraph.json");
+            await LoadNQuadsIntoDGraph("existingTwinShapeGraphNotValidatesNQuads.txt", existing: false, shape: true);
+            await LoadNQuadsIntoDGraph("existingTwinShapeGraphValidatesNQuads.txt", existing: false, shape: true);
 
-            // await InstanciateThing(instanciatedThingId, thingId);
-            initCount = await GetOntologyCount();
+            ontologyInitCount = await GetOntologyCount();
+            shapeInitCount = await GetShapeCount();
         }
 
-        public async Task<int> GetOntologyCount()
+        #endregion
+
+        #region After All
+
+        public async Task DisposeAsync()
         {
-            return (await DGraphService.GetAllOntologiesIdsAsync(1,100,null)).TotalCount;
+            Console.WriteLine("ENTRA EN AFTERALL");
+            // await ThingsClient.DeleteAsync($"{instanciatedThingId}");
+            await DGraphService.DeleteByOntologyId(ontologyId);
+            await DGraphService.DeleteByOntologyId(ontologyIdImported);
+            await DGraphService.DeleteShapeGraphByIdAsync(shapeId);
+            await DGraphService.DeleteShapeGraphByIdAsync(shapeIdValidates);
+            await DGraphService.DeleteShapeGraphByIdAsync(shapeIdNotValidates);
+            try
+            {
+                await DeleteTwinAndItsThings(twinId);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"FALLA EN {ex.Message}");
+            }
+            var graph = (await GetJsonGraph("existingOntologyGraph.json")).GetProperty("@graph").EnumerateArray().Select(t => t.GetProperty("id").GetString());
+            foreach(var id in graph)
+            {
+                try
+                {
+                    await DeleteThing(id!);
+                }catch(KeyNotFoundException){}
+                try
+                {
+                    await DeleteThingInDGraph(id!);
+                }catch(KeyNotFoundException){}
+            }
+            
+            _factory!.Dispose();
         }
 
-        public async Task LinkOntologyToShapeGraph(string ontId, string sId)
+        #endregion
+
+        #region Get From Files
+
+        public async Task InitializeSampleThingsAndTwin(string twinId, string fileName)
         {
-            await DGraphService.AddDefaultShapeGraphInOntology(ontId, sId);
+            var payload1 = new JsonObject
+            {
+                ["@context"] = new JsonArray("https://www.w3.org/2019/wot/td/v1"),
+                ["id"] = twinId,
+                ["title"] = "",
+                ["properties"] = new JsonObject { },
+                ["actions"] = new JsonObject { },
+                ["events"] = new JsonObject { }
+            };
+            await ThingsService.CreateThingAsync(payload1);
+            // await ThingsClient.PostAsJsonAsync("", payload1);
+            var response = await DGraphService.AddThingAsync(ThingBuilder.BuildTwin(twinId));
+            //load the sample ontology graph from file
+            var file = await GetJsonGraph(fileName);
+            var graph = file.GetProperty("@graph").EnumerateArray();
+
+            twinUid = response.Uids.FirstOrDefault().Value;
+
+            foreach(var thing in graph)
+                await InstanciateThing(thing, twinUid, defaultTwin: twinId==this.twinId);
+                
         }
 
-        public async Task<JsonElement> GetOntologyGraph(string fileName)
+        public async Task<JsonElement> GetJsonGraph(string fileName)
         {
             var path = Path.Combine(AppContext.BaseDirectory, "ExampleFiles", fileName);
             using var doc = JsonDocument.Parse(File.OpenRead(path));
             return doc.RootElement.Deserialize<JsonElement>();
         }
 
-        private async Task LoadNQuadsIntoDGraph(string fileName, bool existing = false, bool shape = false)
+        #endregion
+
+        #region Delete
+
+        public async Task DeleteTwinAndItsThings(string twinId)
         {
-            string path = Path.Combine(AppContext.BaseDirectory, "ExampleFiles", fileName);
-            var nquads = File.ReadAllLines(path).ToList();
-            if(existing){
-                if(!shape)
-                    (thingId, parent, child, orphan, childless, relationName, attributeKey) = GetFirstIds(nquads);
-                //TODO: shape metadata
-            }else
-                if(!shape)
-                    (thingIdOfImported, _,_,_,_,_,_) = GetFirstIds(nquads);
-            Console.WriteLine($"Ahora mismo el thingId importado es: {thingIdOfImported}");
+            var things = await DGraphService.GetThingsInTwinAsync(twinId);
+            foreach(var thing in things)
+            {
+                var thingId = thing.GetProperty("thingId").GetString()!;
+                if (!string.IsNullOrEmpty(thingId))
+                {
+                    try
+                    {
+                        await ThingsService.DeleteThingAsync(thingId);
+                    }catch(KeyNotFoundException){}
+                    
+                    try{
+                        await DGraphService.RemoveThingFromTwinAsync(thingId, twinId);
+                    }catch (Exception){}
+                    try
+                    {
+                        await DeleteThingInDGraph(thingId);
+                    }catch(KeyNotFoundException){}
+                }
+            }
             try
             {
-                await DGraphService.AddNQuadTripleAsync(nquads);
-            }
-            catch (Exception ex)
+                await ThingsService.DeleteThingAsync(twinId);
+            }catch(KeyNotFoundException){}
+            
+            try
             {
-                Console.WriteLine("Something went wrong while uploading to DGraph: " + ex.Message);
-            }
-        }
-
-        public async Task ImportSampleOntology()
-        {
-            await LoadNQuadsIntoDGraph("importingOntologyNQuads.txt", existing: false, shape: false);
-        }
-
-        public async Task ImportShampleShapeGraph()
-        {
-            await LoadNQuadsIntoDGraph("importingShapeGraphNQuads.txt", existing:false, shape:true);
+                await DGraphService.DeleteThingAsync(twinId);
+            }catch(KeyNotFoundException){}
         }
 
         public async Task DeleteOntology(string id)
@@ -138,33 +213,100 @@ namespace TwinsTest
             await DGraphService.DeleteShapeGraphByIdAsync(id);
         }
 
+        public async Task DeleteThing(string id)
+        {
+            await ThingsService.DeleteThingAsync(id);
+        }
+
+        public async Task DeleteThingInDGraph(string id)
+        {
+            await DGraphService.DeleteThingAsync(id);
+        }
+
+        public async Task DeleteGraph(JsonElement graph)
+        {
+            foreach(var thing in graph.GetProperty("@graph").EnumerateArray())
+                await DeleteThing(thing.GetProperty("@id").GetString() ?? "");
+        }
+
+        #endregion
+
+        #region Counts
+
+        public static int GetActualCount(string jsonStr)
+        {
+            using var jsonDoc = JsonDocument.Parse(jsonStr);
+            int count = jsonDoc.RootElement.TryGetProperty("totalCount", out var countEl) ? countEl.GetInt32() : 0;
+            return count;
+        }
+
+        public async Task<int> GetOntologyCount()
+        {
+            return (await DGraphService.GetAllOntologiesIdsAsync(1,100,null)).TotalCount;
+        }
+
+        public async Task<int> GetShapeCount()
+        {
+            return (await DGraphService.GetAllShapeGraphsAsync(1,100,null)).TotalCount;
+        }
+
+        public async Task<int> GetTwinCount()
+        {
+            return (await DGraphService.GetAllTwinsAsync(1,100,null)).TotalCount;
+        }
+
+        public async Task<int> GetThingCountInTwin(string id)
+        {
+            return (await DGraphService.GetThingsInTwinAsync(id)).Count;
+        }
+
+        #endregion
+
+        #region Exists
+
         public async Task<bool> ExistsShapeGraph(string id)
         {
             return await DGraphService.ExistsShapeGraphByIdAsync(id);
         }
 
-        private async Task InstanciateThing(string thingId, string typeId)
+        public async Task<bool> ExistsOntology(string id)
         {
-            var payload = new JsonObject
-            {
-                ["@context"] = new JsonArray("https://www.w3.org/2019/wot/td/v1"),
-                ["id"] = thingId,
-                ["title"] = "",
-                ["hasType"] = typeId,
-                ["properties"] = new JsonObject { }, //provisional
-                ["actions"] = new JsonObject { },
-                ["events"] = new JsonObject { }
-            };
-            var response = await ThingsClient.PostAsJsonAsync("", payload);
-            Console.WriteLine($"Thing with id {thingId} was {(response.IsSuccessStatusCode ? "" : "not")} successfully instanciated in Things");
+            return await DGraphService.ExistsOntologyByIdAsync(id);
         }
 
-        private (string ThingId, string? ParentId, string? ChildId, string? Orphan, string? Childless, string RelationName, string AttributeKey) GetFirstIds(List<string> nquads)
+        public async Task<bool> ExistsTwin(string id)
+        {
+            return await DGraphService.ExistsTwinAsync(id);
+        }
+
+        public async Task<bool> ExistsThing(string id)
+        {
+            try{
+                await ThingsService.GetThingAsync(id);
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        #endregion
+
+        #region Auxiliary
+
+        public static JsonElement GetJsonRoot(string jsonString)
+        {
+            using var jsonDoc = JsonDocument.Parse(jsonString);
+            return jsonDoc.RootElement.Clone();
+        }
+
+         private List<(string Subject, string Predicate, string Object)> FormatNQuadsList(List<string> nquads)
         {
             var pattern = @"^(?<subject>\S+)\s+<(?<predicate>[^>]+)>\s+(?<object>.+?)\s*\.";
 
-            var result = nquads
-                .Where(n => n.Contains("<thingId>") || n.Contains("<Relation.name>") || n.Contains("<Attribute.key>") || n.Contains("<inheritsFrom>"))
+            return nquads
+                .Where(n => n.Contains("<thingId>") || n.Contains("<Relation.name>") || n.Contains("<Attribute.key>") || n.Contains("<inheritsFrom>") || n.Contains("nodeShapeId"))
                 .Select(n => Regex.Match(n, pattern))
                 .Where(m => m.Success)
                 .Select(m => (
@@ -172,6 +314,11 @@ namespace TwinsTest
                     Predicate: m.Groups["predicate"].Value,
                     Object: m.Groups["object"].Value is string obj && obj.Length >= 2 && obj[0] == '"' && obj[^1] == '"' ? obj[1..^1] : m.Groups["object"].Value
                 )).ToList();
+        }
+
+        private (string ThingId, string? ParentId, string? ChildId, string? Orphan, string? Childless, string RelationName, string AttributeKey) GetFirstIdsInOntologyNQuads(List<string> nquads)
+        {
+            var result = FormatNQuadsList(nquads);
 
             var inheritNQuads = result.Where(r => r.Predicate == "inheritsFrom").ToList();
             var thingIdNQuads = result.Where(r => r.Predicate == "thingId").ToList();
@@ -190,6 +337,17 @@ namespace TwinsTest
             var attributeKeyStr= result.First(r => r.Predicate=="Attribute.key").Object;
             Console.WriteLine($"Parent: {parentId}, Child: {childId}, orphan: {orphan}, childless: {childless}, relation: {relationNameStr}, attribute: {attributeKeyStr}");
             return (thing, parentId, childId, orphan, childless, relationNameStr, attributeKeyStr);
+        }
+
+        private string GetFirstIdsInShapeGraphNQuads(List<string> nquads)
+        {
+            var result = FormatNQuadsList(nquads);
+
+            var nodeShapeIds = result.Where(n => n.Predicate == "nodeShapeId").ToList();
+            if(nodeShapeIds.Count == 0)
+                return "";
+            
+            return nodeShapeIds.First().Object;
         }
 
         private async Task WaitForServiceReadyAsync(string url, int maxRetries = 30)
@@ -212,25 +370,143 @@ namespace TwinsTest
             throw new Exception($"Service at {url} did not start in time.");
         }
 
-        public async Task InstanciateThing(JsonElement thing)
+        private static string GetMimeType(string filePath)
         {
-            await ThingsClient.PostAsJsonAsync("", new {value= thing});
+            string extension = Path.GetExtension(filePath).ToLowerInvariant();
+            return extension switch
+            {
+                ".ttl" => "text/turtle",
+                ".txt" => "text/plain",
+                ".json" => "application/json",
+                ".csv" => "text/csv",
+                ".xml" => "application/xml",
+                ".html" => "text/html",
+                _ => "application/octet-stream", // fallback
+            };
         }
 
-        public async Task DeleteThing(string id)
+        #endregion
+
+        #region  Instanciate
+
+        private async Task LoadNQuadsIntoDGraph(string fileName, bool existing = false, bool shape = false)
         {
-            await ThingsClient.DeleteAsync(id);
+            string path = Path.Combine(AppContext.BaseDirectory, "ExampleFiles", fileName);
+            var nquads = File.ReadAllLines(path).ToList();
+            if(existing){
+                if(!shape)
+                    (thingId, parent, child, orphan, childless, relationName, attributeKey) = GetFirstIdsInOntologyNQuads(nquads);
+                else{
+                    nodeShapeId = GetFirstIdsInShapeGraphNQuads(nquads);
+                }
+            }else
+                if(!shape)
+                    (thingIdOfImported, _,_,_,_,_,_) = GetFirstIdsInOntologyNQuads(nquads);
+            Console.WriteLine($"Ahora mismo el thingId importado es: {thingIdOfImported}");
+            try
+            {
+                await DGraphService.AddNQuadTripleAsync(nquads);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Something went wrong while uploading to DGraph: " + ex.Message);
+            }
         }
 
-        public async Task DeleteGraph(JsonElement graph)
+        public async Task ImportSampleOntology()
         {
-            foreach(var thing in graph.GetProperty("@graph").EnumerateArray())
-                await DeleteThing(thing.GetProperty("@id").GetString() ?? "");
+            await LoadNQuadsIntoDGraph("importingOntologyNQuads.txt", existing: false, shape: false);
         }
 
-        public async Task<bool> ExistsThing(string id)
+        public async Task ImportShampleShapeGraph()
         {
-            return (await ThingsClient.GetAsync(id)).IsSuccessStatusCode;
+            await LoadNQuadsIntoDGraph("importingShapeGraphNQuads.txt", existing:false, shape:true);
+        }
+
+        public async Task ImportEmptyTwin(string twinId)
+        {
+            var payload1 = new JsonObject
+            {
+                ["@context"] = new JsonArray("https://www.w3.org/2019/wot/td/v1"),
+                ["id"] = twinId,
+                ["title"] = "",
+                ["properties"] = new JsonObject { },
+                ["actions"] = new JsonObject { },
+                ["events"] = new JsonObject { }
+            };
+            await ThingsService.CreateThingAsync(payload1);
+            await DGraphService.AddThingAsync(ThingBuilder.BuildTwin(twinId));
+        }
+
+        private async Task InstanciateThing(JsonElement thing, string? twinUid = null, bool defaultTwin = false)
+        {
+            var thingNode = thing.AsNode()!.AsObject();
+            var thingId = thingNode["@id"]!.GetValue<string>();
+            if(defaultTwin)
+                thingIdInTwin ??= thingId;
+            var type = thingNode["@type"]!.GetValue<string>();
+            await DGraphService.CreateInstanciatedThingAsync(type, thingId, ontologyId: type[..type.IndexOf(':')], twinUid: twinUid);
+            await ThingsService.CreateThingAsync(thingId, thingNode);
+        }
+
+        #endregion
+
+        #region Default Shape Graphs
+
+        public async Task LinkOntologyToShapeGraph(string ontId, string sId)
+        {
+            await DGraphService.AddDefaultShapeGraphInOntology(ontId, sId);
+        }
+
+        #endregion
+
+        #region Thing Specific
+
+        public async Task<JsonElement> GetThingsState(string id)
+        {
+            try
+            {
+                return await ThingsService.GetThingState(id);
+            }catch(KeyNotFoundException){return new();}
+        }
+
+        public async Task<string> AddSampleThingIntoDefaultTwin(bool addToTwin=true)
+        {
+            var graph = await GetJsonGraph("importingTwinGraph.json");
+            var thing = graph.GetProperty("@graph").EnumerateArray().First();
+
+            thingIdInTwinImported = thing.GetProperty("id").GetString()!;
+
+            await InstanciateThing(thing, twinUid: addToTwin ? this.twinUid : null, defaultTwin: false);
+            return thingIdInTwinImported;
+        }
+
+        public async Task<string> AddSampleThingUnrelatedToTwin()
+        {
+            return await AddSampleThingIntoDefaultTwin(addToTwin:false);
+        }
+
+        public async Task DeleteSampleThingFromDefaultTwin()
+        {
+            await DGraphService.RemoveThingFromTwinAsync(thingIdInTwinImported, twinId);
+            await DeleteThingInDGraph(thingIdInTwinImported);
+            await DeleteThing(thingIdInTwinImported);
+            thingIdInTwinImported = null!;
+        }
+
+        #endregion
+
+        public static HttpContent GetHttpContentForPostRequest(string path, string fieldName)
+        {
+            var fileStream = File.OpenRead(path);
+            var content = new MultipartFormDataContent();
+
+            // Add the file content
+            var fileContent = new StreamContent(fileStream);
+            fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse(GetMimeType(path)); //appropriate MIME type
+            string fileName = Path.GetFileName(path);
+            content.Add(fileContent, fieldName, fileName);
+            return content;
         }
     }
 }

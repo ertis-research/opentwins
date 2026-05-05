@@ -134,8 +134,8 @@ namespace OpenTwinsV2.Twins.Controllers
                 //Upload the triples as a mutation to DGraph
 
                 var response = await _dgraphService.AddNQuadTripleAsync(nquads.ToList());
-                foreach(var nq in nquads)
-                    Console.WriteLine(nq);
+                // foreach(var nq in nquads)
+                //     Console.WriteLine(nq);
                 return Ok($"{response} {nquads.ToArray().Length} triples added to DGraph successfully.{(shapeGraph.Count>0 ? $" Created Shape Graph with id {ontologyId}_defaultshapegraph." : "")}");
                 // return Ok(nquads);
             }
@@ -492,7 +492,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 var thingsResponse = await _thingsService.CreateThingAsync(payload);
                 if (!thingsResponse) return StatusCode(500, "Failed to create Thing in things service");
 
-                var dgraphResponse = await _dgraphService.AddThingAsync(ThingBuilder.BuildThing(thingId, id));
+                var dgraphResponse = await _dgraphService.AddThingAsync(ThingBuilder.BuildThing(id, typeUid: await _dgraphService.GetThingInOntologyUidAsync(ontologyId, thingId)));
                 bool dgraphOk = dgraphResponse != null && dgraphResponse.Uids != null && dgraphResponse.Uids.Count > 0;
                 if (!dgraphOk) return StatusCode(500, "Failed to create thing in DGraph: " + dgraphResponse?.ToString());
 

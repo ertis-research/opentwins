@@ -6,13 +6,13 @@ namespace OpenTwinsV2.Twins.Builders
 {
     public static class ThingBuilder
     {
-        public static JsonObject BuildThing(string thingId, string? name = null, string? typeUid=null, string? twinUid = null)
+        public static JsonObject BuildThing(string id, string? typeUid=null, string? twinUid = null)
         {
             return new JsonObject
             {
                 ["dgraph.type"] = new JsonArray("Thing"),
-                ["thingId"] = thingId,
-                ["name"] = name ?? thingId,
+                ["thingId"] = id,
+                ["name"] = id,
                 ["createdAt"] = DateTime.UtcNow.ToString("o"),
                 ["twins"] = twinUid is null ? [] : new JsonArray{new JsonObject{["uid"]=twinUid}},
                 ["domains"] = new JsonArray(),
@@ -20,9 +20,9 @@ namespace OpenTwinsV2.Twins.Builders
             };
         }
 
-        private static JsonObject InitAndAddType(string thingId, string type, string? name = null)
+        private static JsonObject InitAndAddType(string thingId, string type, string? typeUid = null)
         {
-            JsonObject obj = BuildThing(thingId, name);
+            JsonObject obj = BuildThing(thingId, typeUid: typeUid);
 
             if (obj["dgraph.type"] is JsonArray types)
             {

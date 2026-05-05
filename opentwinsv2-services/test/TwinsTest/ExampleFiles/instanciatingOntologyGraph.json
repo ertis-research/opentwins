@@ -7,30 +7,30 @@
     },
     "@graph": [
         {
-            "@id": "urn:movie1",
-            "id": "urn:movie1",
+            "@id": "urn:instmovie1",
+            "id": "urn:instmovie1",
             "@type": "ontologiaprueba:movie1",
             "ontologiaprueba:name": "The Adventure Begins",
             "ontologiaprueba:director": {
-                "@id": "urn:director1"
+                "@id": "urn:instdirector1"
             },
             "ontologiaprueba:actor": {
-                "@id": "urn:actor1"
+                "@id": "urn:instactor1"
             }
         },
         {
-            "@id": "urn:actor1",
-            "id": "urn:actor1",
+            "@id": "urn:instactor1",
+            "id": "urn:instactor1",
             "@type": "ontologiaprueba:actor1",
             "ontologiaprueba:name": "Carol White",
             "ontologiaprueba:birthDate": "1990-02-14",
             "ontologiaprueba:actedIn": {
-                "@id": "urn:movie1"
+                "@id": "urn:instmovie1"
             }
         },
         {
-            "@id": "urn:director1",
-            "id": "urn:director1",
+            "@id": "urn:instdirector1",
+            "id": "urn:instdirector1",
             "@type": "ontologiaprueba:director1",
             "ontologiaprueba:name": "Alice Johnson",
             "ontologiaprueba:birthDate": "1980-05-20"

@@ -41,6 +41,15 @@ namespace OpenTwinsV2.Twins.Services
             //var json = await response.Content.ReadFromJsonAsync<JsonNode>();
         }
 
+        public async Task<bool> CreateThingAsync(string thingId, JsonNode newThing)
+        {
+            var client = DaprClient.CreateInvokeHttpClient();
+            var cts = new CancellationTokenSource();
+            var response = await client.PutAsJsonAsync($"http://{_thingServiceAppId}/things/{thingId}", newThing, cts.Token);
+        
+            return response.IsSuccessStatusCode;
+        }
+
         /// <summary>
         /// Sends petition for deleting a Thing.
         /// </summary>

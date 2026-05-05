@@ -292,10 +292,9 @@ namespace OpenTwinsV2.Twins.Controllers
         /// <response code="404"> Not Found if the Shape Graph was not found.</response>
         /// <response code="500"> internal Server Error if there was any issue while either obtaining the flattened JSON or the TTL File of the Shape Graph.</response>
         [HttpGet("{shapeId}/export/TTL")]
-        [Produces("application/octet-stream")]
-        [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
-        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
+        [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK, "application/octet-stream")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound, "application/json")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError, "application/json")]
         public async Task<IActionResult> ExportShapeGraphInTTLFormat(string shapeId)
         {
             var check = await _dgraphService.ExistsShapeGraphByIdAsync(shapeId);

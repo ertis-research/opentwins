@@ -35,11 +35,11 @@ namespace Twins.Services
                 uri = uri.Substring(0, uri.Length - 1);
             }
 
-            //in case the whole uri were illegal characters (unlikely but possible)
-            if (uri.Length == 0)
-            {
-                return "twin"; //for example
-            }
+            // //in case the whole uri were illegal characters (unlikely but possible)
+            // if (uri.Length == 0)
+            // {
+            //     return "twin"; //for example
+            // }
 
             // Find last separator after removing trailing char
             int indx = uri.LastIndexOfAny(separators);

@@ -392,7 +392,7 @@ namespace OpenTwinsV2.Twins.Services
                     var type = att.GetProperty("Attribute.type").ToString()!;
                     //var value = att.GetProperty("Attribute.value").ValueKind == JsonValueKind.Number ? att.GetProperty("Attribute.value") : att.GetProperty("Attribute.value").ToString();
 
-                    var valueElement = att.GetProperty("Attribute.value").ToString();
+                    var valueElement = att.TryGetProperty("Attribute.value", out var valueJson) ? valueJson.ToString() : null;
                     object? value;
 
                     switch (type.ToLower())
@@ -473,7 +473,8 @@ namespace OpenTwinsV2.Twins.Services
                 var payload = await GetThingPayloadForInstanciation(ontologyId, thing);
                 var thingId = thing!["@type"]!.GetValue<string>();
                 var id = thing["@id"]!.GetValue<string>();
-                await _dgraphService.CreateInstanciatedThingAsync(thingId, id, ontologyId: ontologyId, twinUid: twinUid);
+                if(!string.IsNullOrWhiteSpace(twinId))
+                    await _dgraphService.CreateInstanciatedThingAsync(thingId, id, ontologyId: ontologyId, twinUid: twinUid);
                 var thingsResponse = await _thingsService.CreateThingAsync(id, payload);
                 if(!thingsResponse)
                     throw new Exception("Things Instanciation failed in Things Service");
@@ -494,10 +495,24 @@ namespace OpenTwinsV2.Twins.Services
             {
                 if(thing is null)
                     continue;
-                var payload = GetThingPayloadForInstanciation(thing);
-                var thingId = thing!["@type"]!.GetValue<string>();
+
                 var id = thing["@id"]!.GetValue<string>();
-                await _dgraphService.CreateInstanciatedThingAsync(thingId, id, twinUid: twinUid);
+                var thingId = thing!["@type"]!.GetValue<string>();
+                Console.WriteLine($"Pruebo con thing id {id}");
+
+                if(!await _dgraphService.ExistsThingByIdAsync(id))
+                    await _dgraphService.CreateInstanciatedThingAsync(thingId, id, twinUid: twinUid);
+                else //it already exists in dgraph, just create the link
+                    await _dgraphService.AddThingToTwinAsync(id, twinId);
+
+                try
+                {
+                    await _thingsService.GetThingAsync(id);
+                    Console.WriteLine($"The Thing with id {id} already exists, so it will not be updated");
+                    continue;
+                }catch(KeyNotFoundException){} //only continues if the Thing does not exist
+
+                var payload = GetThingPayloadForInstanciation(thing);
                 var thingsResponse = await _thingsService.CreateThingAsync(id, payload);
                 if(!thingsResponse)
                     throw new Exception("Things Instanciation failed in Things Service");

@@ -95,60 +95,90 @@ namespace Twins.Builders
 
         public static void MergeIntoShapeProperty(JsonObject shape, (string Prefix, string Name) path, string predicate, JsonNode value)
         {
-            var propNode = shape["sh:property"];
-            if(propNode is null)
-            {
-                propNode = new JsonObject
-                {
-                    ["sh:path"] = GetBasicIdNode(path.Prefix, path.Name),
-                    [predicate] = value
-                };
-                shape["sh:property"] = new JsonArray{propNode};
-            }
-            else if(propNode is JsonArray propArr)
-            {
-                var existingProp = propArr.Where(p => p is JsonObject pObj && pObj["sh:path"]!["@id"]!.GetValue<string>() == $"{path.Prefix}:{path.Name}");
-                if(!existingProp.Any()){
-                    Console.WriteLine($"{shape} no habia otra property para {path}");
-                    propArr.Add(new JsonObject
-                    {
-                        ["sh:path"] = GetBasicIdNode(path.Prefix, path.Name),
-                        [predicate] = value.DeepClone()
-                    });
-                }else
-                {
-                    var conflictingPredProp = existingProp.Where(p=> (p is JsonObject pObj && pObj[predicate] is not null) || (p is JsonArray pArr && pArr.Any(pi => pi is not null && pi.Equals(value))));
+            string targetPathId = $"{path.Prefix}:{path.Name}";
 
-                    if(!conflictingPredProp.Any())
-                        existingProp!.First()![predicate] = value.DeepClone();
-                    else if(conflictingPredProp.Any(p => (p is JsonObject pObj && pObj[predicate]!.Equals(value)) || (p is JsonArray pArr && pArr.Any(pi => pi is not null && pi.Equals(value)))))
-                    //Parsear a sh:or { lista de predicates -> values}
-                        return;
-                    else{
-                        var property = existingProp.FirstOrDefault(p => p is JsonObject pObj && pObj["sh:or"] is null) ?? existingProp.First();
-                        var existingValue = property![predicate]!;
-                        var orNode = property!["sh:or"];
-                        if(orNode is null)
-                        {
-                            orNode = new JsonArray{new JsonObject{[predicate] = existingValue!.DeepClone()}, new JsonObject{[predicate] = value.DeepClone()}};
-                        }
-                        else
-                        {
-                            var andNode = property!["sh:and"];
-                            var orLists = new JsonArray
-                                {
-                                    new JsonObject{["sh:or"] = orNode.DeepClone()},
-                                    new JsonObject{["sh:or"] = new JsonArray{new JsonObject{[predicate] = existingValue!.DeepClone()}, new JsonObject{[predicate] = value.DeepClone()}}}
-                                };
-                            if(andNode is null)
-                                property["sh:and"] = orLists;
-                            else if(andNode is JsonArray andArr)
-                                foreach(var orSubNode in orLists)
-                                    if(orSubNode is not null)
-                                        andArr.Add(orSubNode.DeepClone());
-                        }
-                    }
+            // 1. Ensure sh:property exists as an array
+            if (shape["sh:property"] is not JsonArray propArr)
+            {
+                propArr = new JsonArray();
+                shape["sh:property"] = propArr;
+            }
+
+            // 2. Find or create the specific property shape
+            var propShape = propArr.OfType<JsonObject>()
+                .FirstOrDefault(p => p["sh:path"]?["@id"]?.GetValue<string>() == targetPathId);
+
+            if (propShape == null)
+            {
+                // Assuming GetBasicIdNode is a method you already have that returns { "@id": "prefix:name" }
+                propShape = new JsonObject { ["sh:path"] = GetBasicIdNode(path.Prefix, path.Name) };
+                propArr.Add(propShape);
+            }
+
+            // --- EXTRACT PHASE ---
+            // We will collect all constraints into a clean map: predicate -> list of unique values
+            Dictionary<string, List<JsonNode>> constraints = new();
+
+            void AddConstraint(string p, JsonNode v)
+            {
+                if (!constraints.ContainsKey(p))
+                    constraints[p] = [];
+                    
+                if (!constraints[p].Any(existing => JsonNode.DeepEquals(existing, v)))
+                    constraints[p].Add(v.DeepClone());
+            }
+
+            foreach (var kvp in propShape.ToList())
+                if (kvp.Key != "sh:path" && kvp.Key != "sh:or" && kvp.Key != "sh:and")
+                    AddConstraint(kvp.Key, kvp.Value!);
+
+            if (propShape["sh:or"] is JsonArray rootOr)
+                foreach (var node in rootOr.OfType<JsonObject>())
+                {
+                    var prop = node.FirstOrDefault();
+                    if (prop.Key != null && prop.Value != null) AddConstraint(prop.Key, prop.Value);
                 }
+
+            if (propShape["sh:and"] is JsonArray rootAnd)
+                foreach (var andNode in rootAnd.OfType<JsonObject>())
+                    if (andNode["sh:or"] is JsonArray subOr)
+                        foreach (var node in subOr.OfType<JsonObject>())
+                        {
+                            var prop = node.FirstOrDefault();
+                            if (prop.Key != null && prop.Value != null) AddConstraint(prop.Key, prop.Value);
+                        }
+
+            AddConstraint(predicate, value);
+
+            var keysToRemove = propShape.Select(k => k.Key).Where(k => k != "sh:path").ToList();
+            foreach (var key in keysToRemove)
+                propShape.Remove(key);
+
+            var singleValues = constraints.Where(c => c.Value.Count == 1).ToList();
+            var multiValues = constraints.Where(c => c.Value.Count > 1).ToList();
+
+            foreach (var sv in singleValues)
+                propShape[sv.Key] = sv.Value[0].DeepClone();
+
+            if (multiValues.Count == 1)
+            {
+                var orArr = new JsonArray();
+                foreach (var val in multiValues[0].Value)
+                    orArr.Add(new JsonObject { [multiValues[0].Key] = val.DeepClone() });
+                propShape["sh:or"] = orArr;
+            }
+            else if (multiValues.Count > 1)
+            {
+                // Multiple predicates have conflicts -> must wrap them all in an sh:and -> sh:or
+                var andArr = new JsonArray();
+                foreach (var mv in multiValues)
+                {
+                    var orArr = new JsonArray();
+                    foreach (var val in mv.Value)
+                        orArr.Add(new JsonObject { [mv.Key] = val.DeepClone() });
+                    andArr.Add(new JsonObject { ["sh:or"] = orArr });
+                }
+                propShape["sh:and"] = andArr;
             }
         }
 

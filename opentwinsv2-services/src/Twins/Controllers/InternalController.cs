@@ -111,5 +111,52 @@ namespace Twins.Controllers
 
             return Ok();
         }
+
+        [HttpGet("things/{thingId}")]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public async Task<IActionResult> ExistsThingInTwinsDapr(string thingId)
+        {
+            _logger.LogInformation("Received a request to check if a thing exists from Dapr.");
+            if(string.IsNullOrWhiteSpace(thingId))
+                _logger.LogWarning("Event discarded: missing thingId.");
+            var result = await _dgraphService.ExistsThingByIdAsync(thingId);
+            _logger.LogDebug("The thing with id {thingId} {result}.", thingId, result ? "exists" : "does not exist");
+            return Ok(result);
+        }
+
+        [HttpPost("things/{thingId}/type/{typeId}")]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public async Task<IActionResult> AddTypeInThingDapr(string thingId, string typeId)
+        {
+            _logger.LogInformation("Received a new update type event from Dapr.");
+            if (string.IsNullOrEmpty(thingId) || string.IsNullOrEmpty(typeId))
+                _logger.LogWarning("Event discarded: missing thingId.");
+            try
+            {
+                await _dgraphService.AddThingTypeIntoThing(thingId, typeId);
+            }catch(KeyNotFoundException ex)
+            {
+                _logger.LogWarning("The Thing was not found: {message}.",ex.Message);
+            }
+            return Ok();
+        }
+
+        [HttpDelete("things/{thingId}/type/{typeId}")]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public async Task<IActionResult> RemoveTypeFromThingDapr(string thingId, string typeId)
+        {
+            _logger.LogInformation("Received a new update type event from Dapr.");
+            if (string.IsNullOrEmpty(thingId) || string.IsNullOrEmpty(typeId))
+                _logger.LogWarning("Event discarded: missing thingId.");
+            try
+            {
+                await _dgraphService.DeleteThingTypeFromThing(thingId, typeId);
+            }catch(KeyNotFoundException ex)
+            {
+                _logger.LogWarning("The Thing was not found: {message}.",ex.Message);
+            }
+            return Ok();
+        }
+
     }
 }

@@ -529,7 +529,7 @@ namespace OpenTwinsV2.Twins.Services
                             valueToAdd = GetFlattenedShapeProperty(valueElement!.AsObject(), nsDic, defaultPrefix, defaultUri);
                         }else if (valueType.Equals("Value"))
                         {
-                            GetCastedValue(value, parent, key);
+                            GetCastedValue(valueElement, parent, key);
                         }else if (valueType.Equals("Reference"))
                         {
                             var valueName = valueElement["Target.name"]!.GetValue<string>();
@@ -683,7 +683,7 @@ namespace OpenTwinsV2.Twins.Services
                 flattenedNodeShape.Remove("properties"); //there are no properties in this nodeShape
 
             //we need the nodeShapeId be prefix:name
-            flattenedNodeShape["nodeShapeId"] = $"{(nodeShape.AsObject().TryGetPropertyValue("NodeShape.prefix", out var nodeShapePrefix) && nodeShape is not null ? nodeShapePrefix!["prefix"]!.GetValue<string>() : defaultPrefix)}:{nodeShape!["NodeShape.name"]!.GetValue<string>()}";
+            flattenedNodeShape["nodeShapeId"] = $"{(nodeShape.AsObject().TryGetPropertyValue("NodeShape.prefix", out var nodeShapePrefix) && nodeShape is not null ? nodeShapePrefix!["prefix"]?.GetValue<string>() ?? defaultPrefix : defaultPrefix)}:{nodeShape!["NodeShape.name"]!.GetValue<string>()}";
 
             //delete all other unnecessary data
             flattenedNodeShape.Remove("NodeShape.name");
@@ -802,8 +802,8 @@ namespace OpenTwinsV2.Twins.Services
 
             //Inheritance
             var parent = thingInfo?["inheritsFrom"];
-            if(parent is not null && parent is JsonArray parentArr && parentArr.Count>0)
-                foreach(var parentInfo in parentArr)
+            if (parent is not null)
+                foreach(var parentInfo in parent is JsonArray ? parent.AsEnumerable() : Enumerable.Repeat(parent.AsObject(), 1))
                     if(parentInfo is not null)
                         GetJsonLdThingInheritance(parentInfo, thing, idSanitized);
 
@@ -1115,10 +1115,10 @@ namespace OpenTwinsV2.Twins.Services
                     case "path":
                     case "datatype":
                     case "class":
+                    case "nodekind":
 
                         //set that the value should be { "@id": value }
-
-                        if(key.Contains("datatype") && shapeValue.GetValue<string>().StartsWith("//"))
+                        if((key.Contains("datatype") || key.Contains("nodekind", StringComparison.InvariantCultureIgnoreCase)) && shapeValue.GetValue<string>().StartsWith("//"))
                             shapeValue = JsonValue.Create("http:" + shapeValue.GetValue<string>());
                         
                         if (isArray)

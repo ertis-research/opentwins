@@ -48,9 +48,51 @@ namespace OpenTwinsV2.Things.Actors.Services
 
         public async Task SaveAsync(ThingDescription td, bool asyncPersist = true)
         {
+            await LoadAsync();
+            var existingTd = ThingDescription;
             ThingDescription = td;
             await _daprClient.SaveStateAsync("actorstatestore", ThingDescriptionKey + _thingId, td.ToString());
 
+            //If there was already a ThingDescription, compare types and links
+            bool existsInDGraph = false;
+            try{
+                existsInDGraph = await _daprClient.InvokeMethodAsync<bool>(HttpMethod.Get, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}");
+            }catch(InvocationException ex)
+            {
+                ActorLogger.Info(_thingId, $"Tried to check if it exists in Twins but petition failed: {ex.Message}");
+            }
+
+            if(existsInDGraph && existingTd is not null)
+            {
+                //If they are not equal, scrap the existing and override with the new types in dgraph
+                var newLinks = td.Links ?? Enumerable.Empty<Link>();
+                var oldLinks = existingTd.Links ?? Enumerable.Empty<Link>();
+
+                var linksToDelete = oldLinks.Except(newLinks);
+                var linksToAdd = newLinks.Except(oldLinks);
+
+                foreach(var link in linksToDelete)
+                    await RemoveLinkAsync(link.Href.ToString(), link.Rel!);
+
+                var options = new JsonSerializerOptions 
+                { 
+                    WriteIndented = true
+                };
+                foreach(var link in linksToAdd)
+                    await AddLinkAsync(JsonSerializer.Serialize(link, options));
+
+                var newTypes = td.TypeAnnotation ?? Enumerable.Empty<string>();
+                var oldTypes = existingTd.TypeAnnotation ?? Enumerable.Empty<string>();
+
+                var typesToDelete = oldTypes.Except(newTypes);
+                var typesToAdd = newTypes.Except(oldTypes);
+
+                foreach(var type in typesToDelete)
+                    await _daprClient.InvokeMethodAsync(HttpMethod.Delete, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}/type/{Uri.EscapeDataString(type)}");
+                foreach(var type in typesToAdd)
+                    await _daprClient.InvokeMethodAsync(HttpMethod.Post, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}/type/{Uri.EscapeDataString(type)}");
+            }
+            
             if (asyncPersist)
             {
                 _ = Task.Run(async () =>

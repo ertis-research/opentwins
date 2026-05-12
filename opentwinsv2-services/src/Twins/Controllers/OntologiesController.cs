@@ -722,16 +722,16 @@ namespace OpenTwinsV2.Twins.Controllers
             if(_instanciationService.AreThereConflictingIdsOnSubGraph(graphNode))
                 return Conflict($"There are at least one conflicting id between some nodes of the subgraph provided.");
 
-            try
-            {
-                await _instanciationService.ValidateGraph(ontologyId, subgraph);
-            }catch(InvalidDataException ex)
-            {
-                return BadRequest(ex.Message);
-            }catch(Exception ex)
-            {
-                return StatusCode(500, $"Something went wrong while validating the Graph: {ex.Message}");
-            }
+            // try
+            // {
+            //     await _instanciationService.ValidateGraph(ontologyId, subgraph);
+            // }catch(InvalidDataException ex)
+            // {
+            //     return BadRequest(ex.Message);
+            // }catch(Exception ex)
+            // {
+            //     return StatusCode(500, $"Something went wrong while validating the Graph: {ex.Message}");
+            // }
 
             try
             {

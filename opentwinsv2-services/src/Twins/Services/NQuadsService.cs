@@ -140,7 +140,7 @@ namespace OpenTwinsV2.Twins.Services
             {
                 //the Thing doesn't exist, we have to create it
                 //typeOfNode is the thingId, but we need the prefix too
-                typeUid = $"_:{ontologyId}:{typeOfNode}";
+                typeUid = $"_:{ontologyId}_{typeOfNode}";
                 AddNQuadThingNodeTriples(typeUid, typeOfNode, ontologyId, typePrefix, nquads);
             } 
             return typeUid;
@@ -397,7 +397,7 @@ namespace OpenTwinsV2.Twins.Services
             var namespaceUid = GetNamespaceUid(shapeId, prefix);
 
             nquads.Add($"{nodeUid} <dgraph.type> \"NodeShape\" .");
-            nquads.Add($"{nodeUid} <nodeShapeId> \"{shapeId}:{shapeNodeId}\" .");
+            nquads.Add($"{nodeUid} <nodeShapeId> \"{shapeId}_{shapeNodeId}\" .");
             nquads.Add($"{nodeUid} <NodeShape.name> \"{shapeNodeId}\" .");
             nquads.Add($"{nodeUid} <NodeShape.prefix> {namespaceUid} .");
             nquads.Add($"{nodeUid} <NodeShape.createdAt> \"{createdAt}\" .");
@@ -433,7 +433,7 @@ namespace OpenTwinsV2.Twins.Services
             var nquads = new List<string>
             {
                 $"{nodeUid} <dgraph.type> \"Reference\" .",
-                $"{nodeUid} <targetId> \"{prefix}:{referenceId}\" .",
+                $"{nodeUid} <targetId> \"{prefix}_{referenceId}\" .",
                 $"{nodeUid} <Target.prefix> {GetNamespaceUid(shapeId, prefix)} .",
                 $"{nodeUid} <Target.name> \"{referenceId}\" .",
             };

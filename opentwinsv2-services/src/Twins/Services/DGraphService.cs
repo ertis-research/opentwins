@@ -709,6 +709,85 @@ namespace OpenTwinsV2.Twins.Services
             return false;
         }
 
+        public async Task<List<string>> GetThingTypes(string thingId)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var query= $@"
+                {{
+                    twin(func: eq(thingId, ""{thingId}"")){{
+                        hasType{{
+                            thingId
+                        }}
+                    }}
+                }}
+                ";
+
+                var res = await txn.Query(query);
+                var json = res.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if(!(root.TryGetProperty("twin", out var twin) && twin.EnumerateArray().FirstOrDefault().TryGetProperty("hasType", out var types) && types.EnumerateArray().Any()))
+                    return [];
+                return types.EnumerateArray().Select(t => t.GetProperty("thingId").GetString() ?? "").Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
+            }
+            catch (Exception)
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
+        public async Task<Response> AddThingTypeIntoThing(string thingId, string typeId)
+        {
+            var uids = await GetUidsByThingIdsAsync([thingId, typeId]);
+            var thingUid = uids.GetValueOrDefault(thingId) ?? throw new KeyNotFoundException($"There was no Thing with id {thingId}");
+            var typeUid = uids.GetValueOrDefault(typeId) ?? throw new KeyNotFoundException($"There was no Thing with id {typeId}");
+
+            return await AddNQuadTripleAsync([$"<{thingUid}> <hasType> <{typeUid}> ."]);
+        }
+
+        public async Task<Response?> DeleteThingTypeFromThing(string thingId, string typeId)
+        {
+            var types = await GetThingTypes(thingId);
+            if(types.Count==0 || !types.Contains(typeId))
+                return null;
+
+            var uids = await GetUidsByThingIdsAsync([thingId, typeId]);
+            var thingUid = uids.GetValueOrDefault(thingId) ?? throw new KeyNotFoundException($"There was no Thing with id {thingId}");
+            var typeUid = uids.GetValueOrDefault(typeId) ?? throw new KeyNotFoundException($"There was no Thing with id {typeId}");
+
+            var txn = _client.NewTransaction();
+
+            var deleteJson = $@"
+            [
+                {{
+                    ""uid"": ""{thingUid}"",
+                    ""hasType"": [ {{ ""uid"": ""{typeUid}"" }} ]
+                }}
+            ]";
+
+            var mutation = new Mutation
+            {
+                DeleteJson = ByteString.CopyFromUtf8(deleteJson)
+            };
+
+            try
+            {
+                var response = await txn.Mutate(mutation);
+                await txn.Commit();
+                return response;
+            }
+            catch (Exception ex)
+            {
+                await txn.DisposeAsync();
+                throw new Exception("Error removing thing: " + ex.Message);
+            }
+        }
+
         #endregion
 
         #region Twins
@@ -1101,6 +1180,9 @@ namespace OpenTwinsV2.Twins.Services
             {
                 var response = await txn.Mutate(mutation);
                 await txn.Commit();
+
+                if(!await DoesThingBelongToATwin(thingId))
+                    await DeleteThingAsync(thingId);
                 return response;
             }
             catch (Exception ex)
@@ -1132,6 +1214,36 @@ namespace OpenTwinsV2.Twins.Services
                 if(!(root.TryGetProperty("twin", out var twin) && twin.TryGetProperty("uid", out var uid)))
                     return null;
                 return uid.GetString();
+            }
+            catch (Exception)
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
+        public async Task<bool> DoesThingBelongToATwin(string thingId)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var query= $@"
+                {{
+                    twin(func: eq(thingId, ""{thingId}"")) @filter(has(twin)){{
+                        uid
+                    }}
+                }}
+                ";
+
+                var res = await txn.Query(query);
+                var json = res.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if(!(root.TryGetProperty("twin", out var twin) && twin.TryGetProperty("uid", out _)))
+                    return false;
+                return true;
             }
             catch (Exception)
             {

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using OpenTwinsV2.Twins.Services;
 using Twins.Builders;
 using Twins.Models;
@@ -348,6 +350,7 @@ namespace Twins.Services
             {
                 throw;
             }
+            // File.WriteAllLines("nquads.txt", nquads);
             return nquads;
         }
 
@@ -374,7 +377,6 @@ namespace Twins.Services
         public List<string> GetFullShapeGraphNquads(string shapeId, JsonObject jsonLd)
         {
             var graph = FormatService.GetRDFGraphFromJson(jsonLd, shapeId, ld: true);
-
             return GetFullShapeGraphNquads(shapeId, graph);
         }
 
@@ -575,10 +577,10 @@ namespace Twins.Services
                 foreach(var value in values)
                 {
                     valueConstraint ??= new Constraint(("owl", value.Constraint));
-                    relation.AddObject(new Connection((value.Prefix, value.Name), value.Constraint == "hasValue" ? null : ("", "uri")), FormatService.IsRelationBidirectional(subject, relation.Name.Prefix, relation.Name.Name, value.Prefix, value.Name, graph));
+                    relation.AddObject(new Connection((value.Prefix, value.Name), value.Constraint == "hasValue" ? null : ("", "uri")), isDirect ? FormatService.IsRelationBidirectional(subject, relation.Name.Prefix, relation.Name.Name, value.Prefix, value.Name, graph) : false);
                     if (!string.IsNullOrWhiteSpace(value.Inner))
                         inner = value.Inner;
-                    else if(createRelations)
+                    else if(createRelations && property.Name != "type")
                         if(isDirect)
                             urisDict[subject].AddRelation(property.Prefix, property.Name, new Connection((value.Prefix, value.Name), ("", "uri")));
                         else
@@ -814,7 +816,7 @@ namespace Twins.Services
         {
             if(!objs.Any())
                 return;
-            string uid = $"_:{ontologyId}:{info.Name}";
+            string uid = $"_:{ontologyId}_{info.Name}";
             string? shaClEq = ShapeBuilder.GetShaClEquivalentFromLogicalOWL(constraint.Name, objs.Count()>1);
 
             bool isValueCons = constraint.Name switch
@@ -865,27 +867,30 @@ namespace Twins.Services
                             foreach((var relObjective, var isBid) in objRel.Objects)
                             {
                                 var node = new JsonObject();
+                                var predicate = isSomeValues ? "sh:qualifiedValueShape" : relObjective.Name.Prefix == "xsd" ? "sh:datatype" : "sh:class";
                                 if(relObjective is Constraint cons)
                                 {
                                     var shaClEquiv = ShapeBuilder.GetShaClEquivalentFromLogicalOWL(cons.Name.Name, cons.Objects.Count>1);
                                     if(shaClEquiv is not null)
                                     {
-                                        var parsed = cons.Objects.Select<Connection, JsonNode>(ob => ob.Datatype?.Prefix == "xsd" ? ob.Name.Name : ShapeBuilder.GetBasicIdNode(ontologyId, ob.Name.Name));
-                                        node[isSomeValues ? "sh:qualifiedValueShape" : relObjective.Name.Prefix == "xsd" ? "sh:datatype" : "sh:class"] = cons.Objects.Count==1 ? parsed.First() : new JsonArray([.. parsed]);
-                                        ShapeBuilder.MergeIntoShapeProperty(consInnerShape ?? shape!, (ontologyId, objRel.Name.Name), shaClEquiv, node);
+                                        var parsed = cons.Objects.Select<Connection, JsonNode>(ob => new JsonObject{[predicate] = ob.Datatype?.Prefix == "xsd" ? ob.Name.Name : ShapeBuilder.GetBasicIdNode(ontologyId, ob.Name.Name)});
+                                        // node[] = cons.Objects.Count==1 ? parsed.First() : new JsonArray([.. parsed]);
+                                        ShapeBuilder.MergeIntoShapeProperty(consInnerShape ?? shape!, (ontologyId, objRel.Name.Name), shaClEquiv, cons.Objects.Count==1 ? parsed.First() : new JsonArray([.. parsed]));
                                     }
                                 }else
                                 {
-                                    bool isAttribute = relObjective.Datatype?.Prefix == "xsd" || relObjective.Name.Prefix == "xsd";
-                                    node = isSomeValues ? new JsonObject {[isAttribute ? "sh:datatype" : "sh:class"] = ShapeBuilder.GetBasicIdNode(isAttribute ? relObjective.Name.Prefix : ontologyId, relObjective.Name.Name)} : ShapeBuilder.GetBasicIdNode(isAttribute ? relObjective.Name.Prefix : ontologyId, relObjective.Name.Name);
-                                    ShapeBuilder.MergeIntoShapeProperty(consInnerShape ?? shape!, (ontologyId, objRel.Name.Name), isSomeValues ? "sh:qualifiedValueShape" : relObjective.Name.Prefix == "xsd" ? "sh:datatype" : "sh:class", node);
+                                    bool isLiteral = relObjective.Datatype?.Prefix == "xsd";
+                                    bool isAttribute = relObjective.Name.Prefix == "xsd";
+                                    // node = isSomeValues ? new JsonObject {[isAttribute ? "sh:datatype" : "sh:class"] = ShapeBuilder.GetBasicIdNode(isAttribute ? relObjective.Name.Prefix : ontologyId, relObjective.Name.Name)} : ShapeBuilder.GetBasicIdNode(isAttribute ? relObjective.Name.Prefix : ontologyId, relObjective.Name.Name);
+                                    JsonNode value = isLiteral ? relObjective.Name.Name : ShapeBuilder.GetBasicIdNode(isAttribute ? relObjective.Name.Prefix : ontologyId, relObjective.Name.Name);
+                                    ShapeBuilder.MergeIntoShapeProperty(consInnerShape ?? shape!, (ontologyId, objRel.Name.Name), predicate, value);
                                     //Add relation/attribute nquads
                                     
                                     if(!isNot && info.Relations.GetValueOrDefault(objRel.Name) is null)
                                         if(isAttribute)
                                             NQuadsService.AddNQuadThingAttributeTriples(uid, objRel.Name.Name, relObjective.Datatype?.Name == "uri" ? relObjective.Name.Name : relObjective.Datatype?.Name!, relObjective.Datatype?.Name == "uri" ? null : relObjective.Name.Name, ontologyId, objRel.Name.Prefix, nquads);
                                         else if(relObjective.Name.Prefix != "xsd")
-                                            NQuadsService.AddNQuadThingRelationTriples(uid, objRel.Name.Name, $"_:{ontologyId}:{relObjective.Name.Name}", isBid, ontologyId, objRel.Name.Prefix, nquads);
+                                            NQuadsService.AddNQuadThingRelationTriples(objRel.IsDirect ? uid : $"_:{ontologyId}_{relObjective.Name.Name}", objRel.Name.Name, !objRel.IsDirect ? uid : $"_:{ontologyId}_{relObjective.Name.Name}", isBid, ontologyId, objRel.Name.Prefix, nquads);
                                 }
                             }
                             if(isSomeValues)
@@ -947,11 +952,11 @@ namespace Twins.Services
         {
             (var subjPrefix, var subj) = FormatService.GetLocalName(node, graph, "");
             var info = urisDict[node];
+            var uid = NQuadsService.GetUid(node, graph, ontologyId);
             if (info.IsType)
             {
                 //it's a type/class/instanciation
                 //NQuads for Thing
-                var uid = NQuadsService.GetUid(node, graph, ontologyId);
                 NQuadsService.AddNQuadThingNodeTriples(uid, info.Name, ontologyId, info.Prefix, nquads);
 
                 //Look into realtions
@@ -962,14 +967,17 @@ namespace Twins.Services
                             //Check for special types (properties -> no nquads, ny shapes
                             SortThingType(relUri.Connection.Name, subj, uid, ontologyId, shapeGraph, shapeGraphIndex, nquads);
                         else if(relName.Name == "subClassOf" && relUri.Connection is not Relation && relUri.Connection is not Constraint)
-                            nquads.Add($"{uid} <inheritsFrom> _:{ontologyId}:{relUri.Connection.Name.Name} .");
+                            nquads.Add($"{uid} <inheritsFrom> _:{ontologyId}_{relUri.Connection.Name.Name} .");
                         else if(relUri.Connection.Name.Prefix != "xsd" && (string.IsNullOrWhiteSpace(relUri.Connection.Datatype?.Name) || relUri.Connection.Datatype?.Name == "uri" ))
                         {
                             bool isDatatypeObj = string.IsNullOrWhiteSpace(relUri.Connection.Name.Name) || relUri.Connection.Datatype?.Name != "uri";
                             bool isBidirectional = FormatService.IsRelationBidirectional(node, relName.Prefix, relName.Name, (isDatatypeObj ? relUri.Connection.Datatype : relUri.Connection.Name)?.Prefix ?? "", (isDatatypeObj ? relUri.Connection.Datatype : relUri.Connection.Name)?.Name ?? "", graph);
                             
-                            NQuadsService.AddNQuadThingRelationTriples(uid, relName.Name, $"_:{ontologyId}:{(isDatatypeObj ? relUri.Connection.Datatype : relUri.Connection.Name)?.Name}", isBidirectional, ontologyId, relName.Prefix, nquads);
-                            
+                            if(relUris.IsDirect)
+                                NQuadsService.AddNQuadThingRelationTriples(uid, relName.Name, $"_:{ontologyId}_{(isDatatypeObj ? relUri.Connection.Datatype : relUri.Connection.Name)?.Name}", isBidirectional, ontologyId, relName.Prefix, nquads);
+                            else
+                                NQuadsService.AddNQuadThingRelationTriples($"_:{ontologyId}_{(isDatatypeObj ? relUri.Connection.Datatype : relUri.Connection.Name)?.Name}", relName.Name, uid, isBidirectional, ontologyId, relName.Prefix, nquads);
+
                             if(IsRelationRedundant(relName, (info.Prefix, info.Name), (relUri.Connection.Name, relUri.Connection.Datatype), graph, urisDict))
                                 GetBasicRelationShape(relName.Prefix, relName.Name, info.Prefix, info.Name, ontologyId, relUri.Connection, shapeGraph, shapeGraphIndex);
                         }
@@ -1004,7 +1012,8 @@ namespace Twins.Services
                                         {
                                             bool isDatatypeObj = string.IsNullOrWhiteSpace(relObj.Connection.Name.Name) || relObj.Connection.Datatype?.Name != "uri";
                                             bool isBidirectional = FormatService.IsRelationBidirectional(node, rel.Key.Prefix, rel.Key.Name, (isDatatypeObj ? relObj.Connection.Datatype : relObj.Connection.Name)?.Prefix ?? "", (isDatatypeObj ? relObj.Connection.Datatype : relObj.Connection.Name)?.Name ?? "", graph);
-                                            NQuadsService.AddNQuadThingRelationTriples(uid, rel.Value.Name.Name, $"_:{ontologyId}:{(isDatatypeObj ? relObj.Connection.Datatype : relObj.Connection.Name)?.Name}", isBidirectional, ontologyId, rel.Value.Name.Prefix, nquads);
+                                            if(!IsRelationRedundant(rel.Value.Name, !rel.Value.IsDirect ? relObj.Connection.Name : (subjPrefix, subj), rel.Value.IsDirect ? (relObj.Connection.Name, relObj.Connection.Datatype) : ((subjPrefix, subj), ("", "uri")), graph, urisDict))
+                                                NQuadsService.AddNQuadThingRelationTriples(rel.Value.IsDirect ? uid : $"_:{ontologyId}_{(isDatatypeObj ? relObj.Connection.Datatype : relObj.Connection.Name)?.Name}", rel.Value.Name.Name, rel.Value.IsDirect ? $"_:{ontologyId}_{(isDatatypeObj ? relObj.Connection.Datatype : relObj.Connection.Name)?.Name}" : uid, isBidirectional, ontologyId, rel.Value.Name.Prefix, nquads);
                                         }
                                         else
                                             NQuadsService.AddNQuadThingAttributeTriples(uid, rel.Value.Name.Name, relObj.Connection.Datatype?.Name == "uri" ? relObj.Connection.Name.Name : relObj.Connection.Datatype?.Name!, relObj.Connection.Datatype?.Name == "uri" ? null : relObj.Connection.Name.Name, ontologyId, rel.Value.Name.Prefix, nquads);
@@ -1039,9 +1048,13 @@ namespace Twins.Services
                     foreach(var relUri in relUris.Objects)
                         if(relName.Name == "type" && !string.IsNullOrWhiteSpace(relUri.Connection.Name.Name) && !relUri.Connection.Name.Name.Contains("blank"))
                             //Check for special types (properties -> no nquads, ny shapes
-                            SortThingType(relUri.Connection.Name, info.Name, "", ontologyId, shapeGraph, shapeGraphIndex, nquads);
+                            SortThingType(relUri.Connection.Name, info.Name, uid, ontologyId, shapeGraph, shapeGraphIndex, nquads);
                     
             }
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            // string jsonString = System.Text.Json.JsonSerializer.Serialize(shapeGraph, options);
+
+            // File.WriteAllText("shapejson.json", jsonString);
         }
 
         public async Task<HashSet<string>> GetFullOntologyNQuadsAndShapesFromGraph(string ontologyId, IGraph graph, JsonArray shapeGraph)
@@ -1089,6 +1102,9 @@ namespace Twins.Services
                 }
             }
 
+            foreach(var asdasdasd in urisDict)
+                Console.WriteLine($"{asdasdasd.Key} --> {asdasdasd.Value}");
+
             //Iterate through dictionary extracting at the same time NQUADS and Shapes
             NQuadsService.AddNQuadsOntologyTriples(ontologyId, nquads);
             NQuadsService.AddPrefixNQuadsTriples(ontologyId, graph, ignoredPrefixes, nquads);
@@ -1118,7 +1134,12 @@ namespace Twins.Services
                     {
                         ["sh"] = "http://www.w3.org/ns/shacl#",
                         ["xsd"] = "http://www.w3.org/2001/XMLSchema#",
-                        [ontologyId.ToLowerInvariant()] = $"http://example.org/ontology/{ontologyId}" //Provisional
+                        [ontologyId.ToLowerInvariant()] = $"http://example.org/ontology/{ontologyId}", //Provisional
+                        ["sh:nodeKind"] = new JsonObject { ["@type"] = "@id" },
+                        ["sh:class"] = new JsonObject { ["@type"] = "@id" },
+                        ["sh:targetClass"] = new JsonObject { ["@type"] = "@id" },
+                        ["sh:path"] = new JsonObject { ["@type"] = "@id" },
+                        ["sh:datatype"] = new JsonObject { ["@type"] = "@id" }
                     },
                     ["@graph"] = shapeGraph
                 });

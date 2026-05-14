@@ -35,6 +35,8 @@ namespace Events.Services
             while (await reader.ReadAsync())
                 result.Add((reader.GetString(0), reader.GetString(1)));
 
+            _logger.LogDebug("Retrieved {Count} topic-event links from database", result.Count);
+
             return result;
         }
 
@@ -57,6 +59,7 @@ namespace Events.Services
                 var actor = new ActorIdentity(reader.GetString(1), Actors.ThingActor);
                 result.Add((evt, actor));
             }
+            _logger.LogDebug("Retrieved {Count} event-thing links from database", result.Count);
             return result;
         }
 

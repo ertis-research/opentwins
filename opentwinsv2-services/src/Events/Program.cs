@@ -44,6 +44,14 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    var routingService = scope.ServiceProvider.GetRequiredService<RoutingService>();
+    
+    // Aquí es donde lo llamas explícitamente
+    await routingService.InitializeAsync(); 
+}
+
 //var subscriptionManager = app.Services.GetRequiredService<SubscriptionManager>();
 //var messagingClient = app.Services.GetRequiredService<DaprPublishSubscribeClient>();
 //await subscriptionManager.InitializeSubscriptionsAsync();

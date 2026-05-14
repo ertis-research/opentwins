@@ -498,7 +498,7 @@ namespace OpenTwinsV2.Twins.Services
                     continue;
 
                 var id = thing["@id"]!.GetValue<string>();
-                var thingId = thing!["@type"]!.GetValue<string>();
+                var thingId = thing!["@type"]?.GetValue<string>() ?? "";
                 Console.WriteLine($"Pruebo con thing id {id}");
 
                 if(!await _dgraphService.ExistsThingByIdAsync(id))

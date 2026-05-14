@@ -62,7 +62,12 @@ namespace OpenTwinsV2.Things.Actors.Services
                 ActorLogger.Info(_thingId, $"Tried to check if it exists in Twins but petition failed: {ex.Message}");
             }
 
-            if(existsInDGraph && existingTd is not null)
+            var options = new JsonSerializerOptions 
+            { 
+                WriteIndented = true
+            };
+
+            if(existingTd is not null)
             {
                 //If they are not equal, scrap the existing and override with the new types in dgraph
                 var newLinks = td.Links ?? Enumerable.Empty<Link>();
@@ -74,10 +79,8 @@ namespace OpenTwinsV2.Things.Actors.Services
                 foreach(var link in linksToDelete)
                     await RemoveLinkAsync(link.Href.ToString(), link.Rel!);
 
-                var options = new JsonSerializerOptions 
-                { 
-                    WriteIndented = true
-                };
+                
+                Console.WriteLine($"Tengo {linksToAdd.Count()} to add (first: {linksToAdd.FirstOrDefault()})");
                 foreach(var link in linksToAdd)
                     await AddLinkAsync(JsonSerializer.Serialize(link, options));
 
@@ -87,11 +90,23 @@ namespace OpenTwinsV2.Things.Actors.Services
                 var typesToDelete = oldTypes.Except(newTypes);
                 var typesToAdd = newTypes.Except(oldTypes);
 
-                foreach(var type in typesToDelete)
-                    await _daprClient.InvokeMethodAsync(HttpMethod.Delete, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}/type/{Uri.EscapeDataString(type)}");
-                foreach(var type in typesToAdd)
-                    await _daprClient.InvokeMethodAsync(HttpMethod.Post, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}/type/{Uri.EscapeDataString(type)}");
+                if(existsInDGraph)
+                    foreach(var type in typesToDelete)
+                        await _daprClient.InvokeMethodAsync(HttpMethod.Delete, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}/type/{Uri.EscapeDataString(type)}");
+                    foreach(var type in typesToAdd)
+                        await _daprClient.InvokeMethodAsync(HttpMethod.Post, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}/type/{Uri.EscapeDataString(type)}");
             }
+            else
+                foreach(var link in td.Links ?? [])
+                    try
+                    {
+                        if(existsInDGraph)
+                            await _daprClient.InvokeMethodAsync(HttpMethod.Post, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}/links", JsonSerializer.Serialize(link));
+                            
+                    }catch(Exception ex)
+                    {
+                        ActorLogger.Warn(_thingId, $"Tried to add a link, but failed: {ex.Message}");
+                    }
             
             if (asyncPersist)
             {

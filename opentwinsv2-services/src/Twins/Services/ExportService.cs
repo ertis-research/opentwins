@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Api;
 using Json.More;
+using Lucene.Net.Util;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.VisualBasic;
 using Newtonsoft.Json;
@@ -300,6 +301,7 @@ namespace OpenTwinsV2.Twins.Services
                             // Flatten all relatedTo arrays in the group into one array
                             var flattenedRel = new JsonArray();
                             var flattenedChild = new JsonArray();
+                            var flattenedPart = new JsonArray();
                             foreach (var item in group)
                             {
                                 var arr = item?["relatedTo"]?.AsArray();
@@ -324,12 +326,26 @@ namespace OpenTwinsV2.Twins.Services
                                         flattenedChild.Add(nodeToAdd);
                                     }
                                 }
+                                var arrPart = item?["hasPart"]?.AsArray();
+                                if(arrPart is not null)
+                                {
+                                    foreach (var entry in arrPart)
+                                    {
+                                        var nodeToAdd = entry!.DeepClone();
+                                        if(ns is null)
+                                            CheckPrefixes(entry, nsDic, defaultPrefix, defaultUri);
+                                        flattenedPart.Add(nodeToAdd);
+                                    }
+                                }
                             }
                             if (flattenedRel.Count > 0)
                                 groupObj["relatedTo"] = flattenedRel;
                                 
                             if(flattenedChild.Count>0)
                                 groupObj["hasChild"] = flattenedChild;
+
+                            if(flattenedPart.Count>0)
+                                groupObj["hasPart"] = flattenedPart;
                             JsonNode? groupNode = groupObj;
 
                             if (ns is null)
@@ -922,7 +938,18 @@ namespace OpenTwinsV2.Twins.Services
             var name = relationInfo?["Relation.name"]?.GetValue<string>();
             var relPrefix = relationInfo?["Relation.prefix"]?["prefix"]?.GetValue<string>();
             relPrefix ??= $"blankNodePrefix_{idSanitized}";
-            var relatedNode = relationInfo?["relatedTo"] ?? relationInfo?["hasChild"];
+            JsonArray relatedNode = [];
+            var relationKeys = new[] { "relatedTo", "hasChild", "hasPart" };
+
+            foreach (var key in relationKeys)
+            {
+                var sourceArray = relationInfo?[key]?.AsArray();
+                if (sourceArray != null)
+                    foreach (var item in sourceArray)
+                        if (item != null)
+                            relatedNode.Add(item.DeepClone()); 
+            }
+            
             if (relatedNode is null)
                 return;
             

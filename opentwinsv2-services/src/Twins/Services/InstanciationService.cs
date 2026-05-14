@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using Api;
 using Json.More;
+using OpenTwinsV2.Shared.Models;
 using OpenTwinsV2.Twins.Builders;
 using OpenTwinsV2.Twins.Models;
 using OpenTwinsV2.Twins.Services;
@@ -504,7 +505,12 @@ namespace OpenTwinsV2.Twins.Services
                     await _dgraphService.CreateInstanciatedThingAsync(thingId, id, twinUid: twinUid);
                 else //it already exists in dgraph, just create the link
                     await _dgraphService.AddThingToTwinAsync(id, twinId);
-
+            }
+            foreach(var thing in graph)
+            {
+                if(thing is null)
+                    continue;
+                var id = thing["@id"]!.GetValue<string>();
                 try
                 {
                     await _thingsService.GetThingAsync(id);

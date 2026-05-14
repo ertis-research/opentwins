@@ -1038,6 +1038,14 @@ namespace Twins.Services
                 if(info.Range.Any())
                     ShapeBuilder.GetRangeNode(ontologyId, info.Name, ontologyId, info.Range, !info.IsAttribute, shape);
 
+                if(info.Domain.Count != 0 && info.Range.Count != 0)
+                {
+                    var pairs = info.Domain.Where(d => d.Prefix != "xsd").SelectMany(a => info.Range, (a,b) => new {Dom = a, Rng = b});
+                    foreach(var pair in pairs) 
+                        if(!info.IsAttribute)
+                            NQuadsService.AddNQuadThingRelationTriples($"_:{ontologyId}_{pair.Dom.Name}", info.Name, $"_:{ontologyId}_{pair.Rng.Name}", false, ontologyId, info.Prefix, nquads);
+                }
+                    
                 if (shape is not null && shape!.Count > 0 && !shapeGraphIndex.ContainsKey(shapeId))
                 {
                     shapeGraphIndex[shapeId] = shape;

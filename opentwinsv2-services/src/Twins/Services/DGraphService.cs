@@ -1090,6 +1090,15 @@ namespace OpenTwinsV2.Twins.Services
                                 uri
                             }}
                         }}
+                        hasPart{{
+                            name
+                            thingId
+                            Thing.prefix{{
+                                namespaceId
+                                prefix
+                                uri
+                            }}
+                        }}
                     }}
 
                     ~relatedFrom {{
@@ -1229,7 +1238,7 @@ namespace OpenTwinsV2.Twins.Services
             {
                 var query= $@"
                 {{
-                    twin(func: eq(thingId, ""{thingId}"")) @filter(has(twin)){{
+                    twin(func: eq(thingId, ""{thingId}"")) @filter(has(twins) or type(Twin)){{
                         uid
                     }}
                 }}
@@ -1241,7 +1250,7 @@ namespace OpenTwinsV2.Twins.Services
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
-                if(!(root.TryGetProperty("twin", out var twin) && twin.TryGetProperty("uid", out _)))
+                if(!(root.TryGetProperty("twin", out var twin) || twin.ValueKind != JsonValueKind.Array || twin.GetArrayLength() == 0))
                     return false;
                 return true;
             }

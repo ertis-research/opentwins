@@ -93,6 +93,7 @@ namespace OpenTwinsV2.Shared.Utilities
                 {
                     "string" => val.ValueKind == JsonValueKind.String,
                     "number" => val.ValueKind == JsonValueKind.Number,
+                    "float" or "decimal" or "double" => val.ValueKind == JsonValueKind.Number && val.TryGetDouble(out _),
                     "integer" => val.ValueKind == JsonValueKind.Number && val.TryGetInt64(out _),
                     "boolean" => val.ValueKind == JsonValueKind.True || val.ValueKind == JsonValueKind.False,
                     "object" => val.ValueKind == JsonValueKind.Object,

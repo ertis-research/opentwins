@@ -301,7 +301,7 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>Returns the Json of the payload.</returns>
         private async Task<JsonNode> GetThingPayloadForInstanciation(string ontologyId, JsonNode thing)
         {
-            var thingId = thing["@type"]!.GetValue<string>();
+            var thingId = thing["@type"]?.GetValue<string>() ?? throw new InvalidOperationException("Type is required");
             var props = await GetWOTThingProperties(ontologyId, thingId);
             var links = GetWOTThingLinks(thing);
             var payload = new JsonObject
@@ -325,19 +325,21 @@ namespace OpenTwinsV2.Twins.Services
         /// <returns>Returns the Json payload of the Thing.</returns>
         private JsonNode GetThingPayloadForInstanciation(JsonNode thing)
         {
-            var thingId = thing["@type"]!.GetValue<string>();
+            var thingId = thing["@type"]?.GetValue<string>();
             var links = GetWOTThingLinks(thing);
+            Console.WriteLine($"este es el link: {links.FirstOrDefault()}");
             var payload = new JsonObject
             {
                 ["@context"] = new JsonArray("https://www.w3.org/2019/wot/td/v1"),
                 ["id"] = thing["@id"]!.GetValue<string>(),
                 ["title"] = "",
-                ["@type"] = thingId,
                 ["properties"] = new JsonObject(),
                 ["actions"] = new JsonObject { },
                 ["events"] = new JsonObject { },
                 ["links"] = links
             };
+            if(thingId is not null)
+                payload["@type"] = thingId; 
             return payload;
         }
 

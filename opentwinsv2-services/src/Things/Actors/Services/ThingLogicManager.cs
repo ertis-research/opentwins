@@ -204,16 +204,39 @@ namespace OpenTwinsV2.Things.Actors.Services
             foreach (var (key, val) in _stateManager.CurrentState)
                 if (val?.Value is JsonElement je)
                     json[key] = je.AsNode();
+                else
+                    json[key] = null;
 
             return json;
         }
 
         private async Task ApplyThenAsync(Then then, JsonNode context)
         {
+            await _stateManager.LoadAsync();
+            Dictionary<string, PropertyState> previousState = [];
+            ActorLogger.Info(_thingId, $"PREVIOUS FIRST");
+            foreach(var (k,v) in _stateManager.CurrentState)
+            {
+                ActorLogger.Info(_thingId, $"{k} --> {v}");
+                previousState[k] = new PropertyState(v.Value ?? new JsonElement(), v.LastUpdate);
+            }
+                
+            Dictionary<string,PropertyState>? currentState = null;
             if (then.UpdateState != null)
             {
                 ActorLogger.Info(_thingId, $"Executing UpdateState action.");
                 await HandleUpdateState(then.UpdateState, context);
+                currentState = [];
+                foreach(var (k,v) in _stateManager.CurrentState)
+                {
+                    currentState[k] = new PropertyState(v.Value ?? new JsonElement(), v.LastUpdate);
+                }
+            }
+            ActorLogger.Info(_thingId, $"PREVIOUS SECOND");
+            foreach(var (k,v) in _stateManager.CurrentState)
+            {
+                ActorLogger.Info(_thingId, $"{k} --> {v}");
+                // previousState[k] = new PropertyState(v.Value ?? new JsonElement(), v.LastUpdate);
             }
             if (then.InvokeAction != null)
             {
@@ -229,7 +252,7 @@ namespace OpenTwinsV2.Things.Actors.Services
                 foreach (ThenEmitEvent evnt in then.EmitEvent)
                 {
                     ActorLogger.Info(_thingId, $"Emitting event: {evnt.Event ?? "(no type)"}");
-                    await HandleEmitEventAsync(evnt, context);
+                    await HandleEmitEventAsync(evnt, context, previousState, currentState ?? previousState);
                 }
             }
         }
@@ -250,9 +273,14 @@ namespace OpenTwinsV2.Things.Actors.Services
                 {
                     //ActorLogger.Info(_thingId, $"Applying JsonLogic to NewValue for property: {key}");
                     var res = JsonLogic.Apply(schema.NewValue.Value.AsNode(), context);
+                    ActorLogger.Info(_thingId, $"RES OBTAINED {key} - {res} from context: {context}");
                     if (res is JsonValue jv && jv.TryGetValue(out JsonElement je))
                     {
                         newVal = je;
+                        ActorLogger.Info(_thingId, $"NewValue resolved for property: {key} - {newVal}");
+                    }else if(res is not null)
+                    {
+                        newVal = JsonDocument.Parse(res.ToJsonString()).RootElement;
                         ActorLogger.Info(_thingId, $"NewValue resolved for property: {key} - {newVal}");
                     }
                 }
@@ -282,6 +310,7 @@ namespace OpenTwinsV2.Things.Actors.Services
 
             await _stateManager.UpdateAsync(updated, _descManager.ThingDescription?.Properties);
             await ApplyLogicToDerivedProperties();
+            ActorLogger.Info(_thingId, $"Ha terminado de actualizarse");
         }
 
         private async Task HandleInvokeActionAsync(ThenInvokeAction invokeAction, JsonNode data)
@@ -338,20 +367,22 @@ namespace OpenTwinsV2.Things.Actors.Services
             */
         }
 
-        private async Task HandleEmitEventAsync(ThenEmitEvent emitEvent, JsonNode data) // MODIFICAR
+        private async Task HandleEmitEventAsync(ThenEmitEvent emitEvent, JsonNode data, Dictionary<string,PropertyState> previousState, Dictionary<string,PropertyState> currentState) // MODIFICAR
         {
             //Console.WriteLine($"[INFO: {Id}] EMIT EVENT. NOT FULLY IMPLEMENTED");
-            JsonNode payload = JsonSerializer.SerializeToNode(_stateManager.CurrentState) ?? new JsonObject();
+            JsonObject payload = [];
 
             payload["thingId"] = _thingId;
-            payload["payload"] = data["payload"]?.DeepClone();
+            payload["message"] = data["payload"]?.DeepClone();
+            payload["previousState"] = JsonSerializer.SerializeToNode(previousState);
+            payload["currentState"] = JsonSerializer.SerializeToNode(currentState);
 
             var cloudEvent = new CloudEvent<JsonNode>(payload)
             {
                 Source = new Uri(_thingId),
                 Type = emitEvent.Event
             };
-            //Console.WriteLine(JsonSerializer.Serialize(payload));
+            Console.WriteLine(JsonSerializer.Serialize(payload));
             await _daprClient.PublishEventAsync("kafka-pubsub", "opentwinsv2.events", cloudEvent);
         }
     }

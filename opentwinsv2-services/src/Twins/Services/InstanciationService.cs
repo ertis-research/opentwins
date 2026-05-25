@@ -432,7 +432,7 @@ namespace OpenTwinsV2.Twins.Services
             return res.Count > 0 ? res : null;
         }
     
-        private async Task<string> CreateInstanciationTwin(string twinId)
+        public async Task<string> CreateInstanciationTwin(string twinId)
         {
             var payload = new JsonObject
             {
@@ -482,18 +482,23 @@ namespace OpenTwinsV2.Twins.Services
                 if(!thingsResponse)
                     throw new Exception("Things Instanciation failed in Things Service");
             }
-        }  
+        }
 
         /// <summary>
         /// Instanciates a Twin with a Thing Graph in both ThingsService and DGraph.
         /// </summary>
         /// <param name="graph">The Thing Graph to instanciate.</param>
         /// <param name="twinId">The identifier of the Twin.</param>
+        /// <param name="twinAlreadyExists">OPTIONAL. Whether the twin already exists or not.</param>
         /// <returns></returns>
         /// <exception cref="Exception">Thrown if any issue is encountered while instanciating the Things in thingsService.</exception>
-        public async Task InstanciateThingGraph(JsonArray graph, string twinId)
+        public async Task InstanciateThingGraph(JsonArray graph, string twinId, bool twinAlreadyExists = false)
         {
-            string twinUid = await CreateInstanciationTwin(twinId);
+            string twinUid;
+            if(!twinAlreadyExists)
+                twinUid = await CreateInstanciationTwin(twinId);
+            else
+                twinUid = (await _dgraphService.GetUidsByThingIdsAsync([twinId])).GetValueOrDefault(twinId) ?? throw new KeyNotFoundException($"Twin {twinId} not found");
             foreach(var thing in graph)
             {
                 if(thing is null)

@@ -7,6 +7,10 @@ using OpenTwinsV2.Shared.Constants;
 using OpenTwinsV2.Shared.Utilities;
 using OpenTwinsV2.Things.Services;
 using OpenTwinsV2.Things.Models;
+using Json.More;
+using System.Text.Json.Nodes;
+using System.Reflection.Metadata;
+using System.Net;
 
 [ApiController]
 [Route("things")]
@@ -178,6 +182,104 @@ public class ThingsController : ControllerBase
         return Ok(td);
     }
 
+    /// <summary>
+    /// Creates or updates the Things using the provided Thing Descriptions JSONs.
+    /// </summary>
+    /// <param name="graph">A JSON array containing the Thing Descriptions objects.</param>
+    /// <returns>
+    /// Returns 207 MultiStatus with the created or updated Thing Description or error messages.<br/>
+    /// Returns 400 Bad Request if the JSON is invalid or missing required fields.<br/>
+    /// </returns>
+    [HttpPut("")]
+    [Produces("application/json")]
+    [ProducesResponseType(typeof(JsonElement), StatusCodes.Status207MultiStatus)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CreateThings([FromBody] JsonElement graph)
+    {
+        if(graph.AsNode() is not JsonArray)
+            return BadRequest("JSON is not an Array");
+
+        var responses = new List<dynamic>();
+
+        var list = graph.EnumerateArray().ToList();
+
+        foreach(var thing in list)
+        {
+            string rawJson = thing.GetRawText();
+            string id;
+            try
+            {
+                id = SchemaValidator.ExtractIdFromJson(rawJson);
+            }
+            catch (ArgumentException ex)
+            {
+                responses.Add(new
+                {
+                    Id = thing.TryGetProperty("id", out var id1) ? id1.GetString() : thing.TryGetProperty("@id", out var id2) ? id2.GetString() : $"Thing in position {list.IndexOf(thing)}",
+                    Status = HttpStatusCode.BadRequest,
+                    Message = ex.Message
+                });
+                continue;
+            }
+            catch (JsonException)
+            {
+                responses.Add(new
+                {
+                    Id = thing.TryGetProperty("id", out var id1) ? id1.GetString() : thing.TryGetProperty("@id", out var id2) ? id2.GetString() : $"Thing in position {list.IndexOf(thing)}",
+                    Status = HttpStatusCode.BadRequest,
+                    Message = "Invalid JSON format."
+                });
+                continue;
+            }
+
+            IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(id), ActorType);
+
+            string td;
+            try
+            {
+                td = await actor.SetThingDescriptionAsync(rawJson);
+            }
+            catch (ActorMethodInvocationException ex)
+            {
+                if (ex.Message.Contains("InvalidOperationException"))
+                    responses.Add(new
+                    {
+                        Id = id,
+                        Status = HttpStatusCode.BadRequest,
+                        Message = ex.Message
+                    });
+                else
+                    responses.Add(new
+                    {
+                        Id = id,
+                        Status = HttpStatusCode.InternalServerError,
+                        Message = $"Internal error: {ex.Message}"
+                    });
+
+                continue;
+            }
+            responses.Add(new
+            {
+                Id = id,
+                Status = HttpStatusCode.OK,
+                Message = td
+            });
+        }
+
+        if(responses.Count == 1)
+        {
+            var resp = responses.First();
+            if(resp.Status == HttpStatusCode.OK)
+                return Ok(resp);
+            else if(resp.Status == HttpStatusCode.BadRequest)
+                return BadRequest(resp);
+            else
+                return StatusCode(500, resp);
+        }else
+            return StatusCode(207, responses);
+    }
+
 
     /// <summary>
     /// Retrieves the Thing Description (TD) for the specified <paramref name="thingId"/>.
@@ -247,6 +349,86 @@ public class ThingsController : ControllerBase
             _logger.LogError(ex, "Failed to delete Thing with ID '{ThingId}'", thingId);
             return StatusCode(500, "Internal server error while deleting the Thing.");
         }
+    }
+
+    [HttpDelete("")]
+    [ProducesResponseType(typeof(JsonElement), StatusCodes.Status207MultiStatus)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> DeleteThings([FromBody] JsonElement graph)
+    {
+        if(graph.AsNode() is not JsonArray)
+            return BadRequest("JSON is not an Array");
+
+        var responses = new List<dynamic>();
+
+        var list = graph.EnumerateArray().ToList();
+
+        foreach(var thing in list)
+        {
+            string? thingId;
+            try{
+                thingId = thing.TryGetProperty("@id", out var id1) ? id1.GetString() : thing.TryGetProperty("id", out var id2) ? id2.GetString() : thing.TryGetProperty("thingId", out var id3) ? id3.GetString() : throw new ArgumentException("The 'thingId' cannot be null or empty.");
+            }
+            catch(ArgumentException ex)
+            {
+                responses.Add(new
+                {
+                    Id = $"Thing in position {list.IndexOf(thing)}",
+                    Status = HttpStatusCode.BadRequest,
+                    Message = ex.Message
+                });
+                continue;
+            }
+            thingId ??= "";
+            try
+            {
+                IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+
+                bool isDeleted = await actor.DeleteThingAsync();
+
+                if (!isDeleted)
+                {
+                    responses.Add(new
+                    {
+                        Id = thingId,
+                        Status = HttpStatusCode.NotFound,
+                        Message = $"Thing with ID '{thingId}' not found."
+                    });
+                    continue;
+                }
+
+                responses.Add(new
+                {
+                    Id = thingId,
+                    Status = HttpStatusCode.NoContent,
+                }); // 204 No Content si la eliminación es exitosa.
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to delete Thing with ID '{ThingId}'", thingId);
+                responses.Add(new
+                {
+                    Id = thingId,
+                    Status = HttpStatusCode.InternalServerError,
+                    Message = "Internal server error while deleting the Thing."
+                });
+            }
+        }
+
+        if(responses.Count == 1)
+        {
+            var resp = responses.First();
+            if(resp.Status == HttpStatusCode.NoContent)
+                return NoContent();
+            else if(resp.Status == HttpStatusCode.BadRequest)
+                return BadRequest(resp);
+            else if(resp.Status == HttpStatusCode.NotFound)
+                return NotFound(resp);
+            else
+                return StatusCode(500, resp);
+        }else
+            return StatusCode(207, responses);
     }
 
     /// <summary>

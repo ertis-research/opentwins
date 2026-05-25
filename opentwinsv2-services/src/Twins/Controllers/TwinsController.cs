@@ -87,8 +87,35 @@ namespace OpenTwinsV2.Twins.Controllers
         {
 
             // if shapeId is not null, validate graph with the corresponding shapeGraph
-            if (await _dgraphService.ExistsThingByIdAsync(twinId))
+            if (await _dgraphService.ExistsTwinAsync(twinId))
                 return Conflict("There is already a twin with this id");
+            if(!(graph.TryGetProperty("@graph", out var graphEl) && graphEl.AsNode() is JsonArray graphArr))
+                return BadRequest("The graph is of bad format.");
+
+            try
+            {
+                await _thingsService.GetThingAsync(twinId);
+                if(await _dgraphService.ExistsThingByIdAsync(twinId))
+                {
+                    //Add Twin Type. It's not already a Twin because it would've failed by now
+                    await _dgraphService.AddNQuadTripleAsync([$"<{(await _dgraphService.GetUidsByThingIdsAsync([twinId]))[twinId]}> <dgraph.type> \"Twin\" ."]);
+                }
+                else
+                {
+                    //Just create in DGraph with the same id
+                    await _dgraphService.AddThingAsync(ThingBuilder.BuildTwin(twinId));
+                }
+            }
+            catch (KeyNotFoundException)
+            {
+                if(await _dgraphService.ExistsThingByIdAsync(twinId))
+                    return Conflict("The Thing cannot be instanciated");
+                else
+                {
+                    //basic case: it doesn't exist in either: create in both
+                    await _instanciationService.CreateInstanciationTwin(twinId);
+                }
+            }
             if(!string.IsNullOrWhiteSpace(shapeId))
                 try
                 {
@@ -109,9 +136,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
             try
             {
-                if(!(graph.TryGetProperty("@graph", out var graphEl) && graphEl.AsNode() is JsonArray graphArr))
-                    return BadRequest("The graph is of bad format.");
-                await _instanciationService.InstanciateThingGraph(graphArr, twinId);
+                await _instanciationService.InstanciateThingGraph(graphArr, twinId, twinAlreadyExists: true);
             }catch(Exception ex)
             {
                 return StatusCode(500, $"Something went wrong while instanciating the Twin and its Things: {ex.Message}");
@@ -479,7 +504,7 @@ namespace OpenTwinsV2.Twins.Controllers
             }
             try
             {
-                return Ok(ExportService.GetJsonLDFromRegularJson(json, twinId) ?? throw new Exception("Obtained null value from the JsonLd"));
+                return Ok(ExportService.GetJsonLDFromRegularJson(json, twinId, twin:true) ?? throw new Exception("Obtained null value from the JsonLd"));
             }
             catch (Exception ex)
             {

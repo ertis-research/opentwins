@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Api;
 using Json.More;
+using Lucene.Net.QueryParsers.Flexible.Standard.Processors;
 using Lucene.Net.Util;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.VisualBasic;
@@ -45,10 +46,11 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="defaultUri">The default uri that will be set if the node doesn't have one.</param>
         /// <param name="pType">OPTIONAL. The type of Json Node we are checking.</param>
         /// <param name="pName">OPTIONAl. The name or identifier of the Json Node we are checking.</param>
+        /// <param name="twin">OPTIONAL. Whether the JSON belongs to a Twin or not.</param>
         /// <returns>
         /// Returns the cloned Json Node that was provided but with the necessary changes in the prefix field and changes on the namespace dictionary if needed.
         /// </returns>
-        private void CheckPrefixes(JsonNode? node, Dictionary<string, string> ns, string defaultPrefix, string defaultUri, string pType = "", string pName = "")
+        private void CheckPrefixes(JsonNode? node, Dictionary<string, string> ns, string defaultPrefix, string defaultUri, string pType = "", string pName = "", bool twin=false)
         {
             if(node is null)
                 return;
@@ -65,7 +67,7 @@ namespace OpenTwinsV2.Twins.Services
                         uri = existing["uri"]?.GetValue<string>() ?? uri;
                     }
                 }
-                else
+                else if(!twin)
                 {
                     //it doesn't have one
                     string propertyName = string.IsNullOrWhiteSpace(pName) ? type.Equals("Thing") ? "thingId" : (type.Equals("Relation") ? "Relation.name" : "Attribute.key") : pName;
@@ -166,6 +168,7 @@ namespace OpenTwinsV2.Twins.Services
         /// </returns>
         public async Task<JsonObject> GetJsonWithNamespace(string id, JsonElement? ns)
         {
+            bool twin = ns is null;
             var finalNode = new JsonObject
             {
                 [ns is not null ? "ontologyId" : "twinId"] = id,
@@ -199,7 +202,7 @@ namespace OpenTwinsV2.Twins.Services
                         var thing = JsonNode.Parse(raw);
                         if (ns is null)
                         {
-                            CheckPrefixes(thing, nsDic, defaultPrefix, defaultUri);
+                            CheckPrefixes(thing, nsDic, defaultPrefix, defaultUri, twin:twin);
                             
                             //ATTRIBUTES
                             JsonArray attrs = new JsonArray();
@@ -214,7 +217,7 @@ namespace OpenTwinsV2.Twins.Services
                                 foreach (var attr in thing["hasAttribute"]!.AsArray())
                                 {
                                     JsonObject newAttr = attr!.DeepClone().AsObject();
-                                    CheckPrefixes(newAttr, nsDic, defaultPrefix, defaultUri);
+                                    CheckPrefixes(newAttr, nsDic, defaultPrefix, defaultUri, twin:twin);
                                     if (state is not null && state is JsonObject stateObj && stateObj.Count > 0 && attr!.AsObject().TryGetPropertyValue("Attribute.key", out var attrKey) && stateObj.TryGetPropertyValue(attrKey!.GetValue<string>(), out var stateInfo))
                                     {
                                         //it only enters here if state is not null, it has something and has something on the attribute we are in
@@ -246,7 +249,7 @@ namespace OpenTwinsV2.Twins.Services
                                     {
                                         var stateNode = stateInfo.DeepClone();
                                         stateNode.AsObject().Add("Attribute.key", key);
-                                        CheckPrefixes(stateNode, nsDic, defaultPrefix, defaultUri);
+                                        CheckPrefixes(stateNode, nsDic, defaultPrefix, defaultUri, twin:twin);
                                         attrs.Add(stateNode);
                                     }
                                 }
@@ -311,7 +314,7 @@ namespace OpenTwinsV2.Twins.Services
                                     {
                                         var nodeToAdd = entry!.DeepClone();
                                         if(ns is null)
-                                            CheckPrefixes(entry, nsDic, defaultPrefix, defaultUri);
+                                            CheckPrefixes(entry, nsDic, defaultPrefix, defaultUri, twin:twin);
                                         flattenedRel.Add(nodeToAdd);
                                     }
                                 }
@@ -322,7 +325,7 @@ namespace OpenTwinsV2.Twins.Services
                                     {
                                         var nodeToAdd = entry!.DeepClone();
                                         if(ns is null)
-                                            CheckPrefixes(entry, nsDic, defaultPrefix, defaultUri);
+                                            CheckPrefixes(entry, nsDic, defaultPrefix, defaultUri, twin:twin);
                                         flattenedChild.Add(nodeToAdd);
                                     }
                                 }
@@ -333,7 +336,7 @@ namespace OpenTwinsV2.Twins.Services
                                     {
                                         var nodeToAdd = entry!.DeepClone();
                                         if(ns is null)
-                                            CheckPrefixes(entry, nsDic, defaultPrefix, defaultUri);
+                                            CheckPrefixes(entry, nsDic, defaultPrefix, defaultUri, twin:twin);
                                         flattenedPart.Add(nodeToAdd);
                                     }
                                 }
@@ -349,7 +352,7 @@ namespace OpenTwinsV2.Twins.Services
                             JsonNode? groupNode = groupObj;
 
                             if (ns is null)
-                                CheckPrefixes(groupNode, nsDic, defaultPrefix, defaultUri);
+                                CheckPrefixes(groupNode, nsDic, defaultPrefix, defaultUri, twin:twin);
 
                             if(groupNode is not null)
                                 groupedArray.Add(groupNode.AsObject());
@@ -790,16 +793,17 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="thingInfo">The Thing in regular Json format.</param>
         /// <param name="thing">The Json of the Thing in regular Json format.</param>
         /// <param name="idSanitized">The sanitized identifier of the object.</param>
+        /// <param name="twin">OPTIONAL. Whether the JSON belongs to a Twin or not.</param>
         /// <returns>
-        /// Returns the Thing in JsonLD format in Json Obejct.
+        /// Returns the Thing in JsonLD format in Json Object.
         /// </returns>
-        private static void GetJsonLDThing(JsonNode thingInfo, JsonObject thing, string idSanitized)
+        private static void GetJsonLDThing(JsonNode thingInfo, JsonObject thing, string idSanitized, bool twin = false)
         {
             //obtain prefix
             var prefix = thingInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
-            prefix ??= $"blankNodePrefix_{idSanitized}";
+            prefix ??=  twin ? "" : $"blankNodePrefix_{idSanitized}";
             //@id -> name (it's the thing id but without the ontology name as prefix)
-            thing["@id"] = $"{prefix}:{thingInfo?[string.IsNullOrWhiteSpace(thingInfo?["name"]?.GetValue<string>()) ? "thingId" : "name"]}";
+            thing["@id"] = $"{(twin && string.IsNullOrWhiteSpace(prefix) ? "" : $"{prefix}:")}{thingInfo?[string.IsNullOrWhiteSpace(thingInfo?["name"]?.GetValue<string>()) ? "thingId" : "name"]}";
             //type of node is stored via hasType relation between Things (The Things that represent Types are ignored in the GetOntologyThings method) 
             //depending on the ontology, one thing may have more than one type´
             //if 1 -> JsonValue, if more -> JsonLD
@@ -812,7 +816,7 @@ namespace OpenTwinsV2.Twins.Services
                 foreach (var typeInfo in types.AsArray())
                 {
                     if(typeInfo is not null)
-                        GetJsonLDTypes(typeInfo, thing, idSanitized, types.AsArray().Count);
+                        GetJsonLDTypes(typeInfo, thing, idSanitized, types.AsArray().Count, twin);
                 }
             }
 
@@ -821,7 +825,7 @@ namespace OpenTwinsV2.Twins.Services
             if (parent is not null)
                 foreach(var parentInfo in parent is JsonArray ? parent.AsEnumerable() : Enumerable.Repeat(parent.AsObject(), 1))
                     if(parentInfo is not null)
-                        GetJsonLdThingInheritance(parentInfo, thing, idSanitized);
+                        GetJsonLdThingInheritance(parentInfo, thing, idSanitized, twin);
 
             //Attributes:
             var attributes = thingInfo?["hasAttribute"];
@@ -831,7 +835,7 @@ namespace OpenTwinsV2.Twins.Services
                 foreach (var attributeInfo in attributes.AsArray())
                 {
                     if(attributeInfo is not null)
-                        GetJsonLDAttribute(attributeInfo, thing, idSanitized);
+                        GetJsonLDAttribute(attributeInfo, thing, idSanitized, twin);
                 }
             }
             var relations = thingInfo?["relations"];
@@ -841,7 +845,7 @@ namespace OpenTwinsV2.Twins.Services
                 foreach (var relationInfo in relations.AsArray())
                 {
                     if(relationInfo is not null)
-                        GetJsonLDRelation(relationInfo, thing, idSanitized);
+                        GetJsonLDRelation(relationInfo, thing, idSanitized, twin);
                 }
             }
         }
@@ -853,28 +857,29 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="thing">The Json Node of the Thing.</param>
         /// <param name="idSanitized">The sanitized identifier od the object.</param>
         /// <param name="typeCount">Number of types that the Thing has.</param>
+        /// <param name="twin">OPTIONAl. Whether the JSON belongs to a Twin or not.</param>
         /// <returns>
         /// Returns the duplicated Thing Json Node with the parsed type info.
         /// </returns>
-        private static void GetJsonLDTypes(JsonNode typeInfo, JsonNode thing, string idSanitized, int typeCount)
+        private static void GetJsonLDTypes(JsonNode typeInfo, JsonNode thing, string idSanitized, int typeCount, bool twin=false)
         {
             var typeName = typeInfo?["name"]?.GetValue<string>();
             var typePrefix = typeInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
-            typePrefix ??= $"blankNodePrefix_{idSanitized}";
+            typePrefix ??=  twin ? "" : $"blankNodePrefix_{idSanitized}";
 
             if (typeName is not null && (typeName.Length > 0))
             {
                 if (typeCount==1)
                 {
                     //only one type
-                    thing["@type"] = $"{typePrefix ?? $"blankNodePrefix_{idSanitized}"}:{typeName}";
+                    thing["@type"] = $"{(twin && string.IsNullOrWhiteSpace(typePrefix) ? "" : $"{typePrefix}:")}{typeName}";
                 }
                 else
                 {
                     if (thing["@type"] is null)
                         thing["@type"] = new JsonArray();
                     //more than one type
-                    thing["@type"]?.AsArray().Add($"{typePrefix ?? $"blankNodePrefix_{idSanitized}"}:{typeName}");
+                    thing["@type"]?.AsArray().Add($"{(twin && string.IsNullOrWhiteSpace(typePrefix) ? "" : $"{typePrefix}:")}{typeName}");
                 }
             }
         }
@@ -885,15 +890,16 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="attributeInfo">The Json Node with the info of the Attribute.</param>
         /// <param name="thing">The Json Node of the Thing.</param>
         /// <param name="idSanitized">The sanitized identifier of the object.</param>
+        /// <param name="twin">OPTIONAl. Whether the JSON belongs to a Twin or not.</param>
         /// <returns>
         /// Returns the modified Thing Json Node with the parsed Attribute info in JsonLD format.
         /// </returns>
-        private static void GetJsonLDAttribute(JsonNode attributeInfo, JsonNode thing, string idSanitized)
+        private static void GetJsonLDAttribute(JsonNode attributeInfo, JsonNode thing, string idSanitized, bool twin=false)
         {
             var key = attributeInfo?["Attribute.key"]?.GetValue<string>();
             var value = attributeInfo?["Attribute.value"]?.GetValue<string>();
             var attPrefix = attributeInfo?["Attribute.prefix"]?["prefix"]?.GetValue<string>();
-            attPrefix ??= $"blankNodePrefix_{idSanitized}";
+            attPrefix ??=  twin ? "" : $"blankNodePrefix_{idSanitized}";
 
             if ((key is not null) && (key.Length > 0))
             {
@@ -912,14 +918,14 @@ namespace OpenTwinsV2.Twins.Services
                     var lastUpdate = attributeInfo?["lastUpdate"]?.GetValue<string>();
 
                     if (defaultValue is not null)
-                        thing[$"{attPrefix}:{key}.default"] = defaultValue;
+                        thing[$"{(twin && string.IsNullOrWhiteSpace(attPrefix) ? "" : $"{attPrefix}:")}{key}.default"] = defaultValue;
                         
-                    thing[$"{attPrefix}:{key}.value"] = value;
-                    thing[$"{attPrefix}:{key}.lastUpdate"] = lastUpdate;
+                    thing[$"{(twin && string.IsNullOrWhiteSpace(attPrefix) ? "" : $"{attPrefix}:")}{key}.value"] = value;
+                    thing[$"{(twin && string.IsNullOrWhiteSpace(attPrefix) ? "" : $"{attPrefix}:")}{key}.lastUpdate"] = lastUpdate;
                 }
                 else
                 {
-                    thing[$"{attPrefix}:{key}"] = value;
+                    thing[$"{(twin && string.IsNullOrWhiteSpace(attPrefix) ? "" : $"{attPrefix}:")}{key}"] = value;
                 }
             }
         }
@@ -930,14 +936,15 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="relationInfo">The Json Node with the info of the Relation.</param>
         /// <param name="thing">The Json Node of the Thing.</param>
         /// <param name="idSanitized">The sanitized identifier of the object.</param>
+        /// <param name="twin">OPTIONAl. Whether the JSON belongs to a Twin or not.</param>
         /// <returns>
         /// Returns the modified Thing Json Node with the parsed Relation info in JsonLD format.
         /// </returns>
-        private static void GetJsonLDRelation(JsonNode relationInfo, JsonNode thing, string idSanitized)
+        private static void GetJsonLDRelation(JsonNode relationInfo, JsonNode thing, string idSanitized, bool twin=false)
         {
             var name = relationInfo?["Relation.name"]?.GetValue<string>();
             var relPrefix = relationInfo?["Relation.prefix"]?["prefix"]?.GetValue<string>();
-            relPrefix ??= $"blankNodePrefix_{idSanitized}";
+            relPrefix ??=  twin ? "" : $"blankNodePrefix_{idSanitized}";
             JsonArray relatedNode = [];
             var relationKeys = new[] { "relatedTo", "hasChild", "hasPart" };
 
@@ -961,9 +968,9 @@ namespace OpenTwinsV2.Twins.Services
                 {
                     var relatedName = relatedThing?["name"]?.GetValue<string>();
                     var relatedPrefix = relatedThing?["Thing.prefix"]?["prefix"]?.GetValue<string>();
-                    relatedPrefix ??= $"blankNodePrefix_{idSanitized}";
+                    relatedPrefix ??=  twin ? "" : $"blankNodePrefix_{idSanitized}";
                     if (relatedName is not null && relatedName.Length > 0)
-                        relatedThingstr.Add($"{relatedPrefix}:{relatedName}");
+                        relatedThingstr.Add($"{(twin && string.IsNullOrWhiteSpace(relatedPrefix) ? "" : $"{relatedPrefix}:")}{relatedName}");
                 }
                 if (relatedThingstr.Count >= 1)
                 {
@@ -978,23 +985,23 @@ namespace OpenTwinsV2.Twins.Services
                         jsonArray.Add(node);
                     }
 
-                    thing[$"{relPrefix}:{name}"] = jsonArray.Count == 1 ? jsonArray[0]!.DeepClone() : jsonArray;
+                    thing[$"{(twin && string.IsNullOrWhiteSpace(relPrefix) ? "" : $"{relPrefix}:")}{name}"] = jsonArray.Count == 1 ? jsonArray[0]!.DeepClone() : jsonArray;
                 }
             }
         }
 
-        private static void GetJsonLdThingInheritance(JsonNode parentInfo, JsonNode thing, string idSanitized)
+        private static void GetJsonLdThingInheritance(JsonNode parentInfo, JsonNode thing, string idSanitized, bool twin = false)
         {
             var name = parentInfo?["name"]?.GetValue<string>();
             // Console.WriteLine($"name: {name}");
             var prefix = parentInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
-            prefix ??=  $"blankNodePrefix_{idSanitized}";
+            prefix ??= twin ? "" : $"blankNodePrefix_{idSanitized}";
 
             if(name is null)
                 return;
 
             var inheritanceNode = thing["rdfs:subClassOf"];
-            JsonObject idNode = new() { ["@id"] = $"{prefix}:{name}" };
+            JsonObject idNode = new() { ["@id"] = $"{(twin && string.IsNullOrWhiteSpace(prefix) ? "" : $"{prefix}:")}{name}" };
 
             if(inheritanceNode is null)
                 thing["rdfs:subClassOf"] = idNode;
@@ -1205,8 +1212,9 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="json">The original Json.</param>
         /// <param name="id">The identifier of the object.</param>
         /// <param name="shape">OPTIONAl. Whether the Json corresponds to a Shape Graph or not.</param>
+        /// <param name="twin">OPTIONAL. Whether the Json corresponds to a Twin or not.</param>
         /// <returns>Returns the JsonLd equivalent to the Json provided.</returns>
-        public static JsonObject GetJsonLDFromRegularJson(JsonObject json, string id, bool shape = false)
+        public static JsonObject GetJsonLDFromRegularJson(JsonObject json, string id, bool shape = false, bool twin = false)
         {
             string idSanitized = FormatService.SanitizeTypeAndUIDValues(id);
             var nodes = json[shape ? "shapes" : "things"]?.AsArray() ?? new JsonArray();
@@ -1232,7 +1240,7 @@ namespace OpenTwinsV2.Twins.Services
                     if(shape)
                         GetJsonLDNodeShape(node, insert, idSanitized);
                     else
-                        GetJsonLDThing(node, insert, idSanitized);
+                        GetJsonLDThing(node, insert, idSanitized, twin:twin);
                     
                     finalNodes.Add(insert);
                 }

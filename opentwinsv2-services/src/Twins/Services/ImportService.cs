@@ -773,7 +773,7 @@ namespace Twins.Services
                     value.Value = ShapeBuilder.GetBasicIdNode("sh", "Literal");
                     break;
                 case "FunctionalProperty":
-                    value.Predicate = "sh:nodeKind";
+                    value.Predicate = "sh:maxCount";
                     value.Value = 1;
                     break;
                 case "InverseFunctionalProperty":

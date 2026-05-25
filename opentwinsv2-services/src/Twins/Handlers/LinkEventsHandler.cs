@@ -1,6 +1,7 @@
 using OpenTwinsV2.Twins.Builders;
 using OpenTwinsV2.Twins.Services;
 using OpenTwinsV2.Shared.Models;
+using System.Text.Json.Nodes;
 
 namespace OpenTwinsV2.Twins.Handlers
 {
@@ -22,7 +23,18 @@ namespace OpenTwinsV2.Twins.Handlers
             if (uids.TryGetValue(thingIdTarget, out var uidTarget) && uids.TryGetValue(thingIdSource, out var uidSource))
             {
                 _logger.LogDebug("uidTarget: {uidTarget}, uidSource: {uidSource}", uidTarget, uidSource);
-                var mutation = ThingBuilder.BuildRelation(link, uidTarget, uidSource);
+                JsonObject mutation;
+                if(await _dgraphService.ExistsRelationBetweenThings(thingIdTarget, thingIdSource, link.Rel ?? ""))
+                {
+                    //Delete Unidirectional and create bidireactional
+                    await _dgraphService.DeleteEntitiesAsync([ThingBuilder.BuildRelation(link, uidTarget, uidSource, bidir:false)]);
+                    mutation = ThingBuilder.BuildRelation(link, uidTarget, uidSource, bidir:true);
+                }
+                else
+                {
+                    //Create unidirectional
+                    mutation = ThingBuilder.BuildRelation(link, uidTarget, uidSource, bidir:false);
+                }
                 await _dgraphService.AddEntitiesAsync([mutation]);
             }
         }
@@ -40,7 +52,8 @@ namespace OpenTwinsV2.Twins.Handlers
             if (uids.TryGetValue(thingIdTarget, out var uidTarget) && uids.TryGetValue(thingIdSource, out var uidSource))
             {
                 _logger.LogDebug("uidTarget: {uidTarget}, uidSource: {uidSource}", uidTarget, uidSource);
-                var mutation = ThingBuilder.BuildRelation(link, uidTarget, uidSource);
+                bool bidir = await _dgraphService.ExistsRelationBetweenThings(thingIdTarget, thingIdSource, link.Rel ?? "");
+                var mutation = ThingBuilder.BuildRelation(link, uidTarget, uidSource, bidir:bidir);
                 mutation["uid"] = uid;
                 await _dgraphService.AddEntitiesAsync([mutation]);
             }

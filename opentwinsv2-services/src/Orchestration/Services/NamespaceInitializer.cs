@@ -24,6 +24,21 @@ namespace OpenTwinsV2.Orchestration.Services
         {
             if(!await k8s.ExistsNamespace(namespaceName))
                 await k8s.CreateNamespace(namespaceName);
+            
+            var secretName = _config["BenthosWorker:PullSecret"] ?? "k8s--orchestration--secret";
+            var user = _config["BenthosWorker:MqttUsername"] ?? "your_user";
+            var pwd = _config["BenthosWorker:MqttPassword"] ?? "your_password";
+            var secret = new V1Secret
+            {
+                Metadata = new V1ObjectMeta { Name = secretName },
+                Type = "Opaque", // Standard, simple secret
+                StringData = new Dictionary<string, string>
+                {
+                    { "username", user },
+                    { "password", pwd }
+                }
+            };
+            await k8s.CreateSecretInNamespace(secretName, _defaultNs, secret, overrideSecret: true);
         }
 
         public async Task StartAsync(CancellationToken cancellationToken)

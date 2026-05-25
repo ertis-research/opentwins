@@ -474,28 +474,13 @@ namespace OpenTwinsV2.Twins.Controllers
 
             if (!conflict) // Check if the id is already on use in thingsService 
             {
-                //Get and format the thing's attributes to WOT
-                var props = await _instanciationService.GetWOTThingProperties(ontologyId, thingId);
-
-                var payload = new JsonObject
+                try
                 {
-                    ["@context"] = new JsonArray("https://www.w3.org/2019/wot/td/v1"),
-                    ["id"] = id,
-                    ["title"] = "",
-                    ["hasType"] = thingId,
-                    ["properties"] = props,
-                    ["actions"] = new JsonObject { },
-                    ["events"] = new JsonObject { }
-                };
-
-
-                var thingsResponse = await _thingsService.CreateThingAsync(payload);
-                if (!thingsResponse) return StatusCode(500, "Failed to create Thing in things service");
-
-                var dgraphResponse = await _dgraphService.AddThingAsync(ThingBuilder.BuildThing(id, typeUid: await _dgraphService.GetThingInOntologyUidAsync(ontologyId, thingId)));
-                bool dgraphOk = dgraphResponse != null && dgraphResponse.Uids != null && dgraphResponse.Uids.Count > 0;
-                if (!dgraphOk) return StatusCode(500, "Failed to create thing in DGraph: " + dgraphResponse?.ToString());
-
+                    await _instanciationService.InstanciateThingGraph(ontologyId, [new JsonObject{["@id"] = id, ["id"] = id, ["@type"] = thingId}]);
+                }catch(Exception ex)
+                {
+                    return StatusCode(500, $"Something went wrong while instanciating the thing {thingId}: {ex.Message}");
+                }
                 return Ok(new { message = "Thing created successfully" });
             }
             return Conflict($"There is already an instanced thing with the id {id}");

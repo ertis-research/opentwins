@@ -77,12 +77,15 @@ namespace OpenTwinsV2.Things.Actors.Services
                 var linksToAdd = newLinks.Except(oldLinks);
 
                 foreach(var link in linksToDelete)
-                    await RemoveLinkAsync(link.Href.ToString(), link.Rel!);
+                    // await RemoveLinkAsync(link.Href.ToString(), link.Rel!);
+                    await _daprClient.InvokeMethodAsync(HttpMethod.Delete, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}/links/{link.Rel}/{link.Href}");
+
 
                 
                 Console.WriteLine($"Tengo {linksToAdd.Count()} to add (first: {linksToAdd.FirstOrDefault()})");
                 foreach(var link in linksToAdd)
-                    await AddLinkAsync(JsonSerializer.Serialize(link, options));
+                    // await AddLinkAsync(JsonSerializer.Serialize(link, options));
+                    await _daprClient.InvokeMethodAsync(HttpMethod.Post, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}/links", JsonSerializer.Serialize(link));
 
                 var newTypes = td.TypeAnnotation ?? Enumerable.Empty<string>();
                 var oldTypes = existingTd.TypeAnnotation ?? Enumerable.Empty<string>();
@@ -245,13 +248,24 @@ namespace OpenTwinsV2.Things.Actors.Services
             catch (JsonException ex) { throw new ArgumentException("Invalid link JSON format.", ex); }
 
             if (newLink is null) throw new ArgumentException("The link is invalid.");
-
+            Console.WriteLine(1);
 
             ThingDescription!.Links ??= [];
             if (ThingDescription.Links.Any(l => l.Href == newLink.Href && l.Rel == newLink.Rel)) throw new InvalidOperationException("A link with the same Href and Rel already exists.");
             ThingDescription.Links.Add(newLink);
+            Console.WriteLine($"{2}: {ThingDescription}");
             await SaveAsync(ThingDescription);
-            await _daprClient.InvokeMethodAsync(HttpMethod.Post, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}/links", JsonSerializer.Serialize(newLink));
+            // try
+            // {
+            //     await _daprClient.InvokeMethodAsync(HttpMethod.Post, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}/links", JsonSerializer.Serialize(newLink));
+            //     Console.WriteLine(3);
+            // }
+            // catch (Exception)
+            // {
+            //      Console.WriteLine($"{3}: ERROR");
+            // }
+            
+           
 /*
             using var http = _httpClientFactory.CreateClient();
             var response = await http.PostAsJsonAsync($"{_twinsUrl}internal/things/{Uri.EscapeDataString(_thingId)}/links", JsonSerializer.Serialize(newLink));
@@ -306,14 +320,16 @@ namespace OpenTwinsV2.Things.Actors.Services
         {
             if (ThingDescription is null) await LoadAsync();
             if (string.IsNullOrWhiteSpace(targetId) || string.IsNullOrWhiteSpace(relName)) throw new ArgumentException("TargetId or Rel cannot be null or empty.");
+            Console.WriteLine(1);
             if (ThingDescription?.Links == null || ThingDescription.Links.Count == 0) throw new KeyNotFoundException("No links available.");
 
             int index = ThingDescription.Links.FindIndex(l => l.Href.ToString() == targetId && l.Rel == relName);
+            Console.WriteLine(2);
             if (index < 0) throw new KeyNotFoundException($"Link with Href='{targetId}' and Rel='{relName}' not found.");
 
             ThingDescription.Links.RemoveAt(index);
             await SaveAsync(ThingDescription);
-            await _daprClient.InvokeMethodAsync(HttpMethod.Delete, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}/links/{relName}/{targetId}");
+            // await _daprClient.InvokeMethodAsync(HttpMethod.Delete, "twins-service", $"internal/things/{Uri.EscapeDataString(_thingId)}/links/{relName}/{targetId}");
 
 /*
             using var http = _httpClientFactory.CreateClient();

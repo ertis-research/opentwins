@@ -130,7 +130,7 @@ namespace OpenTwinsV2.Twins.Builders
             };
         }
 
-        public static JsonObject BuildRelation(Link link, string targetUid, string sourceUid = "_:source", int relCounter = 1)
+        public static JsonObject BuildRelation(Link link, string targetUid, string sourceUid = "_:source", int relCounter = 1, bool bidir=true)
         {
             if (link.Rel == null) return [];
 
@@ -139,9 +139,9 @@ namespace OpenTwinsV2.Twins.Builders
 
             string edgeName = MapRelToEdge(link.Rel);
 
-            if (edgeName == "relatedTo")
+            if (bidir)
             {
-                relNode["relatedTo"] = new JsonArray(
+                relNode[edgeName] = new JsonArray(
                     new JsonObject { ["uid"] = targetUid },
                     new JsonObject { ["uid"] = sourceUid }
                 );
@@ -149,7 +149,7 @@ namespace OpenTwinsV2.Twins.Builders
             else
             {
                 relNode[edgeName] = new JsonArray(new JsonObject { ["uid"] = targetUid });
-                relNode["relatedTo"] = new JsonArray(new JsonObject { ["uid"] = sourceUid });
+                relNode["relatedFrom"] = new JsonArray(new JsonObject { ["uid"] = sourceUid });
             }
 
             return relNode;

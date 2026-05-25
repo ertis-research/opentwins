@@ -193,6 +193,30 @@ namespace Orchestration.Services
             await _k8s.CoreV1.CreateNamespaceAsync(nsObj);
         }
 
+        protected async Task<bool> ExistsSecretInNamespace(string secretName, string namespaceName)
+        {
+            try
+            {
+                // Attempt to find the secret
+                await _k8s.CoreV1.ReadNamespacedSecretAsync(secretName, namespaceName);
+            }catch (HttpOperationException ex) when (ex.Response.StatusCode == HttpStatusCode.NotFound)
+            {
+                return false;
+            }
+            return true;
+        }
+
+        public async Task CreateSecretInNamespace(string secretName, string namespaceName, V1Secret secret, bool overrideSecret = false)
+        {
+            var exists = await ExistsSecretInNamespace(secretName, namespaceName);
+            if(!overrideSecret && exists)
+                throw new InvalidOperationException($"There is already a secret called {secretName} in the namespace called {namespaceName}");
+            else if(!overrideSecret || !exists)
+                await _k8s.CoreV1.CreateNamespacedSecretAsync(secret, namespaceName);
+            else 
+                await _k8s.CoreV1.ReplaceNamespacedSecretAsync(secret, secretName, namespaceName);
+        }
+
         #endregion
 
         #region ConfigMap
@@ -457,7 +481,7 @@ namespace Orchestration.Services
             {
                 var image = _config["BenthosWorker:Image"] ?? "jeffail/benthos:latest";
                 var pullPolicy = _config["BenthosWorker:PullPolicy"] ?? "IfNotPresent";
-                var secretName = _config["BenthosWorker:PullSecret"]; // Might be null
+                var secretName = _config["BenthosWorker:PullSecret"] ?? "k8s--orchestration--secret"; // Might be null
                 var labels = new Dictionary<string, string> { { "app", "benthos-worker" }, { "job-id", safeJobId }};
                 var safeThingId = !string.IsNullOrWhiteSpace(thingId) ? ToK8sLabelValue( thingId) : "";
 
@@ -499,6 +523,25 @@ namespace Orchestration.Services
                                     {
                                         Name = "config-volume",
                                         MountPath = $"/{BenthosConfigParser.GetConfigName(!string.IsNullOrWhiteSpace(thingId) ? thingId : jobId)}"
+                                    }
+                                },
+                                Env = new List<V1EnvVar>
+                                {
+                                    new V1EnvVar
+                                    {
+                                        Name = "MQTT_USERNAME",
+                                        ValueFrom = new V1EnvVarSource
+                                        {
+                                            SecretKeyRef = new V1SecretKeySelector { Name = secretName, Key = "username" }
+                                        }
+                                    },
+                                    new V1EnvVar
+                                    {
+                                        Name = "MQTT_PASSWORD",
+                                        ValueFrom = new V1EnvVarSource
+                                        {
+                                            SecretKeyRef = new V1SecretKeySelector { Name = secretName, Key = "password" }
+                                        }
                                     }
                                 }
                             }

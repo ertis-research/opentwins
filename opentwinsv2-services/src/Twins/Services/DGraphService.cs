@@ -788,6 +788,54 @@ namespace OpenTwinsV2.Twins.Services
             }
         }
 
+        public async Task<bool> ExistsRelationBetweenThings(string sourceId, string targetId, string relName)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var query= $@"
+                {{
+                    things as var (func: eq(thingId, ""{sourceId}""))
+                    thing(func: uid(things)){{
+                        ~relatedTo @filter(eq(Relation.name, ""{relName}"")) @cascade{{
+                            relatedTo @filter(eq(thingId, ""{targetId}"")){{
+                                thingId
+                            }}
+                        }}
+                        ~relatedFrom @filter(eq(Relation.name, ""{relName}"")) @cascade{{
+                            relatedTo @filter(eq(thingId, ""{targetId}"")){{
+                                thingId
+                            }}
+                        }}
+                        ~hasChild @filter(eq(Relation.name, ""{relName}"")) @cascade{{
+                            relatedTo @filter(eq(thingId, ""{targetId}"")){{
+                                thingId
+                            }}
+                        }}
+                        ~hasPart @filter(eq(Relation.name, ""{relName}"")) @cascade{{
+                            relatedTo @filter(eq(thingId, ""{targetId}"")){{
+                                thingId
+                            }}
+                        }}
+                    }}
+                }}
+                ";
+
+                var res = await txn.Query(query);
+                var json = res.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                return root.TryGetProperty("thing", out var thing) && thing.GetArrayLength()>0;
+            }
+            catch (Exception)
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
         #endregion
 
         #region Twins
@@ -1943,7 +1991,9 @@ namespace OpenTwinsV2.Twins.Services
                 relations(func: eq(Relation.name, ""{relationName}"")) {{
                     uid
                     relatedTo @filter(uid(source) OR uid(target))
-                    hasChild @filter(uid(target))
+                    relatedFrom @filter(uid(source))
+                    hasChild @filter(uid(source) OR uid(target))
+                    hasPart @filter(uid(source) OR uid(target))
                 }}
             }}
             ";

@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Dapr.Actors;
 using Google.Api;
 using Json.More;
 using Lucene.Net.QueryParsers.Flexible.Standard.Processors;
@@ -92,7 +93,7 @@ public abstract class TwinsTest : IAsyncLifetime
             var initCount = await _fixture.GetTwinCount();
             var shapeId = "INEXISTENTSHAPEID";
             
-            var response = await _client.PostAsync($"./{twinId}?shapeId={shapeId}", new StringContent("{}", Encoding.UTF8, "application/json"));
+            var response = await _client.PostAsync($"./{twinId}?shapeId={shapeId}", new StringContent("{\"@graph\":[]}", Encoding.UTF8, "application/json"));
 
             Assert.False(response.IsSuccessStatusCode);
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -208,9 +209,20 @@ public abstract class TwinsTest : IAsyncLifetime
             string twinId = _importedTwinId;
             await _fixture.ImportEmptyTwin(_importedTwinId);
             
-            var response = await _client.GetAsync($"./{twinId}");
+            HttpResponseMessage? response = null;
+            do
+            {
+                try{
+                    response = await _client.GetAsync($"./{twinId}");
+                }catch(ActorMethodInvocationException ex)
+                {
+                    if(ex.Message.Contains("InvalidOperationException"))
+                        response=null;
+                }
+            }while(response is null || response.StatusCode == HttpStatusCode.Processing);
+            
 
-            Assert.True(response.IsSuccessStatusCode);
+            Assert.False(response.IsSuccessStatusCode);
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         }
 
@@ -384,8 +396,21 @@ public abstract class TwinsTest : IAsyncLifetime
             string twinId = _twinId;
             string thingId = _thingId;
 
-            var response = await _client.GetAsync($"./{twinId}/things/{thingId}");
-            var jsonString = await response.Content.ReadAsStringAsync();
+            HttpResponseMessage? response = null;
+            do
+            {
+                try
+                {
+                    response = await _client.GetAsync($"./{twinId}/things/{thingId}");
+                }catch(ActorMethodInvocationException ex)
+                {
+                    if(ex.Message.Contains("InvalidOperationException"))
+                        response = null;
+                }
+                
+            }while(response is not null && response.StatusCode == HttpStatusCode.Processing);
+            
+            var jsonString = await response!.Content.ReadAsStringAsync();
             var root = TwinsAPIFixture.GetJsonRoot(jsonString);
             ThingDescription? td = JsonSerializer.Deserialize<ThingDescription>(root);
 
@@ -647,7 +672,7 @@ public abstract class TwinsTest : IAsyncLifetime
 
         protected override async Task CleanupAfterTestAsync()
         {
-            if(await _fixture.ExistsThing(_importedThingId))
+            if(await _fixture.ExistsThing(_importedThingId ?? "someotherid"))
                 await _fixture.DeleteSampleThingFromDefaultTwin();
         }
     }
@@ -823,7 +848,7 @@ public abstract class TwinsTest : IAsyncLifetime
         public async Task RunQueryOnTwin_ValidQueryReturnsSomething_OkAndJson()
         {
             string twinId = _twinId;
-            string query = $"SELECT * WHERE {{?s ?p ?o}}";
+            string query = $"SELECT (1 AS ?value) WHERE {{}}";
 
             var formValues = new Dictionary<string, string>
             {

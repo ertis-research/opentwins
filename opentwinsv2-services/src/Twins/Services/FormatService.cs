@@ -243,18 +243,58 @@ namespace Twins.Services
             }
         }
 
+        private static void ReplaceNulls(JsonNode? node, string replacement = "")
+        {
+            if (node is JsonObject obj)
+            {
+                // We must call .ToList() to snapshot the keys, 
+                // because we cannot modify a collection while iterating over it.
+                var keys = obj.Select(kvp => kvp.Key).ToList();
+                
+                foreach (var key in keys)
+                {
+                    if (obj[key] == null)
+                    {
+                        // It's a JSON null! Replace it.
+                        obj[key] = replacement;
+                    }
+                    else
+                    {
+                        // It's an object or array, go deeper
+                        ReplaceNulls(obj[key], replacement);
+                    }
+                }
+            }
+            else if (node is JsonArray arr)
+            {
+                for (int i = 0; i < arr.Count; i++)
+                {
+                    if (arr[i] == null)
+                    {
+                        arr[i] = replacement;
+                    }
+                    else
+                    {
+                        ReplaceNulls(arr[i], replacement);
+                    }
+                }
+            }
+        }
+
         /// <summary>
         /// Obtains the RDF Graph equivalent of the Json provided.
         /// </summary>
         /// <param name="json">The Json object.</param>
         /// <param name="id">The identifier of the object.</param>
         /// <param name="ld">OPTIONAl. Whether the Json provided is in JsonLD format. By default is false.</param>
+        /// <param name="twin"></param>
         /// <returns>Returns the RDF Graph of the Json.</returns>
-        public static Graph GetRDFGraphFromJson(JsonObject json, string id, bool ld = false)
+        public static Graph GetRDFGraphFromJson(JsonObject json, string id, bool ld = false, bool twin = false)
         {
             var idSanitized = SanitizeTypeAndUIDValues(id);
             var store = new TripleStore();
-            var jsonLd = ld ? json : ExportService.GetJsonLDFromRegularJson(json, idSanitized);
+            var jsonLd = ld ? json : ExportService.GetJsonLDFromRegularJson(json, id, twin:true);
+            ReplaceNulls(jsonLd, "");
             var jsonString = JsonSerializer.Serialize(jsonLd);
 
             //extract the namespaces from the Json
@@ -288,10 +328,11 @@ namespace Twins.Services
         /// <param name="id">The identifier of the object.</param>
         /// <param name="json">The Json object.</param>
         /// <param name="ld">OPTIONAL. Whether the Json provided has JsonLD format. By default is false.</param>
+        /// <param name="twin">OPTIONAL. Whether the Json belongs to a Twin or not. By default is false.</param>
         /// <returns></returns>
-        public static MemoryStream GetTTLFileFromRegularJson(string id, JsonObject json, bool ld = false)
+        public static MemoryStream GetTTLFileFromRegularJson(string id, JsonObject json, bool ld = false, bool twin = false)
         {
-            var mergedGraph = GetRDFGraphFromJson(json, id, ld);
+            var mergedGraph = GetRDFGraphFromJson(json, id, ld, twin);
 
             var ttlWriter = new VDS.RDF.Writing.CompressingTurtleWriter();
             using var sw = new StringWriter();

@@ -395,7 +395,9 @@ namespace OpenTwinsV2.Twins.Services
         /// </returns>
         public async Task<JsonObject?> GetJsonWithoutNamespace(string id)
         {
-            return await GetJsonWithNamespace(id, null);
+            var json=  await GetJsonWithNamespace(id, null);
+            AutoCompleteNamespaceArray(json);
+            return json;
         }
 
         /// <summary>
@@ -756,6 +758,144 @@ namespace OpenTwinsV2.Twins.Services
             return finalNode;
         }
 
+        // A registry of common prefixes your application knows about
+        // private static readonly Dictionary<string, string> KnownNamespaces = new()
+        // {
+        //     { "sh", "http://www.w3.org/ns/shacl#" },
+        //     { "rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#" },
+        //     { "rdfs", "http://www.w3.org/2000/01/rdf-schema#" },
+        //     { "xsd", "http://www.w3.org/2001/XMLSchema#" },
+        //     { "ontologiaprueba", "http://example.org/ontology/" }
+        //     // Add your domain-specific ones here
+        // };
+
+        // Fast regex to catch "prefix:term" but ignore "http://", "https://", and "urn:"
+        private static readonly Regex PrefixRegex = new Regex(@"^([a-zA-Z0-9_-]+):(?!(//))", RegexOptions.Compiled);
+
+        public static void AutoCompleteNamespaceArray(JsonObject jsonDocument)
+        {
+            var foundPrefixes = new HashSet<string>();
+            var embeddedNamespaces = new Dictionary<string, string>();
+
+            // 1. Recursively scan the document
+            ScanForPrefixes(jsonDocument, foundPrefixes, embeddedNamespaces);
+
+            // Remove standard non-RDF URI schemes
+            foundPrefixes.Remove("http");
+            foundPrefixes.Remove("https");
+            foundPrefixes.Remove("urn");
+
+            // 2. Ensure "namespace" array exists at the root
+            if (jsonDocument["namespace"] is not JsonArray namespaceArray)
+            {
+                namespaceArray = new JsonArray();
+                jsonDocument["namespace"] = namespaceArray;
+            }
+
+            // 3. Find out which prefixes are ALREADY in the root namespace array
+            var existingPrefixes = new HashSet<string>();
+            foreach (var ns in namespaceArray.OfType<JsonObject>())
+            {
+                var existingPrefix = ns["prefix"]?.GetValue<string>();
+                if (!string.IsNullOrEmpty(existingPrefix))
+                {
+                    existingPrefixes.Add(existingPrefix);
+                }
+            }
+
+            // 4. Inject missing prefixes into the array
+            foreach (var prefix in foundPrefixes)
+            {
+                if (existingPrefixes.Contains(prefix)) continue;
+
+                string? uriToAssign = null;
+
+                // First, check if the document explicitly defined it somewhere inside (like in Thing.prefix)
+                if (embeddedNamespaces.TryGetValue(prefix, out string? embeddedUri))
+                {
+                    uriToAssign = embeddedUri;
+                }
+                // Otherwise, check our hardcoded fallback dictionary
+                else if(!int.TryParse(prefix.First().ToString(), out _))
+                {
+                    uriToAssign = $"http://example.org/ontology/{prefix}";
+                }
+
+                // If we found a URI for this prefix, add it to the root array
+                if (!string.IsNullOrEmpty(uriToAssign))
+                {
+                    namespaceArray.Add(new JsonObject
+                    {
+                        ["prefix"] = prefix,
+                        ["uri"] = uriToAssign
+                    });
+                    existingPrefixes.Add(prefix); // Mark as added to prevent duplicates
+                }
+            }
+            if(!existingPrefixes.Contains(""))
+            {
+                namespaceArray.Add(new JsonObject
+                {
+                    ["prefix"] = "",
+                    ["uri"] = "http://example.org/properties/"
+                });
+                existingPrefixes.Add("");
+            }
+        }
+
+        private static void ScanForPrefixes(JsonNode? node, HashSet<string> foundPrefixes, Dictionary<string, string> embeddedNamespaces)
+        {
+            if (node is JsonObject obj)
+            {
+                // BONUS: "Hoist" embedded namespaces! 
+                // If we find an object like "Thing.prefix": { "prefix": "ex", "uri": "..." }
+                if (obj.ContainsKey("prefix") && obj.ContainsKey("uri"))
+                {
+                    var p = obj["prefix"]?.GetValue<string>();
+                    var u = obj["uri"]?.GetValue<string>();
+                    if (!string.IsNullOrWhiteSpace(p) && !string.IsNullOrWhiteSpace(u))
+                    {
+                        embeddedNamespaces[p] = u;
+                        foundPrefixes.Add(p); // Treat it as a found prefix
+                    }
+                }
+
+                // Skip scanning the root namespace array itself to avoid circular logic
+                foreach (var kvp in obj.Where(k => k.Key != "namespace"))
+                {
+                    // Check the JSON Key (e.g., "Relation.name": "ontologiaprueba:director")
+                    ExtractPrefix(kvp.Key, foundPrefixes);
+
+                    // Recursively check the JSON Value
+                    ScanForPrefixes(kvp.Value, foundPrefixes, embeddedNamespaces);
+                }
+            }
+            else if (node is JsonArray arr)
+            {
+                foreach (var item in arr)
+                {
+                    ScanForPrefixes(item, foundPrefixes, embeddedNamespaces);
+                }
+            }
+            else if (node is JsonValue val)
+            {
+                // Check literal string values (e.g., "ontologiaprueba:movie1")
+                if (val.TryGetValue(out string? strValue) && !string.IsNullOrWhiteSpace(strValue))
+                {
+                    ExtractPrefix(strValue, foundPrefixes);
+                }
+            }
+        }
+
+        private static void ExtractPrefix(string text, HashSet<string> foundPrefixes)
+        {
+            var match = PrefixRegex.Match(text);
+            if (match.Success)
+            {
+                foundPrefixes.Add(match.Groups[1].Value);
+            }
+        }
+
         /// <summary>
         /// Obtains the context of a JsonLD.
         /// </summary>
@@ -864,6 +1004,7 @@ namespace OpenTwinsV2.Twins.Services
         private static void GetJsonLDTypes(JsonNode typeInfo, JsonNode thing, string idSanitized, int typeCount, bool twin=false)
         {
             var typeName = typeInfo?["name"]?.GetValue<string>();
+            typeName = string.IsNullOrWhiteSpace(typeName) ? typeInfo?["thingId"]?.GetValue<string>() ?? "" : typeName;
             var typePrefix = typeInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
             typePrefix ??=  twin ? "" : $"blankNodePrefix_{idSanitized}";
 
@@ -967,6 +1108,7 @@ namespace OpenTwinsV2.Twins.Services
                 foreach (var relatedThing in relatedNode.AsArray())
                 {
                     var relatedName = relatedThing?["name"]?.GetValue<string>();
+                    relatedName = string.IsNullOrWhiteSpace(relatedName) ? relatedThing?["thingId"]?.GetValue<string>() ?? "" : relatedName;
                     var relatedPrefix = relatedThing?["Thing.prefix"]?["prefix"]?.GetValue<string>();
                     relatedPrefix ??=  twin ? "" : $"blankNodePrefix_{idSanitized}";
                     if (relatedName is not null && relatedName.Length > 0)
@@ -993,7 +1135,8 @@ namespace OpenTwinsV2.Twins.Services
         private static void GetJsonLdThingInheritance(JsonNode parentInfo, JsonNode thing, string idSanitized, bool twin = false)
         {
             var name = parentInfo?["name"]?.GetValue<string>();
-            // Console.WriteLine($"name: {name}");
+            name=string.IsNullOrWhiteSpace(name) ? parentInfo?["thingId"]?.GetValue<string>() ?? "" : name;
+            
             var prefix = parentInfo?["Thing.prefix"]?["prefix"]?.GetValue<string>();
             prefix ??= twin ? "" : $"blankNodePrefix_{idSanitized}";
 
@@ -1246,6 +1389,8 @@ namespace OpenTwinsV2.Twins.Services
                 }
             }
 
+            
+
             //assemble the final json
             var jsonLd = new JsonObject
             {
@@ -1347,23 +1492,24 @@ namespace OpenTwinsV2.Twins.Services
                 LoadNamespaceIntoGraph(nsObj, graph, ontologyId);
             }
         }
-        
+
         /// <summary>
         /// Runs a SparQL query on either an ontology or a Twin and obtains its result.
         /// </summary>
         /// <param name="id">The identifier of the Twin or the Ontology.</param>
         /// <param name="ns">The namespace dicitionary. If it's defined it will assume it's an Ontology, if not a Twin.</param>
         /// <param name="query">The SparQl query.</param>
+        /// <param name="twin">OPTIONAL. Whetehr the Json belongs to a Twin or not.</param>
         /// <returns>
         /// Returns the result of running the query.<br/>
         /// Returns null if any issue was encountered while running the query.
         /// </returns>
-        public async Task<SparqlResultSet?> RunSparQLQuery(string id, JsonElement? ns, SparqlQuery query)
+        public async Task<SparqlResultSet?> RunSparQLQuery(string id, JsonElement? ns, SparqlQuery query, bool twin = false)
         {
             var json = ns is null ? await GetJsonWithoutNamespace(id) : await GetJsonWithNamespace(id, ns);
             if (json is null)
                 return null;
-            var graph = FormatService.GetRDFGraphFromJson(json, id);
+            var graph = FormatService.GetRDFGraphFromJson(json, id, twin:twin);
             if(graph is null)
                 return null;
             var store = new TripleStore();

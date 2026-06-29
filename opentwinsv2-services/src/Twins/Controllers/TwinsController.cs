@@ -17,6 +17,9 @@ using Api;
 using VDS.RDF.Query.Expressions.Functions.Sparql.Boolean;
 using System.Net;
 using System.Runtime.CompilerServices;
+using System.Configuration.Internal;
+using Lucene.Net.Util;
+using Dapr.Actors;
 
 namespace OpenTwinsV2.Twins.Controllers
 {
@@ -92,6 +95,8 @@ namespace OpenTwinsV2.Twins.Controllers
             if(!(graph.TryGetProperty("@graph", out var graphEl) && graphEl.AsNode() is JsonArray graphArr))
                 return BadRequest("The graph is of bad format.");
 
+            if(!string.IsNullOrWhiteSpace(shapeId) && !await _dgraphService.ExistsShapeGraphByIdAsync(shapeId))
+                return NotFound("There is no Shape Graph with the provided identifier.");
             try
             {
                 await _thingsService.GetThingAsync(twinId);
@@ -115,17 +120,17 @@ namespace OpenTwinsV2.Twins.Controllers
                     //basic case: it doesn't exist in either: create in both
                     await _instanciationService.CreateInstanciationTwin(twinId);
                 }
+            }catch(InvalidOperationException ex)
+            {
+                return StatusCode(102, $"The Thing is not available as of now: {ex.Message}");
             }
             if(!string.IsNullOrWhiteSpace(shapeId))
                 try
                 {
-                    if(!await _dgraphService.ExistsShapeGraphByIdAsync(shapeId))
-                        return NotFound("There is no Shape Graph with the provided identifier.");
-                    else
-                    {
-                        string? report = await _instanciationService.ValidateGraphThroughShapeGraph(twinId, graph, shapeId);
-                        if(!string.IsNullOrWhiteSpace(report))
-                            return BadRequest(new {Message=$"Could not instanciate because the given graph does not validate {shapeId} Shape Graph", Report=report});
+                    string? report = await _instanciationService.ValidateGraphThroughShapeGraph(twinId, graph, shapeId);
+                    if(!string.IsNullOrWhiteSpace(report)){
+                        await DeleteTwin(twinId);
+                        return BadRequest(new {Message=$"Could not instanciate because the given graph does not validate {shapeId} Shape Graph", Report=report});
                     }
                 }catch(Exception ex)
                 {
@@ -221,6 +226,8 @@ namespace OpenTwinsV2.Twins.Controllers
                 if(!await _thingsService.DeleteThingAsync(twinId))
                     throw new Exception("The Twin's thing could not be deleted successfuly.");
 
+                await _dgraphService.DeleteThingAsync(twinId);
+
                 return NoContent();
             }catch(Exception ex)
             {
@@ -269,6 +276,9 @@ namespace OpenTwinsV2.Twins.Controllers
             catch (KeyNotFoundException ex)
             {
                 return NotFound(new { message = ex.Message });
+            }catch (InvalidOperationException ex)
+            {
+                return StatusCode(102, $"The Thing is not available as of now: {ex.Message}");
             }
         }
 
@@ -345,27 +355,47 @@ namespace OpenTwinsV2.Twins.Controllers
                 if (twinUid == null || twinUid.Count < 1) return NotFound("TwinId not found");
 
                 var responses = new List<dynamic>();
+                JsonArray payload = [];
+                
+                var relativeUids = new Dictionary<string, string>();
 
-                foreach (var thingId in thingIdList)
+                var idDict = (await Task.WhenAll(
+                thingIdList.Select(async id =>
+                    {
+                        var uidDict = await _dgraphService.GetUidsByThingIdsAsync([id]);
+                        return (
+                            Key: id,
+                            Value: uidDict.TryGetValue(id, out var uid) ? (Exists: true, Uid: uid) : (Exists: false, Uid: $"_:relativeUid{id}")
+                        );
+                    })
+                )).ToDictionary(x => x.Key, x => x.Value);
+
+                List<string> thingsCreated = []; 
+
+                foreach((var thingId, (var exists, var uid)) in idDict)
                 {
-                    if (!await _dgraphService.ExistsThingByIdAsync(thingId))
+                    if(exists)
+                    {
+                        _logger.LogDebug("Thing {ThingId} already exists -> add twin relation only", thingId);
+                        var responseTwinAnexion = await _dgraphService.AddThingToTwinAsync(thingId, twinId);
+                        responses.Add(new
+                        {
+                            Id = thingId,
+                            Status = HttpStatusCode.OK,
+                            Message = responseTwinAnexion.ToSafeString()
+                        });
+                    }
+                    else
                     {
                         try
                         {
                             ThingDescription td = await _thingsService.GetThingAsync(thingId);
-                            var hrefs = td.Links?.Select(l => l.Href.ToString()).Distinct();
-                            var uidTargets = await _dgraphService.GetUidsByThingIdsAsync(hrefs ?? []);
+                            var hrefs = td.Links?.Select(l => l.Href.ToString()).Distinct() ?? [];
 
-                            var payload = ThingBuilder.BuildPayloadWithLinks(td, twinUid[twinId], uidTargets);
-                            Console.WriteLine(JsonSerializer.Serialize(payload));
+                            var hrefsUids = hrefs.Select(href => (Key: href, Value: idDict.TryGetValue(href, out var value) ? value.Uid : $"_:relativeUid{href}")).Where(x=> x.Value is not null).ToDictionary(x=> x.Key, x=> x.Value!);
 
-                            var response = await _dgraphService.AddEntitiesAsync(payload);
-                            responses.Add(new
-                            {
-                                Id = thingId,
-                                Status = HttpStatusCode.OK,
-                                Message = response.ToSafeString()
-                            });
+                            payload.AddRange(ThingBuilder.BuildPayloadWithLinks(td, twinUid[twinId], hrefsUids, uid: uid).Select(js => js!.DeepClone()));
+                            thingsCreated.Add(thingId);
                         }
                         catch (KeyNotFoundException)
                         {
@@ -377,21 +407,48 @@ namespace OpenTwinsV2.Twins.Controllers
                             });
                             continue;
                         }
-                        //var thing = ThingBuilder.MapToThing(td);
-                        //thing = ThingBuilder.AddTwinToThing(thing, twinUid[twinId]);
-                    }
-                    else
-                    {
-                        _logger.LogDebug("Thing {ThingId} already exists -> add twin relation only", thingId);
-                        var response = await _dgraphService.AddThingToTwinAsync(thingId, twinId);
-                        responses.Add(new
+                        catch (InvalidOperationException)
                         {
-                            Id = thingId,
-                            Status = HttpStatusCode.OK,
-                            Message = response.ToSafeString()
-                        });
+                            responses.Add(new
+                            {
+                                Id = thingId,
+                                Status = HttpStatusCode.Processing,
+                                Message = "The Thing is not available"
+                            });
+                            continue;
+                        }
+                        catch (ActorMethodInvocationException ex)
+                        {
+                            if (ex.Message.Contains("InvalidOperationException"))
+                                responses.Add(new
+                                {
+                                    Id = thingId,
+                                    Status = HttpStatusCode.NotFound,
+                                    Message = "The Thing does not exist"
+                                });
+                        
+                            if (ex.Message.Contains("KeyNotFoundException"))
+                                responses.Add(new
+                                {
+                                    Id = thingId,
+                                    Status = HttpStatusCode.Processing,
+                                    Message = "The Thing is not available"
+                                });
+                            continue;
+                        }
                     }
                 }
+
+                Console.WriteLine($"PAYLOAD AL ANEXAR AL TWINNNN:\n{JsonSerializer.Serialize(payload)}");
+
+                var response = await _dgraphService.AddEntitiesAsync(payload);
+                foreach(var thingCreated in thingsCreated)
+                    responses.Add(new
+                    {
+                        Id = thingCreated,
+                        Status = HttpStatusCode.OK,
+                        Message = response.ToSafeString()
+                    });
 
                 if(responses.Count == 1)
                 {
@@ -542,7 +599,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
             try
             {
-                return File(FormatService.GetTTLFileFromRegularJson(twinId, json), "text/turtle", $"{twinId}.ttl");
+                return File(FormatService.GetTTLFileFromRegularJson(twinId, json, twin:true), "text/turtle", $"{twinId}.ttl");
             }
             catch (Exception e)
             {

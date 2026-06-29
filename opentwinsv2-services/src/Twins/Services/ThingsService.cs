@@ -3,9 +3,11 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Dapr.Actors;
 using Dapr.Actors.Client;
+using Dapr.Actors.Runtime;
 using Dapr.Client;
 using OpenTwinsV2.Shared.Constants;
 using OpenTwinsV2.Shared.Models;
+using OpenTwinsV2.Shared.Utilities;
 
 namespace OpenTwinsV2.Twins.Services
 {
@@ -16,38 +18,74 @@ namespace OpenTwinsV2.Twins.Services
     {
         private readonly DaprClient _daprClient;
         private readonly string _thingServiceAppId = "things-service";
+        private readonly StatusManager _statusManager;
         private const string ActorType = Actors.ThingActor;
 
-        public ThingsService()
+        public ThingsService(StatusManager statusManager)
         {
             _daprClient = new DaprClientBuilder().Build();
+            _statusManager = statusManager;
         }
 
-        /// <summary>
-        /// Sends petition for creating a new thing.
-        /// </summary>
-        /// <param name="newThing">The Json Node of the thing to create.</param>
-        /// <returns>
-        /// Returns true if the operation was successfull<br/>
-        /// Returns false if there was any issue while performing the operation.
-        /// </returns>
-        public async Task<bool> CreateThingAsync(JsonNode newThing)
-        {
-            var client = DaprClient.CreateInvokeHttpClient();
-            var cts = new CancellationTokenSource();
-            var response = await client.PostAsJsonAsync($"http://{_thingServiceAppId}/things", newThing, cts.Token);
+        // /// <summary>
+        // /// Sends petition for creating a new thing.
+        // /// </summary>
+        // /// <param name="newThing">The Json Node of the thing to create.</param>
+        // /// <returns>
+        // /// Returns true if the operation was successfull<br/>
+        // /// Returns false if there was any issue while performing the operation.
+        // /// </returns>
+        // public async Task<bool> CreateThingAsync(JsonNode newThing)
+        // {
+        //     var client = DaprClient.CreateInvokeHttpClient();
+        //     var cts = new CancellationTokenSource();
+        //     var response = await client.PostAsJsonAsync($"http://{_thingServiceAppId}/things", newThing, cts.Token);
 
-            return response.IsSuccessStatusCode;
-            //var json = await response.Content.ReadFromJsonAsync<JsonNode>();
-        }
+        //     return response.IsSuccessStatusCode;
+        //     //var json = await response.Content.ReadFromJsonAsync<JsonNode>();
+        // }
 
         public async Task<bool> CreateThingAsync(string thingId, JsonNode newThing)
         {
-            var client = DaprClient.CreateInvokeHttpClient();
-            var cts = new CancellationTokenSource();
-            var response = await client.PutAsJsonAsync($"http://{_thingServiceAppId}/things/{thingId}", newThing, cts.Token);
+            // var client = DaprClient.CreateInvokeHttpClient();
+            // var cts = new CancellationTokenSource();
+            // var response = await client.PutAsJsonAsync($"http://{_thingServiceAppId}/things/{thingId}", newThing, cts.Token);
         
-            return response.IsSuccessStatusCode;
+            // return response.IsSuccessStatusCode;
+            // var jobId = Guid.NewGuid().ToString();
+            var status = (await _statusManager.GetThingStatus(thingId)).Status;
+            var operationid=Guid.NewGuid().ToString();
+            if(status is not null)
+                await _statusManager.SaveCreatingThingStatus(thingId, operationid);
+            else
+                await _statusManager.SaveUpdatingThingStatus(thingId, operationid);
+            await _daprClient.PublishEventAsync(PubSub.Name, "update-things", data:new JsonObject{["operationId"]=operationid, ["data"] = new JsonArray{newThing}});
+            return true;
+        }
+
+        public async Task<bool> CreateThingsAsync(JsonArray things)
+        {
+            // var client = DaprClient.CreateInvokeHttpClient();
+            // var cts = new CancellationTokenSource();
+            // var response = await client.PutAsJsonAsync($"http://{_thingServiceAppId}/things/{thingId}", newThing, cts.Token);
+        
+            // return response.IsSuccessStatusCode;
+            // var jobId = Guid.NewGuid().ToString();
+            var operationid=Guid.NewGuid().ToString();
+            foreach(var thing in things)
+            {
+                var thingId = thing!.AsObject()["id"]?.GetValue<string>();
+                if(string.IsNullOrWhiteSpace(thingId))
+                    continue;
+                var status = (await _statusManager.GetThingStatus(thingId)).Status;
+                if(status is not null)
+                    await _statusManager.SaveCreatingThingStatus(thingId, operationid);
+                else
+                    await _statusManager.SaveUpdatingThingStatus(thingId, operationid);
+            }
+            
+            await _daprClient.PublishEventAsync(PubSub.Name, PubSub.ThingUpdateTopic, data:new JsonObject{["operationId"]=operationid, ["data"] = things});
+            return true;
         }
 
         /// <summary>
@@ -60,10 +98,17 @@ namespace OpenTwinsV2.Twins.Services
         /// </returns>
         public async Task<bool> DeleteThingAsync(string thingId)
         {
-            var client = DaprClient.CreateInvokeHttpClient();
-            var cts = new CancellationTokenSource();
-            var response = await client.DeleteAsync($"http://{_thingServiceAppId}/things/{thingId}", cts.Token);
-            return response.IsSuccessStatusCode;
+            // var client = DaprClient.CreateInvokeHttpClient();
+            // var cts = new CancellationTokenSource();
+            // var response = await client.DeleteAsync($"http://{_thingServiceAppId}/things/{thingId}", cts.Token);
+            // return response.IsSuccessStatusCode;
+            // var jobId = Guid.NewGuid().ToString();
+            var status = (await _statusManager.GetThingStatus(thingId)).Status;
+            var operationid=Guid.NewGuid().ToString();
+            if(status is not null)
+                await _statusManager.SaveDeletingThingStatus(thingId, operationid);
+            await _daprClient.PublishEventAsync(PubSub.Name, PubSub.ThingDeleteTopic, data:new JsonObject{["operationId"]=operationid, ["data"] = new JsonArray{new JsonObject{["id"]= thingId}}});
+            return true;
         }
 
         /// <summary>

@@ -5,10 +5,11 @@ namespace OpenTwinsV2.Shared.Models
 {
     public interface IThingActor : IActor
     {
-        Task<string> SetThingDescriptionAsync(string data);
+        // Task<string> SetThingDescriptionAsync(string data, string? operationId);
         Task<string?> GetThingDescriptionAsync();
+        Task<string> GetThingStatusAsync();
         Task<string> GetCurrentStateAsync();
-        Task<bool> DeleteThingAsync();
+        // Task<bool> DeleteThingAsync(string? operationId);
         Task OnEventReceived(MyCloudEvent<string> eventRecv);
         Task InvokeAction(string actionName, string parameters);
         Task SendEvent(MyCloudEvent<string> evnt);
@@ -25,11 +26,11 @@ namespace OpenTwinsV2.Shared.Models
         Task<IActorReminder> GetReminder();
         Task RegisterTimer();
         Task UnregisterTimer();
-        Task<string> AddLinkAsync(string v);
-        Task RemoveLinkAsync(string href, string relName);
-        Task<string> UpdateLinkAsync(string targetId, string relName, string newLink);
-        Task<string> AddSubscriptionAsync(string v);
-        Task<string> RemoveSubscriptionAsync(string eventName);
+        // Task<string> AddLinkAsync(string v);
+        // Task RemoveLinkAsync(string href, string relName);
+        // Task<string> UpdateLinkAsync(string targetId, string relName, string newLink);
+        // Task<string> AddSubscriptionAsync(string v);
+        // Task<string> RemoveSubscriptionAsync(string eventName);
     }
 
 }

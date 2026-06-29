@@ -15,6 +15,7 @@ namespace TwinsTest
     using OpenTwinsV2.Shared.Models;
     using OpenTwinsV2.Twins.Builders;
     using VDS.RDF;
+    using Dapr.Actors;
 
     public class TwinsAPIFixture : IAsyncLifetime
     {
@@ -64,6 +65,8 @@ namespace TwinsTest
             await WaitForServiceReadyAsync("http://localhost:5001/health");
             await WaitForServiceReadyAsync("http://localhost:5013/health");
 
+            Environment.SetEnvironmentVariable("DAPR_GRPC_PORT", "52208");
+
             _factory = new WebApplicationFactory<Twins.TestMaker>()
                 .WithWebHostBuilder(builder =>
                 {
@@ -112,7 +115,7 @@ namespace TwinsTest
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"FALLA EN {ex.Message}");
+                Console.WriteLine($"Error: {ex.Message}");
             }
             var graph = (await GetJsonGraph("existingOntologyGraph.json")).GetProperty("@graph").EnumerateArray().Select(t => t.GetProperty("id").GetString());
             foreach(var id in graph)
@@ -145,7 +148,7 @@ namespace TwinsTest
                 ["actions"] = new JsonObject { },
                 ["events"] = new JsonObject { }
             };
-            await ThingsService.CreateThingAsync(payload1);
+            await ThingsService.CreateThingAsync(twinId, payload1);
             // await ThingsClient.PostAsJsonAsync("", payload1);
             var response = await DGraphService.AddThingAsync(ThingBuilder.BuildTwin(twinId));
             //load the sample ontology graph from file
@@ -285,9 +288,22 @@ namespace TwinsTest
                 await ThingsService.GetThingAsync(id);
                 return true;
             }
-            catch (Exception)
+            catch (ActorMethodInvocationException ex)
+            {
+                if(ex.Message.Contains("KeyNotFoundException"))
+                    return false;
+                else if(ex.Message.Contains("InvalidOperationException"))
+                    return true;
+                else
+                    throw;
+            }
+            catch (KeyNotFoundException)
             {
                 return false;
+            }
+            catch (InvalidOperationException)
+            {
+                return true;
             }
         }
 
@@ -402,7 +418,7 @@ namespace TwinsTest
             }else
                 if(!shape)
                     (thingIdOfImported, _,_,_,_,_,_) = GetFirstIdsInOntologyNQuads(nquads);
-            Console.WriteLine($"Ahora mismo el thingId importado es: {thingIdOfImported}");
+            Console.WriteLine($"The thing imported is: {thingIdOfImported}");
             try
             {
                 await DGraphService.AddNQuadTripleAsync(nquads);
@@ -434,7 +450,7 @@ namespace TwinsTest
                 ["actions"] = new JsonObject { },
                 ["events"] = new JsonObject { }
             };
-            await ThingsService.CreateThingAsync(payload1);
+            await ThingsService.CreateThingAsync(twinId, payload1);
             await DGraphService.AddThingAsync(ThingBuilder.BuildTwin(twinId));
         }
 

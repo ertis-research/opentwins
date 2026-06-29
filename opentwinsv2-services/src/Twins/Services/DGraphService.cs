@@ -730,8 +730,23 @@ namespace OpenTwinsV2.Twins.Services
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
-                if(!(root.TryGetProperty("twin", out var twin) && twin.EnumerateArray().FirstOrDefault().TryGetProperty("hasType", out var types) && types.EnumerateArray().Any()))
+                if (!root.TryGetProperty("twin", out var twin) || twin.ValueKind != JsonValueKind.Array)
                     return [];
+
+                // 2. Ensure the twin array is not empty
+                var twinElements = twin.EnumerateArray();
+                if (!twinElements.Any())
+                    return [];
+
+                // 3. Get the first twin safely, then check for "hasType"
+                var firstTwin = twinElements.First();
+                if (!firstTwin.TryGetProperty("hasType", out var types) || types.ValueKind != JsonValueKind.Array)
+                    return [];
+
+                // 4. Ensure the hasType array actually has items
+                if (!types.EnumerateArray().Any())
+                    return [];
+                    
                 return types.EnumerateArray().Select(t => t.GetProperty("thingId").GetString() ?? "").Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
             }
             catch (Exception)
@@ -995,7 +1010,17 @@ namespace OpenTwinsV2.Twins.Services
                         hasEvent {{ uid expand(_all_) }}
                         domains {{ uid expand(_all_) }}
 
-                        ~relatedTo {{  
+                        ~relatedTo @filter(not has(relatedFrom)){{  
+                            uid 
+                            dgraph.type 
+                            Relation.name 
+                            Relation.attributes
+                            relatedTo {{ uid thingId name }}
+                            hasChild {{ uid thingId name }}
+                            hasPart {{ uid thingId name }}
+                        }}
+
+                        ~relatedFrom {{  
                             uid 
                             dgraph.type 
                             Relation.name 
@@ -1158,6 +1183,24 @@ namespace OpenTwinsV2.Twins.Services
                             uri
                         }}
                         relatedTo{{
+                            name
+                            thingId
+                            Thing.prefix{{
+                                namespaceId
+                                prefix
+                                uri
+                            }}
+                        }}
+                        hasChild{{
+                            name
+                            thingId
+                            Thing.prefix{{
+                                namespaceId
+                                prefix
+                                uri
+                            }}
+                        }}
+                        hasPart{{
                             name
                             thingId
                             Thing.prefix{{
@@ -1714,6 +1757,11 @@ namespace OpenTwinsV2.Twins.Services
                         ~hasThing{{
                             ontologyId
                         }}
+                        hasType{{
+                            ~hasThing{{
+                                ontologyId
+                            }}
+                        }}
                     }}
                 }}
             }}";
@@ -1738,6 +1786,10 @@ namespace OpenTwinsV2.Twins.Services
             {
                 if(thing.TryGetProperty("~hasThing", out ontologyId))
                     ontologyIds.Add(ontologyId.GetProperty("ontologyId").ToString());
+                if(thing.TryGetProperty("hasType", out var types))
+                    foreach(var type in types.EnumerateArray())
+                        if(type.TryGetProperty("~hasThing", out ontologyId))
+                            ontologyIds.Add(ontologyId.EnumerateArray().First().GetProperty("ontologyId").ToString());
             }
             return ontologyIds.ToList();
         }
@@ -2058,6 +2110,10 @@ namespace OpenTwinsV2.Twins.Services
 
                 }catch(KeyNotFoundException){
                     return (false, false);
+                }
+                catch (InvalidOperationException)
+                {
+                    return (true, true); //TODO: Change
                 }
 
                 

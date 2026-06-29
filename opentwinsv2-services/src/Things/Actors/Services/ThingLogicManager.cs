@@ -7,107 +7,63 @@ using Dapr.Client;
 using OpenTwinsV2.Things.Logging;
 using OpenTwinsV2.Things.Models;
 using Dapr;
+using OpenTwinsV2.Things.Services;
+using OpenTwinsV2.Shared.Utilities;
+using OpenTwinsV2.Shared.Constants;
 
 namespace OpenTwinsV2.Things.Actors.Services
 {
     internal class ThingLogicManager
     {
-        private readonly ThingDescriptionManager _descManager;
-        private readonly ThingStateManager _stateManager;
-        private readonly DaprClient _daprClient;
+        private readonly DescriptionManagerService _descManager;
+        private readonly ThingDescription? _thingDescription;
+        private readonly Dictionary<string, PropertyState> _currentState;
+        private readonly StateManagerService _stateManager;
+        private readonly StateService _stateService;
+        // private readonly EventsService _eventsService;
+        private readonly StatusManager _statusManager;
         private readonly string _thingId;
 
-        public ThingLogicManager(DaprClient daprClient, string thingId, ThingDescriptionManager descManager, ThingStateManager stateManager)
+        public ThingLogicManager(string thingId, ThingDescription? thingDescription, Dictionary<string, PropertyState> currentState, StateService stateService, StatusManager statusManager, DescriptionManagerService descManager, StateManagerService stateManager)
         {
             _descManager = descManager;
             _stateManager = stateManager;
-            _daprClient = daprClient;
             _thingId = thingId;
-        }
-
-        public async Task<string> SetThingDescriptionAsync(string json)
-        {
-            var td = JsonSerializer.Deserialize<ThingDescription>(json)
-                ?? throw new InvalidOperationException("Invalid ThingDescription");
-
-            await _descManager.SaveAsync(td);
-            await _stateManager.InitializeFromDescription(td.Properties);
-
-            await UpdateSubscribedEvents();
-
-            return "Success";
-        }
-
-        public async Task UpdateSubscribedEvents()
-        {
-            if (_descManager.ThingDescription != null)
-            {
-                var events = GetSubscribedEvents(_descManager.ThingDescription.SubscribedEvents);
-                if (events.Count >= 0)
-                    await SubscribeToEventsAsync(events);
-            }
-        }
-
-        private List<EventSubscription> GetSubscribedEvents(List<SubscribedEvent>? subscribedEvents)
-        {
-            return subscribedEvents?.Select(ev => new EventSubscription(ev.Event, ev.AutoEmitState)).ToList() ?? [];
-        }
-/*
-        private List<EventSubscription> GetSubscribedEvents(List<Link>? links)
-        {
-            if (links is null) return [];
-
-            List<EventSubscription> subscriptions = [];
-
-            foreach (Link link in links)
-            {
-                if (link.Rel != null &&
-                    link.Rel.Equals("subscribeEvent", StringComparison.OrdinalIgnoreCase))
-                {
-                    var segments = link.Href.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-                    if (segments.Length >= 4 && segments[0] == "things" && segments[2] == "events") // MODIFICAR
-                    {
-                        string thingName = segments[1];
-                        string eventName = segments[3];
-                        subscriptions.Add(new EventSubscription($"{thingName}:{eventName}", link.EmitStateOnReceive));
-                    }
-                }
-            }
-            //Console.WriteLine($"[INFO] Thing with ID {Id} is subscribed to: {string.Join(", ", subscriptions)}");
-            return subscriptions;
-        }*/
-
-        private async Task SubscribeToEventsAsync(List<EventSubscription> events)
-        {
-            var client = DaprClient.CreateInvokeHttpClient();
-            var cts = new CancellationTokenSource();
-            var response = await client.PostAsJsonAsync($"http://events-service/events/things/{_thingId}", events, cts.Token);
-            if (response.IsSuccessStatusCode)
-            {
-                ActorLogger.Info(_thingId, $"Successfully subscribed to events.");
-            }
-            else
-            {
-                ActorLogger.Error(_thingId, $"Failed to subscribe to events. StatusCode: {(int)response.StatusCode}, Reason: {response.ReasonPhrase}");
-            }
+            _thingDescription = thingDescription;
+            _stateService = stateService;
+            // _eventsService = eventsService;
+            _statusManager = statusManager;
+            _currentState = currentState;
         }
 
         public async Task<string?> GetThingDescriptionAsync()
         {
-            if (_descManager.ThingDescription == null)
-                await _descManager.LoadAsync();
+            //check thing's availability in state
+            var status = (await _statusManager.GetThingStatus(_thingId)).Status;
+            if(status is null || status == Status.DeleteStatus)
+                return null;
+            else if (status == Status.UpdateStatus || status == Status.CreateStatus)
+                throw new InvalidOperationException();
+            else
+                if (_thingDescription == null)
+                    return (await _descManager.LoadDescriptionAsync(_thingId))?.ToString();
 
-            return _descManager.ThingDescription?.ToString();
+            return _thingDescription?.ToString();
+        }
+
+        public async Task<string> GetThingStatusAsync()
+        {
+            return (await _statusManager.GetThingStatus(_thingId)).Status ?? throw new KeyNotFoundException();
         }
 
         public string GetCurrentState()
         {
-            return JsonSerializer.Serialize(_stateManager.CurrentState);
+            return JsonSerializer.Serialize(_currentState);
         }
 
         private async Task ApplyLogicToDerivedProperties()
         {
-            if (_descManager.ThingDescription?.Properties is null)
+            if (_thingDescription?.Properties is null)
             {
                 ActorLogger.Info(_thingId, "ThingDescription has no derived properties, skipping derived logic.");
                 return;
@@ -115,7 +71,7 @@ namespace OpenTwinsV2.Things.Actors.Services
 
             var updated = new Dictionary<string, PropertyState>();
 
-            foreach (var (propName, propDesc) in _descManager.ThingDescription.Properties)
+            foreach (var (propName, propDesc) in _thingDescription.Properties)
             {
                 if (propDesc is null || propDesc.JsonLogic is null) continue;
 
@@ -125,7 +81,7 @@ namespace OpenTwinsV2.Things.Actors.Services
                     //ActorLogger.Info(_thingId, $"Applying JsonLogic to property '{propName}' with logic: {JsonSerializer.Serialize(logic)}");
 
                     var context = new JsonObject();
-                    foreach (var (key, state) in _stateManager.CurrentState)
+                    foreach (var (key, state) in _currentState)
                     {
                         if (state?.Value is JsonElement je)
                             context[key] = je.AsNode();
@@ -150,7 +106,7 @@ namespace OpenTwinsV2.Things.Actors.Services
 
             if (updated.Count > 0)
             {
-                await _stateManager.UpdateAsync(updated, _descManager.ThingDescription?.Properties);
+                await _stateManager.UpdateStateAsync(_thingId, _currentState, updated, _thingDescription?.Properties);
             }
         }
 
@@ -159,13 +115,13 @@ namespace OpenTwinsV2.Things.Actors.Services
             var eventType = evt.Type ?? "UNKNOWN";
             ActorLogger.Info(_thingId, $"Applying event with type '{eventType}'");
 
-            if (_descManager.ThingDescription?.Rules is null)
+            if (_thingDescription?.Rules is null)
             {
                 ActorLogger.Warn(_thingId, $"No rules defined. Event ignored. Type: {eventType}");
                 return;
             }
 
-            if (_descManager.ThingDescription?.Rules is null) return;
+            if (_thingDescription?.Rules is null) return;
 
             JsonObject info = [];
             info["eventName"] = evt.Type ?? "";
@@ -176,9 +132,9 @@ namespace OpenTwinsV2.Things.Actors.Services
 
             JsonNode context = ComposeState(info, payload);
 
-            foreach (var (name, logic) in _descManager.ThingDescription.Rules)
+            foreach (var (name, logic) in _thingDescription.Rules)
             {
-                var subscribed = _descManager.ThingDescription.SubscribedEvents?.FirstOrDefault(e => e.Event == eventType);
+                var subscribed = _thingDescription.SubscribedEvents?.FirstOrDefault(e => e.Event == eventType);
                 if (subscribed?.Source != null && subscribed.Source.Count > 0 && evt.Source is not null && !subscribed.Source.Contains(evt.Source)) continue;
 
                 ActorLogger.Info(_thingId, $"Evaluating rule '{name}'. EventType: {eventType}");
@@ -201,7 +157,7 @@ namespace OpenTwinsV2.Things.Actors.Services
             var json = info.DeepClone().AsObject();
             if (payload != null) json["payload"] = payload;
 
-            foreach (var (key, val) in _stateManager.CurrentState)
+            foreach (var (key, val) in _currentState)
                 if (val?.Value is JsonElement je)
                     json[key] = je.AsNode();
                 else
@@ -212,10 +168,9 @@ namespace OpenTwinsV2.Things.Actors.Services
 
         private async Task ApplyThenAsync(Then then, JsonNode context)
         {
-            await _stateManager.LoadAsync();
-            Dictionary<string, PropertyState> previousState = [];
+            Dictionary<string, PropertyState> previousState = await _stateManager.LoadStateAsync(_thingId);
             ActorLogger.Info(_thingId, $"PREVIOUS FIRST");
-            foreach(var (k,v) in _stateManager.CurrentState)
+            foreach(var (k,v) in _currentState)
             {
                 ActorLogger.Info(_thingId, $"{k} --> {v}");
                 previousState[k] = new PropertyState(v.Value ?? new JsonElement(), v.LastUpdate);
@@ -227,13 +182,13 @@ namespace OpenTwinsV2.Things.Actors.Services
                 ActorLogger.Info(_thingId, $"Executing UpdateState action.");
                 await HandleUpdateState(then.UpdateState, context);
                 currentState = [];
-                foreach(var (k,v) in _stateManager.CurrentState)
+                foreach(var (k,v) in _currentState)
                 {
                     currentState[k] = new PropertyState(v.Value ?? new JsonElement(), v.LastUpdate);
                 }
             }
             ActorLogger.Info(_thingId, $"PREVIOUS SECOND");
-            foreach(var (k,v) in _stateManager.CurrentState)
+            foreach(var (k,v) in _currentState)
             {
                 ActorLogger.Info(_thingId, $"{k} --> {v}");
                 // previousState[k] = new PropertyState(v.Value ?? new JsonElement(), v.LastUpdate);
@@ -308,7 +263,7 @@ namespace OpenTwinsV2.Things.Actors.Services
                 }
             }
 
-            await _stateManager.UpdateAsync(updated, _descManager.ThingDescription?.Properties);
+            await _stateManager.UpdateStateAsync(_thingId, _currentState, updated, _thingDescription?.Properties);
             await ApplyLogicToDerivedProperties();
             ActorLogger.Info(_thingId, $"Ha terminado de actualizarse");
         }
@@ -322,12 +277,12 @@ namespace OpenTwinsV2.Things.Actors.Services
         private ActionAffordance? IsMyAction(string name, string parameters)
         {
             // Validación básica del evento recibido
-            if (_descManager.ThingDescription?.Actions is null || string.IsNullOrEmpty(name))
+            if (_thingDescription?.Actions is null || string.IsNullOrEmpty(name))
             {
                 return null;
             }
 
-            var exists = _descManager.ThingDescription.Actions.FirstOrDefault(x =>
+            var exists = _thingDescription.Actions.FirstOrDefault(x =>
             {
                 if (x.Key != name) return false;
                 return true;
@@ -356,7 +311,7 @@ namespace OpenTwinsV2.Things.Actors.Services
                         {
                             PropertyNameCaseInsensitive = true
                         });
-                        if (data is not null) await _stateManager.UpdateAsync(data, _descManager.ThingDescription?.Properties);
+                        if (data is not null) await _stateManager.UpdateAsync(data, _thingDescription?.Properties);
                     }
                     catch { }
                     break;
@@ -377,13 +332,9 @@ namespace OpenTwinsV2.Things.Actors.Services
             payload["previousState"] = JsonSerializer.SerializeToNode(previousState);
             payload["currentState"] = JsonSerializer.SerializeToNode(currentState);
 
-            var cloudEvent = new CloudEvent<JsonNode>(payload)
-            {
-                Source = new Uri(_thingId),
-                Type = emitEvent.Event
-            };
+            
             Console.WriteLine(JsonSerializer.Serialize(payload));
-            await _daprClient.PublishEventAsync("kafka-pubsub", "opentwinsv2.events", cloudEvent);
+            await _stateService.PublishEvent(_thingId, emitEvent.Event, payload);
         }
     }
 }

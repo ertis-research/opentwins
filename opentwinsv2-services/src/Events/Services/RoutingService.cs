@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Events.Handlers;
+using OpenTwinsV2.Shared.Constants;
 using OpenTwinsV2.Shared.Models;
 
 namespace Events.Services
@@ -21,7 +22,7 @@ namespace Events.Services
                 }
             }
         */
-        private static readonly string defaultTopic = "opentwinsv2.events";
+        private static readonly string defaultTopic = PubSub.EventsTopic;
         private readonly ILogger<RoutingService> _logger;
         //
         private readonly ConcurrentDictionary<string, List<ActorIdentity>> _events = [];

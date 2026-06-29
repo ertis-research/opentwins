@@ -313,7 +313,9 @@ namespace OpenTwinsV2.Twins.Services
                 ["properties"] = props ?? new JsonObject(),
                 ["actions"] = new JsonObject { },
                 ["events"] = new JsonObject { },
-                ["links"] = links
+                ["links"] = links,
+                ["otv2:rules"] = thing["otv2:rules"]?.DeepClone() ?? new JsonObject(),
+                ["otv2:subscribedEvents"] = thing["otv2:subscribedEvents"]?.DeepClone() ?? new JsonArray()
             };
             return payload;
         }
@@ -327,7 +329,6 @@ namespace OpenTwinsV2.Twins.Services
         {
             var thingId = thing["@type"]?.GetValue<string>();
             var links = GetWOTThingLinks(thing);
-            Console.WriteLine($"este es el link: {links.FirstOrDefault()}");
             var payload = new JsonObject
             {
                 ["@context"] = new JsonArray("https://www.w3.org/2019/wot/td/v1"),
@@ -336,7 +337,9 @@ namespace OpenTwinsV2.Twins.Services
                 ["properties"] = new JsonObject(),
                 ["actions"] = new JsonObject { },
                 ["events"] = new JsonObject { },
-                ["links"] = links
+                ["links"] = links,
+                ["otv2:rules"] = thing["otv2:rules"]?.DeepClone() ?? new JsonObject(),
+                ["otv2:subscribedEvents"] = thing["otv2:subscribedEvents"]?.DeepClone() ?? new JsonArray()
             };
             if(thingId is not null)
                 payload["@type"] = thingId; 
@@ -358,24 +361,23 @@ namespace OpenTwinsV2.Twins.Services
                 foreach(KeyValuePair<string, JsonNode?> property in thingObj)
                     if(property.Value is not null && property.Value is not JsonValue)
                         //it is a relation (if JsonValue is an Attribute)
-                        if(property.Value is JsonObject)
+                        if(property.Value is JsonObject propObj && propObj["@id"] is not null)
                             links.Add(new JsonObject
                             {
-                                ["href"]=property.Value.AsObject()!["@id"]!.GetValue<string>(),
+                                ["href"]=propObj!["@id"]!.GetValue<string>(),
                                 ["rel"] = property.Key
                             });
                         else if(property.Value is JsonArray arr)
                             foreach(var thingNode in arr)
+                                if(thingNode is JsonObject propArrObj && propArrObj["@id"] is not null)
                                 links.Add(new JsonObject
-                                {
-                                    ["href"]=thingNode!.AsObject()!["@id"]!.GetValue<string>(),
-                                    ["rel"] = property.Key
-                                });
-            return links;
-            
+                                    {
+                                        ["href"]=propArrObj!["@id"]!.GetValue<string>(),
+                                        ["rel"] = property.Key
+                                    });
+            return links;            
         }
 
-        //TODO: Make private when legacy method is deleted
         
         /// <summary>
         /// Obtains the default properties of a Thing from an Ontology in Web Of Things format.
@@ -383,7 +385,7 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="ontologyId">The identifier of the Ontology.</param>
         /// <param name="thingId">The identifier of the Thing.</param>
         /// <returns>Returns the properties in Json and Web Of Things format.</returns>
-        public async Task<JsonObject?> GetWOTThingProperties(string ontologyId, string thingId)
+        private async Task<JsonObject?> GetWOTThingProperties(string ontologyId, string thingId)
         {
             var json = await _dgraphService.GetThingAttributesByIdAsync(ontologyId, thingId);
             var res = new JsonObject();
@@ -434,6 +436,7 @@ namespace OpenTwinsV2.Twins.Services
     
         public async Task<string> CreateInstanciationTwin(string twinId)
         {
+            Console.WriteLine("A");
             var payload = new JsonObject
             {
                 ["@context"] = new JsonArray("https://www.w3.org/2019/wot/td/v1"),
@@ -469,19 +472,20 @@ namespace OpenTwinsV2.Twins.Services
             if(!string.IsNullOrWhiteSpace(twinId))
                 twinUid = await CreateInstanciationTwin(twinId);
 
+            JsonArray payload = [];
             foreach(var thing in graph)
             {
                 if(thing is null)
                     continue;
-                var payload = await GetThingPayloadForInstanciation(ontologyId, thing);
+                payload.Add(await GetThingPayloadForInstanciation(ontologyId, thing));
                 var thingId = thing!["@type"]!.GetValue<string>();
                 var id = thing["@id"]!.GetValue<string>();
                 if(!string.IsNullOrWhiteSpace(twinId))
                     await _dgraphService.CreateInstanciatedThingAsync(thingId, id, ontologyId: ontologyId, twinUid: twinUid);
-                var thingsResponse = await _thingsService.CreateThingAsync(id, payload);
-                if(!thingsResponse)
-                    throw new Exception("Things Instanciation failed in Things Service");
             }
+            var thingsResponse = await _thingsService.CreateThingsAsync(payload);
+            if(!thingsResponse)
+                throw new Exception("Things Instanciation failed in Things Service");
         }
 
         /// <summary>
@@ -506,13 +510,13 @@ namespace OpenTwinsV2.Twins.Services
 
                 var id = thing["@id"]!.GetValue<string>();
                 var thingId = thing!["@type"]?.GetValue<string>() ?? "";
-                Console.WriteLine($"Pruebo con thing id {id}");
 
                 if(!await _dgraphService.ExistsThingByIdAsync(id))
                     await _dgraphService.CreateInstanciatedThingAsync(thingId, id, twinUid: twinUid);
                 else //it already exists in dgraph, just create the link
                     await _dgraphService.AddThingToTwinAsync(id, twinId);
             }
+            JsonArray payload = [];
             foreach(var thing in graph)
             {
                 if(thing is null)
@@ -524,12 +528,13 @@ namespace OpenTwinsV2.Twins.Services
                     Console.WriteLine($"The Thing with id {id} already exists, so it will not be updated");
                     continue;
                 }catch(KeyNotFoundException){} //only continues if the Thing does not exist
+                catch(InvalidOperationException){continue;} //This is thrown when it is creating/updating (hence, it already exists)}
 
-                var payload = GetThingPayloadForInstanciation(thing);
-                var thingsResponse = await _thingsService.CreateThingAsync(id, payload);
-                if(!thingsResponse)
-                    throw new Exception("Things Instanciation failed in Things Service");
+                payload.Add(GetThingPayloadForInstanciation(thing));
             }
+            var thingsResponse = await _thingsService.CreateThingsAsync(payload);
+            if(!thingsResponse)
+                throw new Exception("Things Instanciation failed in Things Service");
         }
 
         #region Shape Oriented
@@ -591,7 +596,7 @@ namespace OpenTwinsV2.Twins.Services
             ShapesGraph shapeGraph = new ShapesGraph(shapeRDFgraph) ?? throw new Exception("The Shape Graph obtained is null");
             
             //The twin doesn't exist yet, i have to get the Graph from the JsonLD graph directly
-            IGraph compound = FormatService.GetRDFGraphFromJson(graphObj, twinId, ld: true);
+            IGraph compound = FormatService.GetRDFGraphFromJson(graphObj, twinId, ld: true, twin:true);
             List<string> ontologies = await _dgraphService.GetOntologiesOfTwinAsync(twinId);
             foreach(string ontologyId in ontologies)
             {

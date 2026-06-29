@@ -1110,8 +1110,8 @@ namespace Twins.Services
                 }
             }
 
-            foreach(var asdasdasd in urisDict)
-                Console.WriteLine($"{asdasdasd.Key} --> {asdasdasd.Value}");
+            foreach(var pair in urisDict)
+                Console.WriteLine($"{pair.Key} --> {pair.Value}");
 
             //Iterate through dictionary extracting at the same time NQUADS and Shapes
             NQuadsService.AddNQuadsOntologyTriples(ontologyId, nquads);

@@ -416,6 +416,7 @@ namespace OpenTwinsV2.Twins.Controllers
         /// <response code="500"> Something went wrong while retrieving the dependencies from DGraph or formatting them.</response>
         [HttpGet("{ontologyId}/things/{thingId}/relations/dependencies")]
         [Produces("application/json")]
+        [ApiExplorerSettings(IgnoreApi = true)]
         [ProducesResponseType(typeof(ThingDependency), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
@@ -470,7 +471,7 @@ namespace OpenTwinsV2.Twins.Controllers
             catch (KeyNotFoundException)
             {
                 conflict = false;
-            }
+            }catch(InvalidOperationException){}
 
             if (!conflict) // Check if the id is already on use in thingsService 
             {
@@ -623,7 +624,6 @@ namespace OpenTwinsV2.Twins.Controllers
         [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> InstanciateSubGraphOfOntology(string ontologyId, [FromBody] JsonElement subgraph)
         {
-            Console.WriteLine($"JSON : {subgraph}");
             if(string.IsNullOrWhiteSpace(ontologyId))
                 return BadRequest("The Ontology id provided is either null or empty");
             
@@ -846,6 +846,7 @@ namespace OpenTwinsV2.Twins.Controllers
         }
 
         [HttpGet("{ontologyId}/shapeGraph")]
+        [ApiExplorerSettings(IgnoreApi = true)]
         public async Task<IActionResult> GetShapeGraph(string ontologyId)
         {
             return Ok(await _exportService.BuildShapeGraphFromOntology(ontologyId));

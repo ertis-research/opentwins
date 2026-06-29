@@ -9,8 +9,8 @@ using OpenTwinsV2.Things.Services;
 using OpenTwinsV2.Things.Models;
 using Json.More;
 using System.Text.Json.Nodes;
-using System.Reflection.Metadata;
 using System.Net;
+using Dapr;
 
 [ApiController]
 [Route("things")]
@@ -20,12 +20,16 @@ public class ThingsController : ControllerBase
     private readonly IActorProxyFactory _actorProxyFactory;
     private readonly ILogger<ThingsController> _logger;
     private readonly ThingsQueryService _thingsQueryService; // <--- Nuevo servicio
+    private readonly StatusManager _statusManager;
+    private readonly ThingsManagerService _thingsManager;
 
-    public ThingsController(IActorProxyFactory actorProxyFactory, ThingsQueryService thingsQueryService, ILogger<ThingsController> logger)
+    public ThingsController(IActorProxyFactory actorProxyFactory, ThingsQueryService thingsQueryService, StatusManager statusManager, ThingsManagerService thingsManager, ILogger<ThingsController> logger)
     {
         _actorProxyFactory = actorProxyFactory;
         _thingsQueryService = thingsQueryService;
         _logger = logger;
+        _statusManager = statusManager;
+        _thingsManager = thingsManager;
     }
 
     [HttpGet("")]
@@ -105,17 +109,22 @@ public class ThingsController : ControllerBase
             return BadRequest("Invalid JSON format.");
         }
 
-        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(id), ActorType);
+        //TODO: REMOVE
+        // IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(id), ActorType);
 
         string td;
         try
         {
-            td = await actor.SetThingDescriptionAsync(rawJson);
+            // td = await actor.SetThingDescriptionAsync(rawJson, null);
+            td = await _thingsManager.SaveThing(id, rawJson);
         }
         catch (ActorMethodInvocationException ex)
         {
             if (ex.Message.Contains("InvalidOperationException"))
                 return BadRequest(ex.Message);
+
+            if (ex.Message.Contains("KeyNotFoundException"))
+                return NotFound(ex.Message);
 
             return StatusCode(500, $"Internal error: {ex.Message}");
         }
@@ -164,17 +173,22 @@ public class ThingsController : ControllerBase
 
         if (id != thingId) return Conflict("The 'id' in ThingDescription does not match the 'thingId' in the URL.");
 
-        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(id), ActorType);
+        //TODO: REMOVE
+        // IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(id), ActorType);
 
         string td;
         try
         {
-            td = await actor.SetThingDescriptionAsync(rawJson);
+            // td = await actor.SetThingDescriptionAsync(rawJson, null);
+            td = await _thingsManager.SaveThing(thingId, rawJson);
         }
         catch (ActorMethodInvocationException ex)
         {
             if (ex.Message.Contains("InvalidOperationException"))
                 return BadRequest(ex.Message);
+
+            if (ex.Message.Contains("KeyNotFoundException"))
+                return NotFound(ex.Message);
 
             return StatusCode(500, $"Internal error: {ex.Message}");
         }
@@ -182,10 +196,36 @@ public class ThingsController : ControllerBase
         return Ok(td);
     }
 
+    [HttpPost("internal/create")]
+    [Topic(PubSub.Name, PubSub.ThingUpdateTopic)]
+    [ApiExplorerSettings(IgnoreApi =true)]
+    public async Task<IActionResult> CreateThingsFromTopic([FromBody] JsonElement payload)
+    {
+        var data = payload.GetProperty("data");
+        if (!data.TryGetProperty("operationId", out var operationId))
+            return BadRequest("Missing operation ID");
+        
+        return await CreateThings(data.GetProperty("data"), operationId.GetString());
+    }
+
+    [HttpPost("internal/delete")]
+    [Topic(PubSub.Name, PubSub.ThingDeleteTopic)]
+    [ApiExplorerSettings(IgnoreApi =true)]
+    public async Task<IActionResult> DeleteThingsFromTopic([FromBody] JsonElement payload)
+    {
+        var data = payload.GetProperty("data");
+        if (!data.TryGetProperty("operationId", out var operationId))
+            return BadRequest("Missing operation ID");
+
+        return await DeleteThings(data.GetProperty("data"), operationId.GetString());
+    }
+
+
     /// <summary>
     /// Creates or updates the Things using the provided Thing Descriptions JSONs.
     /// </summary>
     /// <param name="graph">A JSON array containing the Thing Descriptions objects.</param>
+    /// <param name="operationid">OPTIONAL. The operation id that requested it.</param>
     /// <returns>
     /// Returns 207 MultiStatus with the created or updated Thing Description or error messages.<br/>
     /// Returns 400 Bad Request if the JSON is invalid or missing required fields.<br/>
@@ -195,7 +235,7 @@ public class ThingsController : ControllerBase
     [ProducesResponseType(typeof(JsonElement), StatusCodes.Status207MultiStatus)]
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(string), StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> CreateThings([FromBody] JsonElement graph)
+    public async Task<IActionResult> CreateThings([FromBody] JsonElement graph, string? operationid=null)
     {
         if(graph.AsNode() is not JsonArray)
             return BadRequest("JSON is not an Array");
@@ -203,6 +243,7 @@ public class ThingsController : ControllerBase
         var responses = new List<dynamic>();
 
         var list = graph.EnumerateArray().ToList();
+        // var options = new ParallelOptions { MaxDegreeOfParallelism = 150 };
 
         foreach(var thing in list)
         {
@@ -232,45 +273,36 @@ public class ThingsController : ControllerBase
                 });
                 continue;
             }
-
-            IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(id), ActorType);
-
-            string td;
-            try
-            {
-                td = await actor.SetThingDescriptionAsync(rawJson);
-            }
-            catch (ActorMethodInvocationException ex)
-            {
-                if (ex.Message.Contains("InvalidOperationException"))
-                    responses.Add(new
-                    {
-                        Id = id,
-                        Status = HttpStatusCode.BadRequest,
-                        Message = ex.Message
-                    });
-                else
-                    responses.Add(new
-                    {
-                        Id = id,
-                        Status = HttpStatusCode.InternalServerError,
-                        Message = $"Internal error: {ex.Message}"
-                    });
-
-                continue;
-            }
             responses.Add(new
             {
                 Id = id,
-                Status = HttpStatusCode.OK,
-                Message = td
+                Status = HttpStatusCode.Accepted,
+                Message = rawJson
             });
+        };
+
+        try
+        {
+            await _thingsQueryService.SaveInBulkToPostgreSqlAsync(list.Select(tdesc => JsonSerializer.Deserialize<ThingDescription>(tdesc)
+                ?? throw new InvalidOperationException("Invalid ThingDescription")));
+            
+            foreach(var thing in list)
+                await _statusManager.SaveOkThingStatus(thing.GetProperty("id").GetString()!);
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error processing bulk: {ex.Message}");
+            if(list.Count==1)
+                return StatusCode(500, responses.FirstOrDefault() ?? ex.Message);
+            else
+                return StatusCode(207, responses.Select(resp => resp.Status == HttpStatusCode.Accepted ? new {resp.Id, Status = HttpStatusCode.InternalServerError, resp.Message} : resp));
+        }
+       
 
         if(responses.Count == 1)
         {
             var resp = responses.First();
-            if(resp.Status == HttpStatusCode.OK)
+            if(resp.Status == HttpStatusCode.Accepted)
                 return Ok(resp);
             else if(resp.Status == HttpStatusCode.BadRequest)
                 return BadRequest(resp);
@@ -313,6 +345,25 @@ public class ThingsController : ControllerBase
 
     }
 
+    [HttpGet("{thingId}/status")]
+    public async Task<IActionResult> GetThingStatus(string thingId)
+    {
+        try
+        {
+            IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+            return Ok(await actor.GetThingStatusAsync());
+        }catch (ActorMethodInvocationException ex)
+        {
+            if (ex.Message.Contains("InvalidOperationException"))
+                return StatusCode(500, $"Error retrieving ThingDescription: {ex.Message}");
+
+            if (ex.Message.Contains("KeyNotFoundException"))
+                return NotFound($"Thing with ID '{thingId}' was not found.");
+
+            return StatusCode(500, $"Internal error: {ex.Message}");
+        }
+    }
+
     /// <summary>
     /// Deletes a Thing by its identifier.
     /// </summary>
@@ -335,7 +386,8 @@ public class ThingsController : ControllerBase
         {
             IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
 
-            bool isDeleted = await actor.DeleteThingAsync();
+            // bool isDeleted = await actor.DeleteThingAsync(null);
+            bool isDeleted = await _thingsManager.DeleteThingAsync(thingId);
 
             if (!isDeleted)
             {
@@ -355,7 +407,7 @@ public class ThingsController : ControllerBase
     [ProducesResponseType(typeof(JsonElement), StatusCodes.Status207MultiStatus)]
     [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> DeleteThings([FromBody] JsonElement graph)
+    public async Task<IActionResult> DeleteThings([FromBody] JsonElement graph, string? operationid=null)
     {
         if(graph.AsNode() is not JsonArray)
             return BadRequest("JSON is not an Array");
@@ -363,72 +415,36 @@ public class ThingsController : ControllerBase
         var responses = new List<dynamic>();
 
         var list = graph.EnumerateArray().ToList();
+        // var options = new ParallelOptions { MaxDegreeOfParallelism = 150 };
+        var idList = new List<string>();
 
+        // await _globalSemaphore.WaitAsync();
         foreach(var thing in list)
-        {
-            string? thingId;
-            try{
-                thingId = thing.TryGetProperty("@id", out var id1) ? id1.GetString() : thing.TryGetProperty("id", out var id2) ? id2.GetString() : thing.TryGetProperty("thingId", out var id3) ? id3.GetString() : throw new ArgumentException("The 'thingId' cannot be null or empty.");
-            }
-            catch(ArgumentException ex)
-            {
-                responses.Add(new
-                {
-                    Id = $"Thing in position {list.IndexOf(thing)}",
-                    Status = HttpStatusCode.BadRequest,
-                    Message = ex.Message
-                });
-                continue;
-            }
-            thingId ??= "";
-            try
-            {
-                IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
-
-                bool isDeleted = await actor.DeleteThingAsync();
-
-                if (!isDeleted)
+                try{
+                    idList.Add((thing.TryGetProperty("@id", out var id1) ? id1.GetString() : thing.TryGetProperty("id", out var id2) ? id2.GetString() : thing.TryGetProperty("thingId", out var id3) ? id3.GetString() : throw new ArgumentException("The 'thingId' cannot be null or empty.")) ?? "");
+                }
+                catch(ArgumentException ex)
                 {
                     responses.Add(new
                     {
-                        Id = thingId,
-                        Status = HttpStatusCode.NotFound,
-                        Message = $"Thing with ID '{thingId}' not found."
+                        Id = $"Thing in position {list.IndexOf(thing)}",
+                        Status = HttpStatusCode.BadRequest,
+                        ex.Message
                     });
                     continue;
                 }
 
-                responses.Add(new
-                {
-                    Id = thingId,
-                    Status = HttpStatusCode.NoContent,
-                }); // 204 No Content si la eliminación es exitosa.
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to delete Thing with ID '{ThingId}'", thingId);
-                responses.Add(new
-                {
-                    Id = thingId,
-                    Status = HttpStatusCode.InternalServerError,
-                    Message = "Internal server error while deleting the Thing."
-                });
-            }
-        }
-
-        if(responses.Count == 1)
+        try
         {
-            var resp = responses.First();
-            if(resp.Status == HttpStatusCode.NoContent)
-                return NoContent();
-            else if(resp.Status == HttpStatusCode.BadRequest)
-                return BadRequest(resp);
-            else if(resp.Status == HttpStatusCode.NotFound)
-                return NotFound(resp);
-            else
-                return StatusCode(500, resp);
-        }else
-            return StatusCode(207, responses);
+            await _thingsQueryService.DeleteInBulkFromPostgreSqlAsync(idList);
+            foreach(var thing in idList)
+                await _statusManager.DeleteThingStatus(thing);
+        }catch(Exception ex)
+        {
+            return StatusCode(500, $"Internal server error while deleting the Thing: {ex.Message}");
+        }
+        
+        return Accepted();
     }
 
     /// <summary>
@@ -513,7 +529,7 @@ public class ThingsController : ControllerBase
     /// Adds a new link to the specified Thing.
     /// </summary>
     /// <param name="thingId">The identifier of the Thing.</param>
-    /// <param name="link">A JSON object containing the link to add.</param>
+    /// <param name="links">A JSON object containing the links to add.</param>
     /// <returns>
     /// Returns 200 OK with the updated Thing Description.<br/>
     /// Returns 400 Bad Request if the link is invalid.<br/>
@@ -524,16 +540,16 @@ public class ThingsController : ControllerBase
     [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> AddLink(string thingId, [FromBody] JsonElement link)
+    public async Task<IActionResult> AddLink(string thingId, [FromBody] JsonElement links)
     {
-        if (link.ValueKind == JsonValueKind.Undefined || link.ValueKind == JsonValueKind.Null)
+        if (links.ValueKind == JsonValueKind.Undefined || links.ValueKind == JsonValueKind.Null)
             return BadRequest("The link cannot be null or undefined.");
 
-        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+        // IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
 
         try
         {
-            string updatedTd = await actor.AddLinkAsync(link.GetRawText());
+            string updatedTd = await _thingsManager.AddLinkAsync(thingId, links.GetRawText());
             return Content(updatedTd, "application/td+json");
         }
         catch (ActorMethodInvocationException ex)
@@ -570,11 +586,11 @@ public class ThingsController : ControllerBase
         if (link.ValueKind == JsonValueKind.Undefined || link.ValueKind == JsonValueKind.Null)
             return BadRequest("The link cannot be null or undefined.");
 
-        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+        // IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
 
         try
         {
-            string updatedTd = await actor.UpdateLinkAsync(href, rel, link.GetRawText());
+            string updatedTd = await _thingsManager.UpdateLinkAsync(thingId, href, rel, link.GetRawText());
             return Content(updatedTd, "application/td+json");
         }
         catch (ActorMethodInvocationException ex)
@@ -608,11 +624,11 @@ public class ThingsController : ControllerBase
         if (string.IsNullOrWhiteSpace(href))
             return BadRequest("Target cannot be null or undefined.");
 
-        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+        // IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
 
         try
         {
-            await actor.RemoveLinkAsync(href, rel);
+            await _thingsManager.RemoveLinkAsync(thingId, href, rel);
             return NoContent();
         }
         catch (ActorMethodInvocationException ex)
@@ -647,11 +663,11 @@ public class ThingsController : ControllerBase
         if (subscription.ValueKind == JsonValueKind.Undefined || subscription.ValueKind == JsonValueKind.Null)
             return BadRequest("The subscription cannot be null or undefined.");
 
-        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+        // IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
 
         try
         {
-            string updatedTd = await actor.AddSubscriptionAsync(subscription.GetRawText());
+            string updatedTd = await _thingsManager.AddSubscriptionAsync(thingId, subscription.GetRawText());
             return Content(updatedTd, "application/td+json");
         }
         catch (ActorMethodInvocationException ex)
@@ -683,11 +699,11 @@ public class ThingsController : ControllerBase
         if (string.IsNullOrWhiteSpace(subscriptionId))
             return BadRequest("The 'subscriptionId' parameter cannot be empty.");
 
-        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+        // IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
 
         try
         {
-            await actor.RemoveSubscriptionAsync(subscriptionId);
+            await _thingsManager.RemoveSubscriptionAsync(thingId, subscriptionId);
             return NoContent();
         }
         catch (ActorMethodInvocationException ex)

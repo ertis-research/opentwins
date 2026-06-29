@@ -42,6 +42,8 @@ spec:
   metadata:
     - name: redisHost
       value: opentwinsv2-redis-master.opentwinsv2.svc.cluster.local:6379
+    - name: keyPrefix
+      value: "none" 
 
 ---
 

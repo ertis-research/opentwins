@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using OpenTwinsV2.Shared.Models;
+using VDS.RDF;
 
 namespace OpenTwinsV2.Twins.Builders
 {
@@ -132,10 +133,9 @@ namespace OpenTwinsV2.Twins.Builders
 
         public static JsonObject BuildRelation(Link link, string targetUid, string sourceUid = "_:source", int relCounter = 1, bool bidir=true)
         {
-            if (link.Rel == null) return [];
-
+            if (link.Rel == null) return [];            
             var relNode = BuildRelationNode(link.Rel);
-            relNode["uid"] = $"_:rel{relCounter}";
+            relNode["uid"] = $"_:rel{relCounter}"; //TODO: Recieve an uid, and if it's null, build a relative one (the current flow)
 
             string edgeName = MapRelToEdge(link.Rel);
 
@@ -164,15 +164,17 @@ namespace OpenTwinsV2.Twins.Builders
         public static JsonArray BuildPayloadWithLinks(
             ThingDescription td,
             string twinUid,
-            Dictionary<string, string> uidTargets)
+            Dictionary<string, string> uidTargets,
+            string? uid = null)
         {
             // 1. Source Thing
             var sourceThing = MapToThing(td);
-            sourceThing["uid"] = "_:source";
+            sourceThing["uid"] = uid ?? "_:source";
             sourceThing = AddTwinToThing(sourceThing, twinUid);
 
             var payload = new JsonArray { sourceThing };
 
+            Console.WriteLine($"TD: {td}");
             if (td.Links == null || td.Links.Count == 0)
                 return payload;
 
@@ -181,8 +183,9 @@ namespace OpenTwinsV2.Twins.Builders
 
             foreach (var link in td.Links)
             {
-                if (link.Rel == null || !link.Rel.Contains("otv2:")) continue;
-
+                Console.WriteLine($"link: {link.Rel.ToSafeString()}");
+                if (link.Rel == null) continue;
+                Console.WriteLine("No me salgo");
                 relCounter++;
                 var source = link.Href.ToString();
                 string targetUid;
@@ -192,6 +195,7 @@ namespace OpenTwinsV2.Twins.Builders
                 }
                 else
                 {
+                    Console.WriteLine($"PLACEHOLDER ID: {link.Href}");
                     targetCounter++;
                     string blankTarget = $"_:t{targetCounter}";
                     var placeholder = BuildPlaceholderThing(source);
@@ -199,8 +203,11 @@ namespace OpenTwinsV2.Twins.Builders
                     payload.Add(placeholder);
                     targetUid = blankTarget;
                 }
+                Console.WriteLine($"TARGET ADDED: {targetUid}");
 
-                payload.Add(BuildRelation(link, targetUid, relCounter: relCounter));
+                var relation = BuildRelation(link, targetUid, relCounter: relCounter, bidir: false);
+                Console.WriteLine($"RELATION ADDED: {relation}");
+                payload.Add(relation);
             }
 
             return payload;

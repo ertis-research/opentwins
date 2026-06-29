@@ -260,7 +260,6 @@ namespace Twins.Builders
             JsonNode actualVal = obj;
             if(!relations)
             {
-                Console.WriteLine("Case 1");
                 (var type, var pattern) = GetBasicAttributeConstraint(FormatService.GetXsdType(obj!.AsValue()!.ToString()!));
                 actualVal = new JsonArray { type, pattern };
             }else
@@ -268,7 +267,6 @@ namespace Twins.Builders
 
             if(!xoneIndex.TryGetValue((thingId, newKey), out var classObj) || classObj is null)
             {
-                Console.WriteLine("Case 2");
                 classObj = GetNewInnerBasicConstraint(thingId, newKey);
                 xoneArray.Add(classObj);
                 xoneIndex[(thingId, newKey)] = classObj;
@@ -287,12 +285,10 @@ namespace Twins.Builders
                     propNode["sh:class"] = null;
                     propNode.AsObject().Remove("sh:class");
                 }
-                Console.WriteLine($"ActualVal {actualVal} is array {(actualVal is JsonArray ? "yes" : "no")}");
                 foreach(var node in actualVal is JsonArray array ? array! : Enumerable.Repeat(actualVal, 1))
                     orVal.Add(new JsonObject{["sh:class"]=node!.DeepClone()});
 
                 propNode["sh:or"] = orVal;
-                Console.WriteLine($"Case 3: {propNode}");
             }else if(propNode["sh:or"] is JsonArray orArr)
                 foreach(var node in actualVal is JsonArray arrayVal ? arrayVal! : Enumerable.Repeat(actualVal, 1))
                     orArr.Add(new JsonObject{["sh:class"]=node!.DeepClone()});

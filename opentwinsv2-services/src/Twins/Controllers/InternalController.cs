@@ -1,3 +1,4 @@
+using System.Data.SqlTypes;
 using System.Text.Json;
 using Dapr;
 using Microsoft.AspNetCore.Mvc;
@@ -38,7 +39,7 @@ namespace Twins.Controllers
             try
             {
                 await _dgraphService.DeleteThingAsync(thingId);
-                _logger.LogInformation("Add link event processed successfully.");
+                _logger.LogInformation("Delete thing event processed successfully.");
                 return Ok();
             }
             catch (KeyNotFoundException)
@@ -55,21 +56,26 @@ namespace Twins.Controllers
 
         [HttpPost("things/{thingId}/links")]
         [ApiExplorerSettings(IgnoreApi = true)]
-        public async Task<IActionResult> HandleAddLinkDapr(string thingId, [FromBody] string jlink)
+        public async Task<IActionResult> HandleAddLinksDapr(string thingId, [FromBody] string jlink)
         {
-            _logger.LogInformation("Received a new add link event from Dapr.");
-            var link = JsonSerializer.Deserialize<Link>(jlink);
-
-            if (string.IsNullOrEmpty(thingId) || link == null)
+            _logger.LogInformation("Received a new bulk add link event from Dapr.");
+            if (string.IsNullOrEmpty(thingId))
             {
-                _logger.LogWarning("Event discarded: missing source or link data.");
+                _logger.LogWarning("Event discarded: missing source data.");
                 return Ok();
             }
-
-            _logger.LogDebug("Processing Link from {Source}: {Link}", thingId, JsonSerializer.Serialize(link));
-            await _handler.HandleAddLinkAsync(thingId, link);
-            _logger.LogInformation("Add link event processed successfully.");
-
+            var linkList = JsonSerializer.Deserialize<List<Link>>(jlink) ?? [];
+            foreach(var link in linkList)
+            {
+                if (link == null)
+                    _logger.LogWarning("Event discarded: missing  link data.");
+                else
+                {
+                    _logger.LogDebug("Processing Link from {Source}: {Link}", thingId, JsonSerializer.Serialize(link));
+                    await _handler.HandleAddLinkAsync(thingId, link);
+                    _logger.LogInformation("Add link event processed successfully.");
+                }
+            }
             return Ok();
         }
 
@@ -92,6 +98,34 @@ namespace Twins.Controllers
 
             return Ok();
         }
+
+        [HttpPut("things/{thingId}/links")]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public async Task<IActionResult> HandleUpdateLinksDapr(string thingId, [FromBody] string jlink)
+        {
+            _logger.LogInformation("Received a new bulk add link event from Dapr.");
+            if (string.IsNullOrEmpty(thingId))
+            {
+                _logger.LogWarning("Event discarded: missing source data.");
+                return Ok();
+            }
+            var linkList = JsonSerializer.Deserialize<List<Link>>(jlink) ?? [];
+            foreach(var link in linkList)
+            {
+                if(link is null)
+                    _logger.LogWarning("Event discarded: missing link data.");
+                else if(string.IsNullOrWhiteSpace(link.Rel))
+                    _logger.LogWarning("Event discarded: missing relation data.");
+                else if(string.IsNullOrWhiteSpace(link.Href?.ToString() ?? ""))
+                    _logger.LogWarning("Event discarded: missing target data.");
+                else{
+                    _logger.LogDebug("Processing Link from {thingId}: {Link}", thingId, JsonSerializer.Serialize(link));
+                    await _handler.HandleUpdateLinkAsync(thingId, link!.Href!.ToString(), link!.Rel!, link);
+                    _logger.LogInformation("Update link event processed successfully.");
+                }
+            }
+            return Ok();
+        }
         
         [HttpDelete("things/{thingId}/links/{relName}/{*target}")]
         [ApiExplorerSettings(IgnoreApi = true)]
@@ -108,6 +142,36 @@ namespace Twins.Controllers
             _logger.LogDebug("Processing Link from {thingId} to {Target}", thingId, target);
             await _handler.HandleDeleteLinkAsync(thingId, target, relName);
             _logger.LogInformation("Delete link event processed successfully.");
+
+            return Ok();
+        }
+
+        [HttpDelete("things/{thingId}/links")]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public async Task<IActionResult> HandleDeleteLinksDapr(string thingId, [FromBody] string jlink)
+        {
+            _logger.LogInformation("Received a new delete link event from Dapr.");
+            if (string.IsNullOrEmpty(thingId))
+            {
+                _logger.LogWarning("Event discarded: missing source data.");
+                return Ok();
+            }
+            var linkList = JsonSerializer.Deserialize<List<Link>>(jlink) ?? [];
+            foreach(var link in linkList)
+            {
+                if(link is null)
+                    _logger.LogWarning("Event discarded: missing link data.");
+                else if(string.IsNullOrWhiteSpace(link.Rel))
+                    _logger.LogWarning("Event discarded: missing relation data.");
+                else if(string.IsNullOrWhiteSpace(link.Href?.ToString() ?? ""))
+                    _logger.LogWarning("Event discarded: missing target data.");
+                else
+                {
+                    _logger.LogDebug("Processing Link from {thingId} to {Target}", thingId, link.Href);
+                    await _handler.HandleDeleteLinkAsync(thingId, link.Href!.ToString(), link.Rel);
+                    _logger.LogInformation("Delete link event processed successfully.");
+                }
+            }
 
             return Ok();
         }

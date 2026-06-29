@@ -109,12 +109,6 @@ namespace Twins.Models
             }
         }
 
-        public record NQuad(
-            string Subject,
-            string Predicate,
-            string Object
-        );
-
         public string Prefix = prefix;
         public string Name = name;
         public bool IsType = isType;
@@ -123,7 +117,6 @@ namespace Twins.Models
         public HashSet<(string Prefix, string Name)> Range = [];
         public Dictionary<(string Prefix, string Name), Relation> Relations = [];
         public Dictionary<(string Prefix, string Name), Constraint> Constraints = [];
-        public HashSet<NQuad> NQuads = [];
 
         public void AddRelation(string prefixPredicate, string predicate, string prefixType, string type, string? prefixObj = null, string? obj = null, bool isBid = false)
         {
@@ -173,17 +166,6 @@ namespace Twins.Models
         public void AddRangeUri((string uriPrefix, string uriName) uri)
         {
             Range.Add(uri);
-        }
-
-        public void AddNQuad(NQuad nq)
-        {
-            NQuads.Add(nq);
-        }
-
-        public void AddNQuads(IEnumerable<NQuad> nqs)
-        {
-            foreach(var nq in nqs)
-                AddNQuad(nq);
         }
 
         public void IsAClass()

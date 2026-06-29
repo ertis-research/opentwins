@@ -2,13 +2,24 @@
 
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using OpenTwinsV2.Shared.Utilities;
 using OpenTwinsV2.Things.Actors;
 using OpenTwinsV2.Things.Infrastructure.Database;
 using OpenTwinsV2.Things.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+
+builder.Services.AddDaprClient();
+
 builder.Services.AddScoped<ThingsQueryService>();
+builder.Services.AddScoped<TwinsService>();
+builder.Services.AddScoped<EventsService>();
+builder.Services.AddScoped<StateService>();
+builder.Services.AddScoped<StatusManager>();
+builder.Services.AddScoped<ThingsManagerService>();
+builder.Services.AddScoped<DescriptionManagerService>();
+builder.Services.AddScoped<StateManagerService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -61,6 +72,8 @@ app.MapGet("/health", () => Results.Ok("Actor service is running"));
 app.MapActorsHandlers();
 
 app.MapControllers();
+
+app.MapSubscribeHandler();
 
 app.Run();
 

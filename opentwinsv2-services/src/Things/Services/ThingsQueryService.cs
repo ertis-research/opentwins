@@ -1,7 +1,10 @@
+using System.Data;
 using System.Text.Json;
 using Npgsql;
+using NpgsqlTypes;
 using OpenTwinsV2.Shared.Models;
 using OpenTwinsV2.Things.Infrastructure.Database;
+using OpenTwinsV2.Things.Logging;
 using OpenTwinsV2.Things.Models;
 
 namespace OpenTwinsV2.Things.Services
@@ -9,10 +12,16 @@ namespace OpenTwinsV2.Things.Services
     public class ThingsQueryService
     {
         private readonly IDbConnectionFactory _connectionFactory;
+        private readonly TwinsService _twinsService;
+        private readonly EventsService _eventsService;
+        private readonly StateService _stateService;
 
-        public ThingsQueryService(IDbConnectionFactory connectionFactory)
+        public ThingsQueryService(IDbConnectionFactory connectionFactory, TwinsService twinsService, EventsService eventsService, StateService stateService)
         {
             _connectionFactory = connectionFactory;
+            _twinsService = twinsService;
+            _eventsService = eventsService;
+            _stateService = stateService;
         }
 
         public async Task<PagedResult<ThingDescription>> GetAllThingsAsync(int page, int pageSize, string? searchTerm)
@@ -119,6 +128,153 @@ namespace OpenTwinsV2.Things.Services
 
             var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
             return new PagedResult<ThingSummary>(result, totalCount, page, pageSize, totalPages);
+        }
+
+        public async Task<ThingDescription?> LoadFromPostgreSqlAsync(string id)
+        {
+            await using var connection = await _connectionFactory.CreateConnection();
+
+            var cmd = new NpgsqlCommand(
+                "SELECT td FROM thing_descriptions WHERE thingId = @ThingId;",
+                connection);
+            cmd.Parameters.Add(new NpgsqlParameter("@ThingId", DbType.String) { Value = id });
+
+            await using var reader = await cmd.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                var json = reader.GetString(0);
+                var td = JsonSerializer.Deserialize<ThingDescription>(json);
+                ActorLogger.Info(id, "Thing Description loaded from PostgreSQL.");
+                return td;
+            }
+
+            ActorLogger.Info(id, $"No ThingDescription found in PostgreSQL for {id}.");
+            return null;
+        }
+
+        public async Task SaveToPostgreSqlAsync(ThingDescription td)
+        {
+            await using var connection = await _connectionFactory.CreateConnection();
+
+            var cmd = new NpgsqlCommand(
+                    @"INSERT INTO thing_descriptions (thingId, td)
+                    VALUES (@ThingId, @NewTd)
+                    ON CONFLICT (thingId) DO UPDATE SET td = @NewTd;",
+                connection);
+
+            cmd.Parameters.Add(new NpgsqlParameter("@ThingId", DbType.String) { Value = td.Id });
+            cmd.Parameters.Add(new NpgsqlParameter("@NewTd", NpgsqlDbType.Jsonb) { Value = td.ToString() });
+
+            int affected = await cmd.ExecuteNonQueryAsync();
+            if (affected == 0) ActorLogger.Warn(td.Id!, $"No row affected for ThingId {td.Id}");
+
+            ActorLogger.Info(td.Id!, "Thing Description saved in PostgreSQL.");
+        }
+
+        public async Task DeleteFromPostgreSqlAsync(string id)
+        {
+            await using var connection = await _connectionFactory.CreateConnection();
+            var cmd = new NpgsqlCommand(
+                "DELETE FROM thing_descriptions WHERE thingId = @ThingId;",
+                connection);
+            cmd.Parameters.Add(new NpgsqlParameter("@ThingId", DbType.String) { Value = id });
+
+            int affectedRows = await cmd.ExecuteNonQueryAsync();
+            if (affectedRows == 0)
+            {
+                ActorLogger.Warn(id, $"No ThingDescription found to delete for ThingId {id}.");
+            }
+            else
+            {
+                ActorLogger.Info(id, "Thing Description deleted from PostgreSQL.");
+            }
+        }
+
+        //bulk insertion instruction --> only one connection and bypassing the actors
+
+        public async Task SaveInBulkToPostgreSqlAsync(IEnumerable<ThingDescription> tds)
+        {
+            await using var connection = await _connectionFactory.CreateConnection();
+            
+            var tasks = tds.Select(async td => (
+                Previous: await _stateService.LoadThingDescriptionBulkState(td.Id!), 
+                New: td));
+
+            var tdPairs = (await Task.WhenAll(tasks))
+                .Where(pair => pair.Previous.Count > 0 && !string.IsNullOrWhiteSpace(pair.Previous[0].Value))
+                .Select(pair => (Previous: (pair.Previous.Count > 0 && !string.IsNullOrWhiteSpace(pair.Previous[0].Value)) ? JsonSerializer.Deserialize<ThingDescription>(pair.Previous[0].Value) : null, pair.New));
+
+            var idsArray = tds.Select(x => x.Id).ToArray(); 
+            var tdsArray = tds.Select(x => x.ToString()).ToArray();
+
+            var cmd = new NpgsqlCommand(
+                    @"INSERT INTO thing_descriptions (thingId, td)
+                    SELECT unnested.id, unnested.td 
+                    FROM UNNEST(@ThingIds, @NewTds) AS unnested(id, td)
+                    ON CONFLICT (thingId) DO UPDATE 
+                    SET td = EXCLUDED.td;",
+                connection);
+
+            cmd.Parameters.Add(new NpgsqlParameter("ThingIds", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = idsArray });
+            cmd.Parameters.Add(new NpgsqlParameter("NewTds", NpgsqlDbType.Array | NpgsqlDbType.Jsonb) { Value = tdsArray });
+
+            int affected = await cmd.ExecuteNonQueryAsync();
+            if (affected == 0) Console.WriteLine($"No row affected for ThingIds provided");
+
+            Console.WriteLine($"{affected} Thing Descriptions saved in PostgreSQL.");
+
+            //Update in Twins
+            try
+            {
+                await Parallel.ForEachAsync(tdPairs, async (pair, cancellationToken) =>
+                {
+                    var td = pair.New;
+                    if(await _twinsService.ExistsThingInTwins(td.Id!))
+                        await _twinsService.UpdateThingInTwins(td, pair.Previous);
+
+                    var events = td.SubscribedEvents?.Select(ev => new EventSubscription(ev.Event, ev.AutoEmitState)).ToList() ?? [];
+
+                    if(events.Count>0)
+                        await _eventsService.SubscribeToEventsAsync(td.Id!, events);
+
+                        //TODO: Desuscribe?
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Could not bulk create in Twins: {ex.Message}");
+            }          
+        }
+
+        public async Task DeleteInBulkFromPostgreSqlAsync(IEnumerable<string> ids)
+        {
+            await using var connection = await _connectionFactory.CreateConnection();
+            var cmd = new NpgsqlCommand(
+                @"DELETE FROM thing_descriptions 
+                WHERE thingId = ANY(@ThingIds);",
+                connection);
+            cmd.Parameters.Add(new NpgsqlParameter("@ThingIds", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = ids });
+
+            int affectedRows = await cmd.ExecuteNonQueryAsync();
+            if (affectedRows == 0)
+                Console.WriteLine($"No ThingDescriptions found to delete for the ThingIds provided.");
+            
+            else
+                Console.WriteLine($"{affectedRows} Thing Descriptions deleted from PostgreSQL.");
+            
+            try
+            {
+                await Parallel.ForEachAsync(ids, async (id, cancellationToken) =>
+                {
+                    await _twinsService.DeleteThingInTwins(id);
+                });
+            }
+            catch (Exception)
+            {
+                Console.WriteLine("Could not bulk delete in Twins");
+            }    
+
+            //TODO: Event bulk delete
         }
 
     }

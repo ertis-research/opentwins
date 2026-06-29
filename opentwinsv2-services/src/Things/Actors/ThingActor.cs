@@ -4,36 +4,37 @@ using OpenTwinsV2.Shared.Models;
 using OpenTwinsV2.Things.Infrastructure.Database;
 using OpenTwinsV2.Things.Logging;
 using OpenTwinsV2.Things.Actors.Services;
+using OpenTwinsV2.Things.Services;
+using OpenTwinsV2.Shared.Utilities;
+using OpenTwinsV2.Things.Models;
 
 namespace OpenTwinsV2.Things.Actors
 {
     internal class ThingActor : Actor, IThingActor, IRemindable
     {
-        private readonly DaprClient _daprClient = new DaprClientBuilder().Build();
-        private readonly IDbConnectionFactory _connectionFactory;
-        private readonly ThingStateManager _stateManager;
-        private readonly ThingDescriptionManager _descriptionManager;
+        private readonly StateManagerService _stateManager;
+        private readonly DescriptionManagerService _descriptionManager;
         private readonly ThingLogicManager _logic;
+        // private readonly IServiceScopeFactory _scopeFactory;
         private readonly string _thingId;
+        public ThingDescription? ThingDescription { get; private set; }
+        public Dictionary<string, PropertyState> CurrentState { get; private set; } = [];
 
-        public ThingActor(ActorHost host, IDbConnectionFactory connectionFactory)
+        public ThingActor(ActorHost host, StateService stateService, StatusManager statusManager, DescriptionManagerService descriptionManager, StateManagerService stateManager)
         : base(host)
         {
-            _connectionFactory = connectionFactory;
-
             _thingId = Id.GetId();
-            _stateManager = new ThingStateManager(_daprClient, _thingId);
-            _descriptionManager = new ThingDescriptionManager(_daprClient, _connectionFactory, _thingId);
-            _logic = new ThingLogicManager(_daprClient, _thingId, _descriptionManager, _stateManager);
+            _stateManager = stateManager;
+            _descriptionManager = descriptionManager;
+            _logic = new ThingLogicManager(_thingId, ThingDescription, CurrentState, stateService, statusManager, _descriptionManager, _stateManager);
         }
-
         protected override async Task OnActivateAsync()
         {
             ActorLogger.Info(Id.GetId(), "Activating actor");
             try
             {
-                await _descriptionManager.LoadAsync();
-                await _stateManager.LoadAsync();
+                await _descriptionManager.LoadDescriptionAsync(_thingId);
+                CurrentState = await _stateManager.LoadStateAsync(_thingId);
             }
             catch (Exception exc)
             {
@@ -47,64 +48,20 @@ namespace OpenTwinsV2.Things.Actors
             await Task.CompletedTask;
         }
 
-        public async Task<string> SetThingDescriptionAsync(string newThingDescription)
-        {
-            return await _logic.SetThingDescriptionAsync(newThingDescription);
-        }
+        // public async Task<string> SetThingDescriptionAsync(string newThingDescription, string? operationid = null)
+        // {
+        //     // return await _logic.SetThingDescriptionAsync(newThingDescription, operationid);
+        //     return "success";
+        // }
 
         public async Task<string?> GetThingDescriptionAsync()
         {
             return await _logic.GetThingDescriptionAsync();
         }
 
-        public async Task<bool> DeleteThingAsync()
+        public async Task<string> GetThingStatusAsync()
         {
-            try
-            {
-                if (_descriptionManager.ThingDescription == null) return false;
-
-                await _descriptionManager.DeleteAsync();
-                ActorLogger.Info(_thingId, "Thing description deleted successfully.");
-
-                await _stateManager.DeleteAsync();
-                ActorLogger.Info(_thingId, "Thing state deleted successfully.");
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                ActorLogger.Error(_thingId, $"Error while deleting Thing: {ex.Message}");
-                return false;
-            }
-        }
-
-        public async Task<string> AddLinkAsync(string v)
-        {
-            return await _descriptionManager.AddLinkAsync(v);
-        }
-
-        public async Task<string> UpdateLinkAsync(string targetId, string relName, string newLink)
-        {
-            return await _descriptionManager.UpdateLinkAsync(targetId, relName, newLink);
-        }
-
-        public async Task RemoveLinkAsync(string href, string relName)
-        {
-            await _descriptionManager.RemoveLinkAsync(href, relName);
-        }
-
-        public async Task<string> AddSubscriptionAsync(string v)
-        {
-            var res = await _descriptionManager.AddSubscriptionAsync(v);
-            await _logic.UpdateSubscribedEvents();
-            return res;
-        }
-
-        public async Task<string> RemoveSubscriptionAsync(string eventName)
-        {
-            var res = await _descriptionManager.RemoveSubscriptionAsync(eventName);
-            await _logic.UpdateSubscribedEvents();
-            return res;
+            return await _logic.GetThingStatusAsync();
         }
 
         public Task<string> GetCurrentStateAsync()

@@ -12,7 +12,9 @@ using Twins.Services;
 using VDS.RDF;
 using VDS.RDF.Nodes;
 using VDS.RDF.Parsing;
+using VDS.RDF.Query.Inference;
 using VDS.RDF.Shacl;
+using VDS.RDF.Writing;
 
 namespace OpenTwinsV2.Twins.Controllers
 {
@@ -97,8 +99,8 @@ namespace OpenTwinsV2.Twins.Controllers
                 try
                 {
                     nquads = _importService.GetFullShapeGraphNquads(shapeId.ToLowerInvariant(), shapeFile) ?? throw new Exception("The obtained list of NQuads of the Shape Graph was null");
-                    foreach(var n in nquads)
-                        Console.WriteLine(n);
+                    // foreach(var n in nquads)
+                    //     Console.WriteLine(n);
                 }
                 catch (Exception ex)
                 {
@@ -384,12 +386,13 @@ namespace OpenTwinsV2.Twins.Controllers
             }
 
             //Get the twin + the ontology Graph
-            IGraph compound = new VDS.RDF.Graph();
+            IGraph twin = new VDS.RDF.Graph();
             IGraph g1;
             try
             {
                 var twinJson = await _exportService.GetJsonWithoutNamespace(twinId) ?? throw new Exception("The recieved Json of the Twin is null");
-                g1 = FormatService.GetRDFGraphFromJson(twinJson, twinId) ?? throw new Exception("The recieved Graph of the Twin is null");
+                g1 = FormatService.GetRDFGraphFromJson(twinJson, twinId, twin:true) ?? throw new Exception("The recieved Graph of the Twin is null");
+                twin.Merge(g1, true);
                 
             }catch(Exception ex)
             {
@@ -398,25 +401,29 @@ namespace OpenTwinsV2.Twins.Controllers
 
             //Add also the ontology to the graphs
             List<string> ontologies = await _dgraphService.GetOntologiesOfTwinAsync(twinId);
+            IGraph compound = new VDS.RDF.Graph();
             foreach(string ontologyId in ontologies)
             {
                 try
                 {
                     var ontologyJson = await _exportService.GetJsonWithNamespace(ontologyId, await _dgraphService.GetNamespacesInOntologyAsync(ontologyId) ?? null) ?? throw new Exception($"The recieved Json of the {ontologyId} Ontology is null");
                     var ontologyGraph = FormatService.GetRDFGraphFromJson(ontologyJson, ontologyId) ?? throw new Exception($"The recieved Graph of the {ontologyId} Ontology is null");
-
                     compound.Merge(ontologyGraph, true);
                 }catch(Exception ex)
                 {
                     return StatusCode(500, $"Something went wrong while loading the RDF Graph of the {ontologyId} Ontology. {ex.GetType}: {ex}");
                 }
             }
+            
 
             //in compound graph we have the twin and the ontologies it uses
 
             //Validation
+            var reasoner = new StaticRdfsReasoner();
+            reasoner.Initialise(compound);
+            reasoner.Apply(twin);
 
-            var results = shapeGraph.Validate(compound);
+            var results = shapeGraph.Validate(twin);
 
             if (results.Conforms)
             {
@@ -453,7 +460,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 report.AppendLine();
             }
 
-            return Ok(report.ToString());
+            return Content(report.ToString(), "text/plain");
 
         }
     }

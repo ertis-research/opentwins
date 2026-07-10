@@ -23,6 +23,9 @@ namespace OpenTwinsV2.Shared.Models
 
         [JsonPropertyName("otv2:jsonLogic")]
         public JsonElement? JsonLogic { get; set; }
+                
+        [JsonPropertyName("default")]
+        public object? Default { get; set; }
 
         //new WOT 2 propety const
         [JsonPropertyName("const")]

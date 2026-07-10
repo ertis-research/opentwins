@@ -20,6 +20,8 @@ using System.Runtime.CompilerServices;
 using System.Configuration.Internal;
 using Lucene.Net.Util;
 using Dapr.Actors;
+using Microsoft.AspNetCore.Components.Web.Virtualization;
+using AngleSharp.Common;
 
 namespace OpenTwinsV2.Twins.Controllers
 {
@@ -92,16 +94,60 @@ namespace OpenTwinsV2.Twins.Controllers
             // if shapeId is not null, validate graph with the corresponding shapeGraph
             if (await _dgraphService.ExistsTwinAsync(twinId))
                 return Conflict("There is already a twin with this id");
+            
             if(!(graph.TryGetProperty("@graph", out var graphEl) && graphEl.AsNode() is JsonArray graphArr))
                 return BadRequest("The graph is of bad format.");
+            
+            if(_instanciationService.AreThereConflictingIdsOnSubGraph(graphArr))
+                return BadRequest("There are repeated ids on the provided graph");
+
+            if(graphArr.Any(thing => (thing!["@id"] ?? thing["id"]) is null))
+                return BadRequest("At least one element in the graph provided does not have an identifier");
 
             if(!string.IsNullOrWhiteSpace(shapeId) && !await _dgraphService.ExistsShapeGraphByIdAsync(shapeId))
                 return NotFound("There is no Shape Graph with the provided identifier.");
+
+            Dictionary<string, ThingDescription> thingDescriptions = [];
+            //Is graph valid and every Thing in it exists in Twins. Otherwise: error (Before making any changes)
+            //At the same time, load already the TD of the Thing to avoid repeating requests
+
+            try
+            {
+                var idList = _instanciationService.GetIdsFromGraph(graphArr);
+                
+                foreach(var id in idList)
+                {
+                    var td = await _thingsService.GetThingAsync(id);
+                    thingDescriptions[id] = td;
+                }
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound($"There is a Thing in the provided graph that does not exist: {ex.Message}");
+            }
+            catch (InvalidOperationException)
+            {
+                return StatusCode(102, $"At least one thing of the graph provided is not available as of now");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An error has been encountered while obtaining the things' Thing Descriptions: {ex.Message}");
+            }
+            
             try
             {
                 await _thingsService.GetThingAsync(twinId);
                 if(await _dgraphService.ExistsThingByIdAsync(twinId))
                 {
+                    if(await _dgraphService.IsThingAPlaceholderAsync(twinId))
+                    
+                        //Manage Placeholder completion    
+                        await _dgraphService.InstanciateAPlaceHolderThing(twinId);
+                    
                     //Add Twin Type. It's not already a Twin because it would've failed by now
                     await _dgraphService.AddNQuadTripleAsync([$"<{(await _dgraphService.GetUidsByThingIdsAsync([twinId]))[twinId]}> <dgraph.type> \"Twin\" ."]);
                 }
@@ -114,7 +160,14 @@ namespace OpenTwinsV2.Twins.Controllers
             catch (KeyNotFoundException)
             {
                 if(await _dgraphService.ExistsThingByIdAsync(twinId))
-                    return Conflict("The Thing cannot be instanciated");
+                    if(await _dgraphService.IsThingAPlaceholderAsync(twinId))
+                    {
+                        //Manage Placeholder completion
+                        await _dgraphService.InstanciateAPlaceHolderThing(twinId);
+                        await _dgraphService.AddThingTypeIntoThing(twinId, "Twin");          
+                    }
+                    else
+                        return Conflict("The Thing cannot be instanciated");
                 else
                 {
                     //basic case: it doesn't exist in either: create in both
@@ -124,6 +177,7 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 return StatusCode(102, $"The Thing is not available as of now: {ex.Message}");
             }
+            
             if(!string.IsNullOrWhiteSpace(shapeId))
                 try
                 {
@@ -141,7 +195,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
             try
             {
-                await _instanciationService.InstanciateThingGraph(graphArr, twinId, twinAlreadyExists: true);
+                await _instanciationService.InstanciateThingGraph(graphArr, twinId, thingDescriptions);
             }catch(Exception ex)
             {
                 return StatusCode(500, $"Something went wrong while instanciating the Twin and its Things: {ex.Message}");
@@ -351,7 +405,11 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 var thingIdList = thingIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);                
 
+                if(!await _dgraphService.ExistsTwinAsync(twinId))
+                    return NotFound($"There is no Twin with id {twinId}");
+
                 var twinUid = await _dgraphService.GetUidsByThingIdsAsync([twinId]);
+                
                 if (twinUid == null || twinUid.Count < 1) return NotFound("TwinId not found");
 
                 var responses = new List<dynamic>();
@@ -363,20 +421,26 @@ namespace OpenTwinsV2.Twins.Controllers
                 thingIdList.Select(async id =>
                     {
                         var uidDict = await _dgraphService.GetUidsByThingIdsAsync([id]);
+                        //Manage Placeholder
+                        var isPlaceholder = uidDict.TryGetValue(id, out _) && await _dgraphService.IsThingAPlaceholderAsync(id);
                         return (
                             Key: id,
-                            Value: uidDict.TryGetValue(id, out var uid) ? (Exists: true, Uid: uid) : (Exists: false, Uid: $"_:relativeUid{id}")
+                            Value: uidDict.TryGetValue(id, out var uid) ? (Exists: true, Placeholder: isPlaceholder, Uid: uid) : (Exists: false, Placeholder: isPlaceholder, Uid: $"_:relativeUid{id}")
                         );
                     })
                 )).ToDictionary(x => x.Key, x => x.Value);
 
                 List<string> thingsCreated = []; 
 
-                foreach((var thingId, (var exists, var uid)) in idDict)
+                int relationCounter = 0, targetCounter = 0;
+
+                foreach((var thingId, (var exists, var isPlaceholder, var uid)) in idDict)
                 {
                     if(exists)
                     {
                         _logger.LogDebug("Thing {ThingId} already exists -> add twin relation only", thingId);
+                        if(isPlaceholder)
+                            await _dgraphService.InstanciateAPlaceHolderThing(thingId);
                         var responseTwinAnexion = await _dgraphService.AddThingToTwinAsync(thingId, twinId);
                         responses.Add(new
                         {
@@ -392,9 +456,9 @@ namespace OpenTwinsV2.Twins.Controllers
                             ThingDescription td = await _thingsService.GetThingAsync(thingId);
                             var hrefs = td.Links?.Select(l => l.Href.ToString()).Distinct() ?? [];
 
-                            var hrefsUids = hrefs.Select(href => (Key: href, Value: idDict.TryGetValue(href, out var value) ? value.Uid : $"_:relativeUid{href}")).Where(x=> x.Value is not null).ToDictionary(x=> x.Key, x=> x.Value!);
+                            var hrefsUids = hrefs.Select(href => (Key: href, Value: idDict.TryGetValue(href, out var value) ? value.Uid : null)).Where(x=> x.Value is not null).ToDictionary(x=> x.Key, x=> x.Value!);
 
-                            payload.AddRange(ThingBuilder.BuildPayloadWithLinks(td, twinUid[twinId], hrefsUids, uid: uid).Select(js => js!.DeepClone()));
+                            payload.AddRange(ThingBuilder.BuildPayloadWithLinks(td, twinUid[twinId], hrefsUids, ref relationCounter, ref targetCounter, uid: uid).Select(js => js!.DeepClone()));
                             thingsCreated.Add(thingId);
                         }
                         catch (KeyNotFoundException)
@@ -424,7 +488,7 @@ namespace OpenTwinsV2.Twins.Controllers
                                 {
                                     Id = thingId,
                                     Status = HttpStatusCode.NotFound,
-                                    Message = "The Thing does not exist"
+                                    Message = "The Thing is not available"
                                 });
                         
                             if (ex.Message.Contains("KeyNotFoundException"))
@@ -432,7 +496,7 @@ namespace OpenTwinsV2.Twins.Controllers
                                 {
                                     Id = thingId,
                                     Status = HttpStatusCode.Processing,
-                                    Message = "The Thing is not available"
+                                    Message = "The Thing does not exist"
                                 });
                             continue;
                         }
@@ -514,7 +578,7 @@ namespace OpenTwinsV2.Twins.Controllers
         [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> ExportTwinInJsonFormat(string twinId)
         {
-            var check = await _dgraphService.ExistsThingByIdAsync(twinId);
+            var check = await _dgraphService.ExistsThingByIdAsync(twinId) && !await _dgraphService.IsThingAPlaceholderAsync(twinId);
             if (!check)
             {
                 return NotFound(new { message = $"Twin '{twinId}' does not exist" });
@@ -545,7 +609,7 @@ namespace OpenTwinsV2.Twins.Controllers
         [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> ExportTwinInJsonLdFormat(string twinId)
         {
-            var check = await _dgraphService.ExistsThingByIdAsync(twinId);
+            var check = await _dgraphService.ExistsThingByIdAsync(twinId) && !await _dgraphService.IsThingAPlaceholderAsync(twinId);
             if (!check)
             {
                 return NotFound(new { message = $"Twin '{twinId}' does not exist" });
@@ -582,7 +646,7 @@ namespace OpenTwinsV2.Twins.Controllers
         [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError, "application/json")]
         public async Task<IActionResult> ExportTwinInTTLFormat(string twinId)
         {
-            var check = await _dgraphService.ExistsThingByIdAsync(twinId);
+            var check = await _dgraphService.ExistsThingByIdAsync(twinId) && !await _dgraphService.IsThingAPlaceholderAsync(twinId);
             if (!check)
             {
                 return NotFound(new { message = $"Twin '{twinId}' does not exist" });
@@ -631,7 +695,7 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 return BadRequest($"The SparQL query cannot be empty");
             }
-            var check = await _dgraphService.ExistsThingByIdAsync(twinId);
+            var check = await _dgraphService.ExistsThingByIdAsync(twinId) && !await _dgraphService.IsThingAPlaceholderAsync(twinId);
             if (!check)
             {
                 return NotFound(new { message = $"Twin '{twinId}' does not exist" });

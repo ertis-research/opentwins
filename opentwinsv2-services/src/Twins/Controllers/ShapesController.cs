@@ -351,7 +351,7 @@ namespace OpenTwinsV2.Twins.Controllers
             {
                 return NotFound($"{shapeId} Shape Graph does not exist");
             }
-            check = await _dgraphService.ExistsThingByIdAsync(twinId);
+            check = await _dgraphService.ExistsThingByIdAsync(twinId) && !await _dgraphService.IsThingAPlaceholderAsync(twinId);
             if (!check)
             {
                 return NotFound($"{twinId} Twin does not exist");

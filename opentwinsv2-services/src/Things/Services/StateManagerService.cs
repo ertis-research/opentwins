@@ -1,3 +1,4 @@
+using System.Text.Json;
 using OpenTwinsV2.Shared.Models;
 using OpenTwinsV2.Shared.Utilities;
 using OpenTwinsV2.Things.Logging;
@@ -38,14 +39,14 @@ namespace OpenTwinsV2.Things.Services
             }
 
             var newState = currentState.Where(x => props.ContainsKey(x.Key)).ToDictionary(x => x.Key, x => x.Value);
-
             foreach (var prop in props)
             {
-                if (!(newState.TryGetValue(prop.Key, out PropertyState? value) &&
-                        SchemaValidator.IsTypeCompatible(prop.Value.DataType, value.Value)))
-                {
+                var existsKey = newState.TryGetValue(prop.Key, out PropertyState? value);
+                var validates = SchemaValidator.IsTypeCompatible(prop.Value.DataType, value?.Value ?? (JsonElement?)prop.Value.Default);
+                if (!existsKey && validates)
+                    newState[prop.Key] = new PropertyState(value: value?.Value ?? (JsonElement)prop.Value.Default!);
+                else if(!existsKey)
                     newState[prop.Key] = new PropertyState();
-                }
             }
 
             currentState = newState;

@@ -35,6 +35,7 @@ namespace OpenTwinsV2.Things.Actors
             {
                 await _descriptionManager.LoadDescriptionAsync(_thingId);
                 CurrentState = await _stateManager.LoadStateAsync(_thingId);
+                _logic.UpdateCurrentState(CurrentState);
             }
             catch (Exception exc)
             {

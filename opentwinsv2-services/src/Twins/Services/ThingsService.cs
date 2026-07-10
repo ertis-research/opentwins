@@ -17,7 +17,6 @@ namespace OpenTwinsV2.Twins.Services
     public class ThingsService
     {
         private readonly DaprClient _daprClient;
-        private readonly string _thingServiceAppId = "things-service";
         private readonly StatusManager _statusManager;
         private const string ActorType = Actors.ThingActor;
 
@@ -74,7 +73,7 @@ namespace OpenTwinsV2.Twins.Services
             var operationid=Guid.NewGuid().ToString();
             foreach(var thing in things)
             {
-                var thingId = thing!.AsObject()["id"]?.GetValue<string>();
+                var thingId = (thing!.AsObject()["@id"] ?? thing!.AsObject()["id"])?.GetValue<string>();
                 if(string.IsNullOrWhiteSpace(thingId))
                     continue;
                 var status = (await _statusManager.GetThingStatus(thingId)).Status;

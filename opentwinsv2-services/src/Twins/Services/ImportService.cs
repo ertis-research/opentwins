@@ -957,7 +957,8 @@ namespace Twins.Services
             {
                 //it's a type/class/instanciation
                 //NQuads for Thing
-                NQuadsService.AddNQuadThingNodeTriples(uid, info.Name, ontologyId, info.Prefix, nquads);
+                var labels = info.Relations.Where(x => x.Key.Name == "label");
+                NQuadsService.AddNQuadThingNodeTriples(uid, info.Name, ontologyId, info.Prefix, nquads, labels.Any() ? labels.FirstOrDefault().Value.Objects.FirstOrDefault().Connection.Name.Name : null);
 
                 //Look into realtions
                 foreach((var relName, var relUris) in info.Relations)
@@ -983,6 +984,8 @@ namespace Twins.Services
                         }
                         else
                         {
+                            if(relName.Name == "label")
+                                continue;
                             NQuadsService.AddNQuadThingAttributeTriples(uid, relName.Name, relUri.Connection.Datatype?.Name == "uri" ? relUri.Connection.Name.Name : relUri.Connection.Datatype?.Name!, relUri.Connection.Datatype?.Name == "uri" ? null : relUri.Connection.Name.Name, ontologyId, relName.Prefix, nquads);
                             
                             if(IsRelationRedundant(relName, (info.Prefix, info.Name), (relUri.Connection.Name, relUri.Connection.Datatype), graph, urisDict))

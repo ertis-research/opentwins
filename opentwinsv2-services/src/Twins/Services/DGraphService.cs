@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -226,6 +227,10 @@ namespace OpenTwinsV2.Twins.Services
                     GenericConstraint.value
                 }
 
+                type Placeholder {
+                
+                }
+
                 type Namespace {
                     namespaceId
                     prefix
@@ -398,7 +403,7 @@ namespace OpenTwinsV2.Twins.Services
             }
         }
 
-        private List<string> getUidListFromRootJSON(JsonDocument doc)
+        private List<string> GetUidListFromRootJSON(JsonDocument doc)
         {
             var uids = new List<string>();
             if (doc.RootElement.TryGetProperty("ontologies", out JsonElement ontologies))
@@ -528,7 +533,7 @@ namespace OpenTwinsV2.Twins.Services
             }
         }
 
-        private (int, int, int, string) NormalizePaginationParameters(int page, int pageSize, string? searchTerm, string filterField)
+        private static (int, int, int, string) NormalizePaginationParameters(int page, int pageSize, string? searchTerm, string filterField)
         {
             if (page < 1) 
                 page = 1;
@@ -545,7 +550,7 @@ namespace OpenTwinsV2.Twins.Services
             return (page, pageSize, offset, filter);
         }
 
-        private JsonElement FlattenJsonElement<T>(JsonElement json, string parentProperty, string innerProperty, string? groupbyClause = null)
+        private static JsonElement FlattenJsonElement<T>(JsonElement json, string parentProperty, string innerProperty, string? groupbyClause = null)
         {
             JsonNode newJson = json.AsNode()!.DeepClone();
             if(!json.TryGetProperty(parentProperty, out var propVal))
@@ -562,7 +567,7 @@ namespace OpenTwinsV2.Twins.Services
             return JsonSerializer.Deserialize<JsonElement>(newJson);
         }
 
-        private JsonElement FlattenJsonElementArray<T>(JsonElement jsonArr, string parentProperty, string innerProperty, string? groupByClause = null, T? reflexiveFallback=default) where T:notnull
+        private static JsonElement FlattenJsonElementArray<T>(JsonElement jsonArr, string parentProperty, string innerProperty, string? groupByClause = null, T? reflexiveFallback=default) where T:notnull
         {
             //flattened
             var query = jsonArr.EnumerateArray().Select(item => new
@@ -588,7 +593,7 @@ namespace OpenTwinsV2.Twins.Services
             return JsonSerializer.SerializeToElement(grouped);
         }
 
-        private JsonElement IncorporateNewJsonElement(JsonElement parent, JsonElement child, string property)
+        private static JsonElement IncorporateNewJsonElement(JsonElement parent, JsonElement child, string property)
         {
             JsonNode newJson = parent.AsNode()!.DeepClone();
             newJson[property] = child.AsNode()!.DeepClone();
@@ -707,6 +712,34 @@ namespace OpenTwinsV2.Twins.Services
             }
 
             return false;
+        }
+
+        public async Task<bool> IsThingAPlaceholderAsync(string thingId)
+        {
+            var query = $@"
+            {{
+                exists(func: eq(thingId, ""{thingId}"")) @filter(type(Placeholder)){{
+                    uid
+                }}
+            }}";
+
+            var response = await _client.NewTransaction().Query(query);
+            var json = response.Json.ToStringUtf8();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("exists", out var existsArray) && existsArray.ValueKind == JsonValueKind.Array)
+                return existsArray.GetArrayLength() > 0;
+            return false;
+        }
+
+        public async Task InstanciateAPlaceHolderThing(string thingId)
+        {
+            //Delete Placeholder type
+            await DeleteThingTypeFromThing(thingId, "Placeholder");
+
+            //TODO: Complete Info???
         }
 
         public async Task<List<string>> GetThingTypes(string thingId)
@@ -1256,6 +1289,7 @@ namespace OpenTwinsV2.Twins.Services
         {
             var uids = await GetUidsByThingIdsAsync([twinId, thingId]);
             if (!uids.TryGetValue(thingId, out var thingUid) || !uids.TryGetValue(twinId, out var twinUid)) throw new KeyNotFoundException("Twin or Thing not found");
+            int twins = (await GetThingsTwinsAsync(thingId)).Count;
             // 1. Eliminar la relación contains entre Twin y Thing
             var txn = _client.NewTransaction();
 
@@ -1281,7 +1315,7 @@ namespace OpenTwinsV2.Twins.Services
                 var response = await txn.Mutate(mutation);
                 await txn.Commit();
 
-                if(!await DoesThingBelongToATwin(thingId))
+                if(twins==1)
                     await DeleteThingAsync(thingId);
                 return response;
             }
@@ -1322,15 +1356,17 @@ namespace OpenTwinsV2.Twins.Services
             }
         }
 
-        public async Task<bool> DoesThingBelongToATwin(string thingId)
+        public async Task<List<string>> GetThingsTwinsAsync(string thingId)
         {
             var txn = _client.NewTransaction();
             try
             {
                 var query= $@"
                 {{
-                    twin(func: eq(thingId, ""{thingId}"")) @filter(has(twins) or type(Twin)){{
-                        uid
+                    twin(func: eq(thingId, ""{thingId}"")){{
+                        twins{{
+                            thingId
+                        }}
                     }}
                 }}
                 ";
@@ -1341,9 +1377,13 @@ namespace OpenTwinsV2.Twins.Services
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
-                if(!(root.TryGetProperty("twin", out var twin) || twin.ValueKind != JsonValueKind.Array || twin.GetArrayLength() == 0))
-                    return false;
-                return true;
+                if(!root.TryGetProperty("twin", out var twin) || twin.GetArrayLength()==0)
+                    return [];
+
+                if(!twin.EnumerateArray().First().TryGetProperty("twins", out var twins) || twins.GetArrayLength()==0)
+                    return [];
+
+                return [.. twins.EnumerateArray().Select(id => id!.GetProperty("thingId")!.GetString()!)];
             }
             catch (Exception)
             {
@@ -1456,7 +1496,7 @@ namespace OpenTwinsV2.Twins.Services
                 using var doc = JsonDocument.Parse(json);
                 // var root = doc.RootElement;
 
-                return getUidListFromRootJSON(doc);
+                return GetUidListFromRootJSON(doc);
             }
             catch
             {
@@ -1504,7 +1544,7 @@ namespace OpenTwinsV2.Twins.Services
                 using var doc = JsonDocument.Parse(json);
                 // var root = doc.RootElement;
 
-                return getUidListFromRootJSON(doc);
+                return GetUidListFromRootJSON(doc);
             }
             catch
             {
@@ -2298,6 +2338,156 @@ namespace OpenTwinsV2.Twins.Services
                     .Where(child => child.TryGetProperty("thingId", out _))
                     .Select(child => child.GetProperty("thingId").GetString() ?? "")
                     .Where(id => !string.IsNullOrWhiteSpace(id))];
+            }
+            catch (Exception)
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
+        public async Task<Dictionary<string, List<string>>> GetRelationsDictionaryOfThingInOntology(string ontologyId, string thingId)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var query= $@"
+                {{
+                    ontologies as var (func: eq(ontologyId, ""{ontologyId}""))
+                    things as var (func: eq(thingId, ""{thingId}"")) @cascade{{
+                        ~hasThing @filter(uid(ontologies))
+                    }}
+                    thing(func: uid(things)){{
+                        ~relatedTo @filter(not has(relatedFrom) and not has(hasChild) and not has(hasPart)){{
+                            Relation.name
+                            relatedTo @filter(not uid(things)){{
+                                thingId
+                            }}
+                        }}
+                        ~relatedFrom{{
+                            Relation.name
+                            relatedTo{{
+                                thingId
+                            }}
+                            hasChild{{
+                                thingId
+                            }}
+                            hasPart{{
+                                thingId
+                            }}
+                        }}
+                    }}
+                }}
+                ";
+
+                var res = await txn.Query(query);
+                var json = res.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if(!(root.TryGetProperty("thing", out var thingArr) && thingArr.GetArrayLength()>0))
+                    return [];
+
+                Dictionary<string, List<string>> dict = [];
+
+                var thing = thingArr.EnumerateArray().First();
+
+                if(thing.TryGetProperty("~relatedFrom", out var unidirs))
+                    foreach(var unidir in unidirs.EnumerateArray())
+                    {
+                        if(!unidir.TryGetProperty("Relation.name", out var nameEl))
+                            continue;
+                        var name = nameEl.GetString()!;
+                        if(!unidir.TryGetProperty("relatedTo", out var objs) || objs.GetArrayLength()==0)
+                            continue;
+                        foreach(var obj in objs.EnumerateArray())
+                            if(dict.TryGetValue(name, out var list))
+                                list.Add(obj.GetProperty("thingId").GetString()!);
+                            else
+                                dict[name] = [obj.GetProperty("thingId").GetString()!];
+                    }
+
+                if(thing.TryGetProperty("~relatedTo", out var bidirs))
+                    foreach(var bidir in bidirs.EnumerateArray())
+                    {
+                        if(!bidir.TryGetProperty("Relation.name", out var nameEl))
+                            continue;
+                        var name = nameEl.GetString()!;
+                        if (!bidir.TryGetProperty("relatedTo", out JsonElement objs) || objs.GetArrayLength() == 0)
+                            if (!bidir.TryGetProperty("hasChild", out objs) || objs.GetArrayLength() == 0)
+                                if (!bidir.TryGetProperty("hasPart", out objs) || objs.GetArrayLength() == 0)
+                                    continue;
+                        foreach (var obj in objs.EnumerateArray())
+                            if(dict.TryGetValue(name, out var list))
+                                list.Add(obj.GetProperty("thingId").GetString()!);
+                            else
+                                dict[name] = [obj.GetProperty("thingId").GetString()!];
+                    }
+
+                return dict;
+
+            }
+            catch (Exception)
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
+        public async Task<Dictionary<string, List<(string, string?)>>> GetAttributeDictionaryOfThingInOntology(string ontologyId, string thingId)
+        {
+            var txn = _client.NewTransaction();
+            try
+            {
+                var query= $@"
+                {{
+                    ontologies as var (func: eq(ontologyId, ""{ontologyId}""))
+                    things as var (func: eq(thingId, ""{thingId}"")) @cascade{{
+                        ~hasThing @filter(uid(ontologies))
+                    }}
+                    thing(func: uid(things)){{
+                        hasAttribute{{
+                            Attribute.key
+                            Attribute.type
+                            Attribute.value
+                        }}
+                    }}
+                }}
+                ";
+
+                var res = await txn.Query(query);
+                var json = res.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if(!(root.TryGetProperty("thing", out var thingArr) && thingArr.GetArrayLength()>0))
+                    return [];
+
+                Dictionary<string, List<(string, string?)>> dict = [];
+
+                var thing = thingArr.EnumerateArray().First();
+
+                if(thing.TryGetProperty("hasAttribute", out var attrs))
+                    foreach(var attr in attrs.EnumerateArray())
+                    {
+                        if(!attr.TryGetProperty("Attribute.key", out var attrKey))
+                            continue;
+                        var key = attrKey.GetString()!;
+                        if(!attr.TryGetProperty("Attribute.type", out var attrType))
+                            continue;
+                        var type = attrType.GetString() ?? "string";
+                        string? value = null;
+                        if(attr.TryGetProperty("Attribute.value", out var attrValue))
+                            value = attrValue.GetString();
+    
+                        if(dict.TryGetValue(key, out var list))
+                            list.Add((type, value));
+                        else
+                            dict[key] = [(type, value)];
+                    }
+                return dict;
             }
             catch (Exception)
             {

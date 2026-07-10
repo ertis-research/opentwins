@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Data;
 using System.Text.Json;
 using Npgsql;
@@ -15,13 +16,15 @@ namespace OpenTwinsV2.Things.Services
         private readonly TwinsService _twinsService;
         private readonly EventsService _eventsService;
         private readonly StateService _stateService;
+        private readonly StateManagerService _stateManager;
 
-        public ThingsQueryService(IDbConnectionFactory connectionFactory, TwinsService twinsService, EventsService eventsService, StateService stateService)
+        public ThingsQueryService(IDbConnectionFactory connectionFactory, TwinsService twinsService, EventsService eventsService, StateService stateService, StateManagerService stateManagerService)
         {
             _connectionFactory = connectionFactory;
             _twinsService = twinsService;
             _eventsService = eventsService;
             _stateService = stateService;
+            _stateManager = stateManagerService;
         }
 
         public async Task<PagedResult<ThingDescription>> GetAllThingsAsync(int page, int pageSize, string? searchTerm)
@@ -227,8 +230,9 @@ namespace OpenTwinsV2.Things.Services
             try
             {
                 await Parallel.ForEachAsync(tdPairs, async (pair, cancellationToken) =>
-                {
+                {                   
                     var td = pair.New;
+                    await _stateManager.InitializeStateFromDescription(td.Id!, td.Properties); 
                     if(await _twinsService.ExistsThingInTwins(td.Id!))
                         await _twinsService.UpdateThingInTwins(td, pair.Previous);
 
@@ -266,6 +270,7 @@ namespace OpenTwinsV2.Things.Services
             {
                 await Parallel.ForEachAsync(ids, async (id, cancellationToken) =>
                 {
+                    await _stateManager.DeleteDescriptionStateAsync(id);
                     await _twinsService.DeleteThingInTwins(id);
                 });
             }

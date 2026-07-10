@@ -19,15 +19,22 @@ namespace OpenTwinsV2.Twins.Handlers
         public async Task HandleAddLinkAsync(string thingIdSource, Link link)
         {
             var thingIdTarget = link.Href.ToString();
+            if(await _dgraphService.ExistsRelationBetweenThings(thingIdSource, thingIdTarget, link.Rel ?? ""))
+            {
+                _logger.LogDebug("There's already a {rel} link between {thingIdSource} and {thingIdTarget}", link.Rel!, thingIdSource, thingIdTarget);
+                return;
+            }
+            
             var uids = await _dgraphService.GetUidsByThingIdsAsync([thingIdTarget, thingIdSource]);
             if (uids.TryGetValue(thingIdTarget, out var uidTarget) && uids.TryGetValue(thingIdSource, out var uidSource))
             {
                 _logger.LogDebug("uidTarget: {uidTarget}, uidSource: {uidSource}", uidTarget, uidSource);
                 JsonObject mutation;
-                if(await _dgraphService.ExistsRelationBetweenThings(thingIdTarget, thingIdSource, link.Rel ?? ""))
+                var uid = await _dgraphService.GetRelationUidByThingIdsAsync(thingIdTarget, thingIdSource, link.Rel ?? "");
+                if(uid is not null)
                 {
-                    //Delete Unidirectional and create bidireactional
-                    await _dgraphService.DeleteEntitiesAsync([ThingBuilder.BuildRelation(link, uidTarget, uidSource, bidir:false)]);
+                    //Delete Unidirectional and create bidirectional
+                    await _dgraphService.DeleteEntitiesAsync([ThingBuilder.BuildDeleteRelation(uid)]);
                     mutation = ThingBuilder.BuildRelation(link, uidTarget, uidSource, bidir:true);
                 }
                 else

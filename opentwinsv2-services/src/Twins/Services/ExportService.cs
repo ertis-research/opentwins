@@ -1,3 +1,4 @@
+using System.Configuration;
 using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
@@ -924,6 +925,8 @@ namespace OpenTwinsV2.Twins.Services
                     context[prefix] = uri;
                 }
             }
+
+            context["@vocab"] ??=  "http://example.org/properties/";
             return context;
         }
 
@@ -1058,11 +1061,16 @@ namespace OpenTwinsV2.Twins.Services
                     var defaultValue = attributeInfo?["Attribute.default"]?.GetValue<string>();
                     var lastUpdate = attributeInfo?["lastUpdate"]?.GetValue<string>();
 
-                    if (defaultValue is not null)
-                        thing[$"{(twin && string.IsNullOrWhiteSpace(attPrefix) ? "" : $"{attPrefix}:")}{key}.default"] = defaultValue;
+                    
                         
-                    thing[$"{(twin && string.IsNullOrWhiteSpace(attPrefix) ? "" : $"{attPrefix}:")}{key}.value"] = value;
-                    thing[$"{(twin && string.IsNullOrWhiteSpace(attPrefix) ? "" : $"{attPrefix}:")}{key}.lastUpdate"] = lastUpdate;
+                    thing[$"{(twin && string.IsNullOrWhiteSpace(attPrefix) ? "" : $"{attPrefix}:")}{key}"] = new JsonObject
+                    {
+                        ["value"] = value,
+                        ["lastUpdate"] = lastUpdate
+                    };
+
+                    if (defaultValue is not null)
+                        thing[$"{(twin && string.IsNullOrWhiteSpace(attPrefix) ? "" : $"{attPrefix}:")}{key}"]!.AsObject()["default"] = defaultValue;
                 }
                 else
                 {

@@ -17,7 +17,7 @@ namespace OpenTwinsV2.Things.Actors.Services
     {
         private readonly DescriptionManagerService _descManager;
         private readonly ThingDescription? _thingDescription;
-        private readonly Dictionary<string, PropertyState> _currentState;
+        private Dictionary<string, PropertyState> _currentState;
         private readonly StateManagerService _stateManager;
         private readonly StateService _stateService;
         // private readonly EventsService _eventsService;
@@ -40,7 +40,17 @@ namespace OpenTwinsV2.Things.Actors.Services
         {
             //check thing's availability in state
             var status = (await _statusManager.GetThingStatus(_thingId)).Status;
-            if(status is null || status == Status.DeleteStatus)
+            if(status is null)
+            {
+                // Check if it exists on the databases anyway (old things without status), and if it is, save the ok status
+                var description = await _descManager.LoadDescriptionAsync(_thingId);
+                if(description is null)
+                    return null;
+                //load an ok status
+                await _statusManager.SaveOkThingStatus(_thingId);
+                return description.ToString();
+            }    
+            else if(status == Status.DeleteStatus)
                 return null;
             else if (status == Status.UpdateStatus || status == Status.CreateStatus)
                 throw new InvalidOperationException();
@@ -59,6 +69,11 @@ namespace OpenTwinsV2.Things.Actors.Services
         public string GetCurrentState()
         {
             return JsonSerializer.Serialize(_currentState);
+        }
+
+        public void UpdateCurrentState(Dictionary<string, PropertyState> newState)
+        {
+            _currentState = newState;
         }
 
         private async Task ApplyLogicToDerivedProperties()

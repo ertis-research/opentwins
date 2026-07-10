@@ -1,15 +1,16 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using OpenTwinsV2.Shared.Models;
+using OpenTwinsV2.Twins.Services;
 using VDS.RDF;
 
 namespace OpenTwinsV2.Twins.Builders
 {
     public static class ThingBuilder
     {
-        public static JsonObject BuildThing(string id, string? typeUid=null, string? twinUid = null)
+        public static JsonObject BuildThing(string id, string? uid = null, string? typeUid=null, string? twinUid = null)
         {
-            return new JsonObject
+            var payload = new JsonObject
             {
                 ["dgraph.type"] = new JsonArray("Thing"),
                 ["thingId"] = id,
@@ -19,11 +20,31 @@ namespace OpenTwinsV2.Twins.Builders
                 ["domains"] = new JsonArray(),
                 ["hasType"] = typeUid is null ? [] : new JsonArray{new JsonObject{["uid"]=typeUid}}
             };
+            if(!string.IsNullOrWhiteSpace(uid))
+                payload["uid"] = uid;
+            
+            return payload;
         }
 
-        private static JsonObject InitAndAddType(string thingId, string type, string? typeUid = null)
+        public static JsonObject BuildAttribute(int attrCount, string key, string type, string? value)
         {
-            JsonObject obj = BuildThing(thingId, typeUid: typeUid);
+            var attribute = new JsonObject
+            {
+                ["uid"] = $"_:attr{attrCount}",
+                ["dgraph.type"] = new JsonArray("Attribute"),
+                ["Attribute.key"] = key,
+                ["Attribute.type"] = type ?? "string",
+            };       
+                
+            if(value is not null)
+                attribute["Attribute.value"] = value;
+
+            return attribute;
+        }
+
+        private static JsonObject InitAndAddType(string thingId, string type, string? typeUid = null, string? uid = null)
+        {
+            JsonObject obj = BuildThing(thingId, uid: uid, typeUid: typeUid);
 
             if (obj["dgraph.type"] is JsonArray types)
             {
@@ -33,9 +54,9 @@ namespace OpenTwinsV2.Twins.Builders
             return obj;
         }
 
-        public static JsonObject BuildTwin(string twinId)
+        public static JsonObject BuildTwin(string twinId, string? uid = null)
         {
-            return InitAndAddType(twinId, "Twin");
+            return InitAndAddType(twinId, "Twin", uid: uid);
         }
         /*
                 public static JsonObject BuildROThing(string roThingId)
@@ -81,7 +102,7 @@ namespace OpenTwinsV2.Twins.Builders
         /// <summary>
         /// Construye un nodo Relation vacío (sin edges todavía).
         /// </summary>
-        public static JsonObject BuildRelationNode(string relationName)
+        private static JsonObject BuildRelationNode(string relationName)
         {
             return new JsonObject
             {
@@ -99,7 +120,7 @@ namespace OpenTwinsV2.Twins.Builders
         {
             return new JsonObject
             {
-                ["dgraph.type"] = new JsonArray("Thing"),
+                ["dgraph.type"] = new JsonArray{"Thing", "Placeholder"},
                 ["thingId"] = thingId,
                 ["name"] = thingId,
                 ["createdAt"] = DateTime.UtcNow.ToString("o"),
@@ -120,7 +141,6 @@ namespace OpenTwinsV2.Twins.Builders
             if (lower.Contains("part") || lower.Contains("component"))
                 return "hasPart";
             return "relatedTo";
-
         }
 
         public static JsonObject BuildDeleteRelation(string relationUid)
@@ -133,11 +153,16 @@ namespace OpenTwinsV2.Twins.Builders
 
         public static JsonObject BuildRelation(Link link, string targetUid, string sourceUid = "_:source", int relCounter = 1, bool bidir=true)
         {
-            if (link.Rel == null) return [];            
-            var relNode = BuildRelationNode(link.Rel);
+            return BuildRelation(link.Rel, targetUid, sourceUid, relCounter, bidir);
+        }
+
+        public static JsonObject BuildRelation(string? rel, string targetUid, string sourceUid = "_:source", int relCounter = 1, bool bidir = true)
+        {
+            if (rel == null) return []; 
+            var relNode = BuildRelationNode(rel);
             relNode["uid"] = $"_:rel{relCounter}"; //TODO: Recieve an uid, and if it's null, build a relative one (the current flow)
 
-            string edgeName = MapRelToEdge(link.Rel);
+            string edgeName = MapRelToEdge(rel);
 
             if (bidir)
             {
@@ -155,6 +180,22 @@ namespace OpenTwinsV2.Twins.Builders
             return relNode;
         }
 
+        public static void TurnUnidirectionalRelationPayloadIntoBidirectional(string sourceUid, JsonObject payload)
+        {
+            var newObjectives = payload["relatedTo"]! switch
+            {
+                JsonObject objObj => new JsonArray(objObj.DeepClone()),
+                JsonArray array => array,
+                _ => throw new Exception($"Payload malformed: {payload}")
+            };
+            
+            newObjectives.Add(new JsonObject{["uid"]= sourceUid});
+            if(payload["relatedTo"] is JsonObject)
+                payload["relatedTo"] = newObjectives;
+
+            payload.Remove("relatedFrom");
+        }
+
         /// <summary>
         /// Construye un payload JSON con sourceThing + placeholders + relation nodes.
         /// No toca DGraph ni hace logs. 
@@ -165,7 +206,8 @@ namespace OpenTwinsV2.Twins.Builders
             ThingDescription td,
             string twinUid,
             Dictionary<string, string> uidTargets,
-            string? uid = null)
+            ref int relCounter, ref int targetCounter,
+            string? uid = null, JsonArray? currentPayload = null)
         {
             // 1. Source Thing
             var sourceThing = MapToThing(td);
@@ -177,9 +219,6 @@ namespace OpenTwinsV2.Twins.Builders
             Console.WriteLine($"TD: {td}");
             if (td.Links == null || td.Links.Count == 0)
                 return payload;
-
-            int relCounter = 0;
-            int targetCounter = 0;
 
             foreach (var link in td.Links)
             {
@@ -205,13 +244,22 @@ namespace OpenTwinsV2.Twins.Builders
                 }
                 Console.WriteLine($"TARGET ADDED: {targetUid}");
 
-                var relation = BuildRelation(link, targetUid, relCounter: relCounter, bidir: false);
-                Console.WriteLine($"RELATION ADDED: {relation}");
-                payload.Add(relation);
+                var bid = InstanciationService.GetBidirectionalRelationPayload(uid ?? "_:source", targetUid, link.Rel, currentPayload ?? []);
+                if(bid is null){
+                    var unidir = InstanciationService.GetUnidirectionalRelationPayload(targetUid, uid ?? "_:source", link.Href.ToString(), currentPayload ?? []);
+                    if(unidir is not null)
+                    {
+                        TurnUnidirectionalRelationPayloadIntoBidirectional(uid ?? "_:source", unidir);
+                    }
+                    else
+                    {
+                        var relation = BuildRelation(link, targetUid, sourceUid: uid ?? "_:source", relCounter: relCounter, bidir: false);
+                        Console.WriteLine($"RELATION ADDED: {relation}");
+                        payload.Add(relation);
+                    }   
+                }
             }
-
             return payload;
         }
-
     }
 }

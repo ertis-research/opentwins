@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: things-service
-          image: docker.ertis.uma.es/opentwinsv2/opentwinsv2-things:0.0.2 
+          image: docker.ertis.uma.es/opentwinsv2/opentwinsv2-things:0.0.3 
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

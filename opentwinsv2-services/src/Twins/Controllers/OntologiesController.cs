@@ -462,6 +462,7 @@ namespace OpenTwinsV2.Twins.Controllers
             if (!await _dgraphService.ExistsThingInOntologyByIdAsync(ontologyId, thingId))
                 return NotFound($"There is no {thingId} thing associated to the {ontologyId} ontology in DGraph, it cannot be instanciated");
 
+
             bool conflict = true;
             try
             {
@@ -633,30 +634,30 @@ namespace OpenTwinsV2.Twins.Controllers
             if(subgraph.AsNode() is null)
                 return BadRequest("The provided Json Graph is not valid: obtained null");
 
-            if(!(subgraph.TryGetProperty("@graph", out var graphElement) && graphElement.AsNode() is JsonArray graphNode))
+            if(!(subgraph.TryGetProperty("@graph", out var graphElement) && graphElement.AsNode() is JsonArray graphArr))
                 return BadRequest("The Json provided in the Body does not belong to a Json-Ld Graph.");
 
-            if(graphNode.Count()==0)
+            if(graphArr.Count()==0)
                 return NoContent();
 
-            if(_instanciationService.AreThereConflictingIdsOnSubGraph(graphNode))
+            if(_instanciationService.AreThereConflictingIdsOnSubGraph(graphArr))
                 return Conflict($"There are at least one conflicting id between some nodes of the subgraph provided.");
 
-            // try
-            // {
-            //     await _instanciationService.ValidateGraph(ontologyId, subgraph);
-            // }catch(InvalidDataException ex)
-            // {
-            //     return BadRequest(ex.Message);
-            // }catch(Exception ex)
-            // {
-            //     return StatusCode(500, $"Something went wrong while validating the Graph: {ex.Message}");
-            // }
+            Dictionary<string, (string, JsonObject)> infoDict = []; 
 
             try
             {
-                await _instanciationService.InstanciateThingGraph(ontologyId, graphNode);
-            }catch(Exception ex)
+                await _instanciationService.InstanciateThingGraph(ontologyId, graphArr);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch(InvalidOperationException ex)
+            {
+                return Conflict(ex.Message);
+            }
+            catch(Exception ex)
             {
                 return StatusCode(500, $"Something went wrong while instanciating the Things: {ex.Message}");
             }
@@ -707,21 +708,19 @@ namespace OpenTwinsV2.Twins.Controllers
             if(_instanciationService.AreThereConflictingIdsOnSubGraph(graphNode))
                 return Conflict($"There are at least one conflicting id between some nodes of the subgraph provided.");
 
-            // try
-            // {
-            //     await _instanciationService.ValidateGraph(ontologyId, subgraph);
-            // }catch(InvalidDataException ex)
-            // {
-            //     return BadRequest(ex.Message);
-            // }catch(Exception ex)
-            // {
-            //     return StatusCode(500, $"Something went wrong while validating the Graph: {ex.Message}");
-            // }
-
             try
             {
                 await _instanciationService.InstanciateThingGraph(ontologyId, graphNode, twinId);
-            }catch(Exception ex)
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch(InvalidOperationException ex)
+            {
+                return Conflict(ex.Message);
+            }
+            catch(Exception ex)
             {
                 return StatusCode(500, $"Something went wrong while instanciating the Things: {ex.Message}");
             }

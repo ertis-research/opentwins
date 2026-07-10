@@ -260,15 +260,16 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="ontology">The identifier of the Ontology of the nodes.</param>
         /// <param name="prefix">The prefix of the Thing.</param>
         /// <param name="nquads">The list of NQuads.</param>
+        /// <param name="label">The label of the node in the RDF Graph.</param>
         /// <returns></returns>
-        public static void AddNQuadThingNodeTriples(string uid, string thingId, string ontology, string prefix, ICollection<string> nquads)
+        public static void AddNQuadThingNodeTriples(string uid, string thingId, string ontology, string prefix, ICollection<string> nquads, string? label = null)
         {
             var ontology_uid = $"_:{ontology}";
             var namespace_uid = $"_:{ontology}namespace_{prefix.ToLowerInvariant()}";
 
             nquads.Add($"{uid} <dgraph.type> \"Thing\" .");
             nquads.Add($"{uid} <thingId> \"{ontology}:{thingId}\" .");
-            nquads.Add($"{uid} <name> \"{thingId}\" .");
+            nquads.Add($"{uid} <name> \"{label ?? thingId}\" .");
             nquads.Add($"{uid} <createdAt> \"{DateTime.UtcNow:O}\" .");
             nquads.Add($"{uid} <Thing.prefix> {namespace_uid} .");
 

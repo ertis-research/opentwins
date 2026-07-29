@@ -93,7 +93,7 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="thingId">The identifier of the Thing.</param>
         /// <returns>
         /// Returns true if the delete petition returned a successful status code.<br/>
-        /// Returns false if teh delete petition did not return a successful code.
+        /// Returns false if the delete petition did not return a successful code.
         /// </returns>
         public async Task<bool> DeleteThingAsync(string thingId)
         {

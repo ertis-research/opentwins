@@ -11,6 +11,7 @@ using k8s;
 using k8s.Models;
 using Microsoft.OpenApi.Expressions;
 using OpenTwinsV2.Orchestration.Formatters;
+using OpenTwinsV2.Shared.Models;
 // using OpenTwinsV2.Orchestration.Services.BenthosService;
 
 namespace OpenTwinsV2.Orchestration.Controllers
@@ -97,17 +98,17 @@ namespace OpenTwinsV2.Orchestration.Controllers
         }
 
         /// <summary>
-        /// Returns all Connectors with their job identifier and Thing Description.
+        /// Returns all Connections with their Thing Description.
         /// </summary>
-        /// <param name="page">The number of current page of Connectors.</param>
-        /// <param name="pageSize">The size of the pages of Connectors.</param>
-        /// <param name="filter">The optional string filter applied to Connectors. If not specified no filter will be applied.</param>
+        /// <param name="page">The number of current page of Connections.</param>
+        /// <param name="pageSize">The size of the pages of Connections.</param>
+        /// <param name="search">The optional string filter applied to Connections. If not specified no filter will be applied.</param>
         /// <returns>
-        /// Returns 200 Ok with the list of Connectors.<br/>
-        /// Returns 500 Internal Server Error if any issue is encountered while obtaining the Connectors.
+        /// Returns 200 Ok with the list of Connections.<br/>
+        /// Returns 500 Internal Server Error if any issue is encountered while obtaining the Connections.
         /// </returns>
         [HttpGet("/connections/")]
-        public async Task<IActionResult> GetAllConnectors(
+        public async Task<IActionResult> GetAllConnections(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] string? search = null
@@ -115,19 +116,18 @@ namespace OpenTwinsV2.Orchestration.Controllers
         {
             try
             {
-                var list = await _benthosService.GetConnectors(page, pageSize, search);
+                var list = await _benthosService.GetConnections(page, pageSize, search);
                 return Ok(list);
             }catch(Exception ex)
             {
-                return StatusCode(500, $"Error getting the Connectors: {ex.GetType} --> {ex.Message}");
+                return StatusCode(500, $"Error getting the Connections: {ex.GetType} --> {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Creates a Connector and its Benthos Pod with the thingDescription provided.
+        /// Creates a Connection and its Benthos Pod with the thingDescription provided.
         /// </summary>
-        /// <param name="thingId">The identifier of the Connector.</param>
-        /// <param name="thingDescription">The ThingDescription of the Connector.</param>
+        /// <param name="thingDescription">The ThingDescription of the Connection.</param>
         /// <returns>
         /// Returns 200 Ok with a success message and the job identifier of the Pod.<br/>
         /// Returns 400 Bad Request if the thingId is empty or null, or if the ThingDescription provided to Things is of bad format.<br/>
@@ -135,7 +135,7 @@ namespace OpenTwinsV2.Orchestration.Controllers
         /// Returns 500 Internal Server Error if any issue was encountered while connecting to Things, creating the Thing, obtaining the default ThingDescription or creating the Pod or 8its configMap.
         /// </returns>
         [HttpPost("/connections/")]
-        public async Task<IActionResult> CreateConnector([FromBody] JsonNode thingDescription)
+        public async Task<IActionResult> CreateConnection([FromBody] JsonNode thingDescription)
         {
             if(thingDescription is null)
                 return BadRequest("The Thing Description cannot be null.");
@@ -153,12 +153,15 @@ namespace OpenTwinsV2.Orchestration.Controllers
 
             var jobId = BenthosConfigParser.GetJobIdFromThingId(thingId);
 
-            if(await _benthosService.ExistsPod(jobId) || await _benthosService.ExistsConfigMap(thingId))
+            if(await _benthosService.ExistsPod(jobId))
                 return Conflict($"There is already a Benthos Pod with the id {thingId}");
+
+            if(await _benthosService.ExistsConfigMap(thingId))
+                return Conflict($"There is already a configMap for a Benthos Pod with the id {thingId}");
 
             //first, check the health of things service
             if(!await _benthosService.CheckThingsHealth())
-                return StatusCode(500, $"Something went wrong while creating the Connector: Thing Service is not available");
+                return StatusCode(500, $"Something went wrong while creating the Connection: Thing Service is not available");
 
 
             if(await _benthosService.ExistsThing(thingId))
@@ -166,7 +169,7 @@ namespace OpenTwinsV2.Orchestration.Controllers
             
             try
             {
-                await _benthosService.CreateConnector(thingId, thingDescription);
+                await _benthosService.CreateConnection(thingId, thingDescription);
             }
             catch (ArgumentNullException ex)
             {
@@ -179,18 +182,18 @@ namespace OpenTwinsV2.Orchestration.Controllers
             catch(Exception ex)
             {
                 //The Thing and ConfigMap deletions is already controlled in Service.
-                return StatusCode(500, $"Something went wrong while creating the connector: {ex.GetType} --> {ex.Message}");
+                return StatusCode(500, $"Something went wrong while creating the Connection: {ex.GetType} --> {ex.Message}");
             }
 
             //once created, return success message
-            return Ok(new {Message="Connector created successfully", JobId = jobId});
+            return Ok(new {Message="Connection created successfully", JobId = jobId});
         }
 
         /// <summary>
-        /// Creates a new Connector or modifies an existing one and its Benthos Pod.
+        /// Creates a new Connection or modifies an existing one and its Benthos Pod.
         /// </summary>
-        /// <param name="thingId">The identifier of the Connector Thing.</param>
-        /// <param name="thingDescription">The ThingDescription of the Connector Thing.</param>
+        /// <param name="thingId">The identifier of the Connection Thing.</param>
+        /// <param name="thingDescription">The ThingDescription of the Connection Thing.</param>
         /// <returns>
         /// Returns 200 Ok with a success message and the job identifier of the Pod.<br/>
         /// Returns 400 Bad Request if the thingId is empty or null, the ThingDescription provided to Things is of bad format or if the thingId of the request and the ThingDescription does not match.<br/>
@@ -198,7 +201,7 @@ namespace OpenTwinsV2.Orchestration.Controllers
         /// Returns 500 Internal Server Error if any issue was encountered while connecting to Things, creating the Thing, obtaining the default ThingDescription or creating the Pod or 8its configMap.
         ///</returns>
         [HttpPut("/connections/{thingId}")]
-        public async Task<IActionResult> CreateConnector(string thingId, [FromBody] JsonNode thingDescription)
+        public async Task<IActionResult> CreateConnection(string thingId, [FromBody] JsonNode thingDescription)
         {
             if(thingDescription is null)
                 return BadRequest("The Thing Description cannot be null.");
@@ -207,7 +210,7 @@ namespace OpenTwinsV2.Orchestration.Controllers
                 return BadRequest("The thingId cannot be null or empty");
 
             if(!await _benthosService.CheckThingsHealth())
-                return StatusCode(500, $"Something went wrong while creating the Connector: Thing Service is not available");
+                return StatusCode(500, $"Something went wrong while creating the Connection: Thing Service is not available");
 
             //Check if the thingId provided matched the one on the ThingDescription
 
@@ -216,10 +219,10 @@ namespace OpenTwinsV2.Orchestration.Controllers
 
             var jobId = BenthosConfigParser.GetJobIdFromThingId(thingId);
 
-            var modifies = await _benthosService.ExistsConnector(thingId);
+            var modifies = await _benthosService.ExistsConnection(thingId);
             try
             {
-                await (modifies ? _benthosService.ModifyConnector(thingId, thingDescription) : _benthosService.CreateConnector(thingId, thingDescription));
+                await (modifies ? _benthosService.ModifyConnection(thingId, thingDescription) : _benthosService.CreateConnection(thingId, thingDescription));
             }
             catch (ArgumentNullException ex)
             {
@@ -230,37 +233,37 @@ namespace OpenTwinsV2.Orchestration.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Something went wrong while {(modifies ? "modifying" : "creating")} the Connector: {ex.Message}");
+                return StatusCode(500, $"Something went wrong while {(modifies ? "modifying" : "creating")} the Connection: {ex.Message}");
             }
-            return Ok(new {Message=$"Connector {(!modifies ? "created" : "modified")} successfully", JobId = jobId});
+            return Ok(new {Message=$"Connection {(!modifies ? "created" : "modified")} successfully", JobId = jobId});
         }
 
         /// <summary>
-        /// Deletes a Connector, including its Thing and its Benthos Pod.
+        /// Deletes a Connection, including its Thing and its Benthos Pod.
         /// </summary>
-        /// <param name="thingId">The identifier of the Connector.</param>
+        /// <param name="thingId">The identifier of the Connection.</param>
         /// <returns>
-        /// Returns 204 No Content if the Connector was deleted successfully.<br/>
+        /// Returns 204 No Content if the Connection was deleted successfully.<br/>
         /// Returns 400 Bad Request if the identifier is empty or null.<br/>
         /// Returns 404 Not Found if the Thing or the Benthos Pod could not be found.<br/>
         /// Returns 500 Internal Server Error if any issue was encountered while connecting to Things, deleting the Pod, its configuration or its Thing. 
         /// </returns>
         [HttpDelete("/connections/{thingId}")]
-        public async Task<IActionResult> DeleteConnector(string thingId)
+        public async Task<IActionResult> DeleteConnection(string thingId)
         {
 
             if(string.IsNullOrWhiteSpace(thingId))
                 return BadRequest("The thingId cannot be null or empty.");
 
-            if(!await _benthosService.ExistsPod(BenthosConfigParser.GetJobIdFromThingId(thingId),connector:true))
-                return NotFound($"The Connector with id {thingId} was not found");
+            if(!await _benthosService.ExistsPod(BenthosConfigParser.GetJobIdFromThingId(thingId),Connection:true))
+                return NotFound($"The Connection with id {thingId} was not found");
 
             if(!await _benthosService.ExistsThing(thingId))
                 return NotFound($"There is no Thing Description with thingId {thingId}.");
 
             try
             {
-                await _benthosService.DeleteConnector(thingId);
+                await _benthosService.DeleteConnection(thingId);
                 return NoContent();
             }catch(Exception ex)
             {
@@ -269,40 +272,77 @@ namespace OpenTwinsV2.Orchestration.Controllers
         }
 
         /// <summary>
-        /// Gets the Thing Description and job identifier of the Connector.
+        /// Gets the Thing Description of the Connection.
         /// </summary>
-        /// <param name="thingId">The identifier of the Connector</param>
+        /// <param name="thingId">The identifier of the Connection</param>
         /// <returns>
-        /// Returns 200 Ok with the Thing Description and the job identifier of the Connector.<br/>
+        /// Returns 200 Ok with the Thing Description of the Connection.<br/>
         /// Returns 400 Bad Request if the identifier is null or empty.<br/>
         /// Returns 404 Not Found if the Thing or the Benthos Pod could not be found.<br/>
         /// Returns 500 Internal Server Error if any issue is encountered while connecting to Things, obtaining the ThingDescription or the Benthos Pod.
         /// </returns>
         [HttpGet("/connections/{thingId}")]
-        public async Task<IActionResult> GetConnector(string thingId)
+        public async Task<IActionResult> GetConnectionThingDescription(string thingId)
         {
 
             if(string.IsNullOrWhiteSpace(thingId))
                 return BadRequest("The thingId cannot be null or empty.");
 
-            //Response: ThingDescription + JobId
+            //Response: ThingDescription
             
             if(!await _benthosService.ExistsThing(thingId))
                 return NotFound($"There is no Thing with thingId {thingId}.");
 
             try
             {
-                var (td, jobId) = await _benthosService.GetConnectorByThingId(thingId);
-                return Ok(new {Message = $"Succesfully got {thingId} Connector info", ThingDescription = td, JobId = jobId});
+                var (td, _) = await _benthosService.GetConnectionByThingId(thingId);
+                return Ok(td);
             }
             catch (InvalidOperationException)
             {
-                return NotFound($"No Connector with thingId {thingId} was found running");
+                return NotFound($"No Connection with thingId {thingId} was found running");
             }            
             catch(Exception ex)
             {
-                return StatusCode(500, $"Error getting the Connector {thingId}: {ex.GetType} --> {ex.Message}");
+                return StatusCode(500, $"Error getting the Connection {thingId}: {ex.GetType} --> {ex.Message}");
             }
+        }
+
+        [HttpGet("/connections/{thingId}/pod")]
+        public async Task<IActionResult> GetConnectionPod(string thingId)
+        {
+            if(string.IsNullOrWhiteSpace(thingId))
+                return BadRequest("The thingId cannot be null or empty.");
+
+            if(!await _benthosService.ExistsThing(thingId))
+                return NotFound($"There is no Thing with thingId {thingId}.");
+            
+            return Ok(await _benthosService.GetConnectionPodInfo(thingId));
+        }
+
+        [HttpGet("/connections/{thingId}/logs")]
+        public async Task<IActionResult> GetConnectionLogs(string thingId)
+        {
+            if(string.IsNullOrWhiteSpace(thingId))
+                return BadRequest("The thingId cannot be null or empty.");
+
+            if(!await _benthosService.ExistsThing(thingId))
+                return NotFound($"There is no Thing with thingId {thingId}.");
+
+
+            return Ok(await _benthosService.GetConnectionPodLogs(thingId));
+        }
+
+        [HttpGet("/connections/{thingId}/configMap")]
+        public async Task<IActionResult> GetConnectionConfigMap(string thingId)
+        {
+            if(string.IsNullOrWhiteSpace(thingId))
+                return BadRequest("The thingId cannot be null or empty.");
+
+            if(!await _benthosService.ExistsThing(thingId))
+                return NotFound($"There is no Thing with thingId {thingId}.");
+
+            return Ok(await _benthosService.GetConfigMapInfoOfThing(thingId));
         }
     }
 }

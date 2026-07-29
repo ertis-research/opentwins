@@ -36,6 +36,7 @@ public class ThingsController : ControllerBase
     [Produces("application/json")]
     [ProducesResponseType(typeof(PagedResult<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAllThings(
+        [FromQuery] bool showConnections = false,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null) // <--- Nuevo parámetro opcional
@@ -43,7 +44,7 @@ public class ThingsController : ControllerBase
         try
         {
             // Pasamos el search al servicio
-            var result = await _thingsQueryService.GetAllThingsAsync(page, pageSize, search);
+            var result = await _thingsQueryService.GetAllThingsAsync(page, pageSize, search, showConnections);
             return Ok(result);
         }
         catch (Exception ex)
@@ -243,7 +244,6 @@ public class ThingsController : ControllerBase
         var responses = new List<dynamic>();
 
         var list = graph.EnumerateArray().ToList();
-        // var options = new ParallelOptions { MaxDegreeOfParallelism = 150 };
 
         foreach(var thing in list)
         {
@@ -279,7 +279,7 @@ public class ThingsController : ControllerBase
                 Status = HttpStatusCode.Accepted,
                 Message = rawJson
             });
-        };
+        }
 
         try
         {

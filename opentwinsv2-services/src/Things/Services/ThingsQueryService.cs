@@ -27,7 +27,7 @@ namespace OpenTwinsV2.Things.Services
             _stateManager = stateManagerService;
         }
 
-        public async Task<PagedResult<ThingDescription>> GetAllThingsAsync(int page, int pageSize, string? searchTerm)
+        public async Task<PagedResult<ThingDescription>> GetAllThingsAsync(int page, int pageSize, string? searchTerm, bool showConnections)
         {
             if (page < 1) page = 1;
             if (pageSize < 1) pageSize = 10;
@@ -44,6 +44,13 @@ namespace OpenTwinsV2.Things.Services
             if (hasSearch)
             {
                 whereClause = "WHERE (td->>'id' ILIKE @Search OR td->>'title' ILIKE @Search)";
+            }
+
+            if (!showConnections)
+            {
+                var typeFilter = "(td->>'@type' IS NULL OR td->>'@type' NOT LIKE '%Connection%')";
+
+                whereClause = string.IsNullOrWhiteSpace(whereClause) ? $"WHERE {typeFilter}" : $"{whereClause} AND {typeFilter}";
             }
 
             var countSql = $"SELECT COUNT(*) FROM thing_descriptions {whereClause};";
@@ -198,15 +205,36 @@ namespace OpenTwinsV2.Things.Services
         public async Task SaveInBulkToPostgreSqlAsync(IEnumerable<ThingDescription> tds)
         {
             await using var connection = await _connectionFactory.CreateConnection();
-            
-            var tasks = tds.Select(async td => (
-                Previous: await _stateService.LoadThingDescriptionBulkState(td.Id!), 
-                New: td));
+            var tasks = tds.Select(async td => 
+                {
+                    var previousState = await _stateService.LoadThingDescriptionBulkState(td.Id!);
+                    return (PreviousState: previousState, New: td);
+                }).ToList(); // <-- CRITICAL: Start tasks immediately
+                Console.WriteLine(2);
+                // 2. Await them all
+                var resolvedTasks = await Task.WhenAll(tasks);
 
-            var tdPairs = (await Task.WhenAll(tasks))
-                .Where(pair => pair.Previous.Count > 0 && !string.IsNullOrWhiteSpace(pair.Previous[0].Value))
-                .Select(pair => (Previous: (pair.Previous.Count > 0 && !string.IsNullOrWhiteSpace(pair.Previous[0].Value)) ? JsonSerializer.Deserialize<ThingDescription>(pair.Previous[0].Value) : null, pair.New));
+                // 3. Deserialize safely and materialize to a List immediately
+                var tdPairs = resolvedTasks.Select(pair => 
+                {
+                    ThingDescription? previousTd = null;
+                    try
+                    {
+                        if (pair.PreviousState is { Count: > 0 } && !string.IsNullOrWhiteSpace(pair.PreviousState[0].Value))
+                        {
+                            previousTd = JsonSerializer.Deserialize<ThingDescription>(pair.PreviousState[0].Value);
+                        }
+                    }
+                    catch (Exception jsonEx)
+                    {
+                        Console.WriteLine($"[WARNING] Failed to deserialize previous state for {pair.New.Id}: {jsonEx.Message}");
+                    }
 
+                    return (Previous: previousTd, New: pair.New);
+                }).ToList(); // <-- CRITICAL: Materialize now so Parallel doesn't evaluate lazily
+                Console.WriteLine(3);
+
+                // --- Your PostgreSQL code runs exactly the same ---
             var idsArray = tds.Select(x => x.Id).ToArray(); 
             var tdsArray = tds.Select(x => x.ToString()).ToArray();
 
@@ -221,33 +249,35 @@ namespace OpenTwinsV2.Things.Services
             cmd.Parameters.Add(new NpgsqlParameter("ThingIds", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = idsArray });
             cmd.Parameters.Add(new NpgsqlParameter("NewTds", NpgsqlDbType.Array | NpgsqlDbType.Jsonb) { Value = tdsArray });
 
+            Console.WriteLine(4);
+
             int affected = await cmd.ExecuteNonQueryAsync();
             if (affected == 0) Console.WriteLine($"No row affected for ThingIds provided");
-
             Console.WriteLine($"{affected} Thing Descriptions saved in PostgreSQL.");
 
-            //Update in Twins
+            // --- Parallel loop is now guaranteed to have solid, non-lazy data ---
             try
             {
+                Console.WriteLine($"Starting twins update for {tdPairs.Count} items.");
+                
                 await Parallel.ForEachAsync(tdPairs, async (pair, cancellationToken) =>
                 {                   
                     var td = pair.New;
                     await _stateManager.InitializeStateFromDescription(td.Id!, td.Properties); 
-                    if(await _twinsService.ExistsThingInTwins(td.Id!))
+                    
+                    if (await _twinsService.ExistsThingInTwins(td.Id!))
                         await _twinsService.UpdateThingInTwins(td, pair.Previous);
 
                     var events = td.SubscribedEvents?.Select(ev => new EventSubscription(ev.Event, ev.AutoEmitState)).ToList() ?? [];
 
-                    if(events.Count>0)
+                    if (events.Count > 0)
                         await _eventsService.SubscribeToEventsAsync(td.Id!, events);
-
-                        //TODO: Desuscribe?
                 });
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Could not bulk create in Twins: {ex.Message}");
-            }          
+            }        
         }
 
         public async Task DeleteInBulkFromPostgreSqlAsync(IEnumerable<string> ids)

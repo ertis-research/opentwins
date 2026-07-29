@@ -18,6 +18,7 @@ using System.Text.Json;
 using k8s.ClientSets;
 using Orchestration.Services;
 using OpenTwinsV2.Shared.Models;
+using Json.More;
 
 
 namespace OpenTwinsV2.Orchestration.Services
@@ -34,7 +35,7 @@ namespace OpenTwinsV2.Orchestration.Services
             _config = config;
             _k8s = k8s;
             _thingsClient = thingsClient ?? throw new ArgumentNullException(nameof(thingsClient));
-            _namespaceName = _config["ConnectorNamespace"] ?? throw new MissingFieldException("There is no Namespace Name stored in Configuration");
+            _namespaceName = _config["ConnectionNamespace"] ?? throw new MissingFieldException("There is no Namespace Name stored in Configuration");
             //the NamespaceInitializer IHostedService is runned before any comunication of this service, so we assume that it exists (created or alredy existed)
         }
 
@@ -59,8 +60,17 @@ namespace OpenTwinsV2.Orchestration.Services
         /// <returns></returns>
         /// <exception cref="TimeoutException">Thrown if Things Service health check failed.</exception>
         /// <exception cref="Exception">Thrown if the response obtained from the client is not successful.</exception>
-        public async Task CreateThing(JsonNode thingDescription)
+        public async Task CreateThing(JsonNode thingDescription, bool isConnection = false)
         {
+            //Connection type
+            var td = thingDescription.AsObject();
+            if(td["@type"] is null)
+                td["@type"] = new JsonArray{"Connection"};
+            else if(td["@type"] is JsonArray typeArr && !typeArr.Contains("Connection"))
+                typeArr.Add("Connection");
+            else if(td["@type"] is JsonValue typeVal && typeVal is not null && (typeVal?.GetValue<string>() ?? "") != "Connection")
+                td["@type"] = new JsonArray{typeVal!.GetString(), "Connection"};
+
             if(!await CheckThingsHealth())
                 throw new TimeoutException("Things Service is not available");
             var createResponse = await _thingsClient.CreateThing(thingDescription);
@@ -150,47 +160,47 @@ namespace OpenTwinsV2.Orchestration.Services
         
 
         /// <summary>
-        /// Checks if a Pod or Connector (if specified) exists with a given job identifier.
+        /// Checks if a Pod or Connection (if specified) exists with a given job identifier.
         /// </summary>
         /// <param name="jobId">The job identifier.</param>
-        /// <param name="connector">OPTIONAL. Wether we are looking for a Connector or not. By defualt: false.</param>
+        /// <param name="Connection">OPTIONAL. Wether we are looking for a Connection or not. By defualt: false.</param>
         /// <returns>
-        /// Returns true if the Pod or Connector exists.<br/>
-        /// Returns false if the Pod or Connector does not exist.
+        /// Returns true if the Pod or Connection exists.<br/>
+        /// Returns false if the Pod or Connection does not exist.
         /// </returns>
-        public async Task<bool> ExistsPod(string jobId, bool connector = false)
+        public async Task<bool> ExistsPod(string jobId, bool Connection = false)
         {
-            return await _k8s.ExistsPod(jobId, _namespaceName, connector);
+            return await _k8s.ExistsPod(jobId, _namespaceName, Connection);
         }
         
 
         /// <summary>
-        /// Checks if a Connector Exists (Pod and Thing).
+        /// Checks if a Connection Exists (Pod and Thing).
         /// </summary>
-        /// <param name="thingId">The identifier of the Connector Thing.</param>
+        /// <param name="thingId">The identifier of the Connection Thing.</param>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <returns>
         /// Returns true if either the Pod or the Thing exist.<br/>
         /// Returns false if neither the Pod or the Thing exist.
         /// </returns>
-        public async Task<bool> ExistsConnector(string thingId, string namespaceName)
+        public async Task<bool> ExistsConnection(string thingId, string namespaceName)
         {
             var thing = await ExistsThing(thingId);
-            var pod = await _k8s.ExistsPod(BenthosConfigParser.GetJobIdFromThingId(thingId), namespaceName, connector: true);
+            var pod = await _k8s.ExistsPod(BenthosConfigParser.GetJobIdFromThingId(thingId), namespaceName, Connection: true);
             return thing || pod;
         }
 
         /// <summary>
-        /// Checks if a Connector Exists (Pod and Thing).
+        /// Checks if a Connection Exists (Pod and Thing).
         /// </summary>
-        /// <param name="thingId">The identifier of the Connector Thing.</param>
+        /// <param name="thingId">The identifier of the Connection Thing.</param>
         /// <returns>
         /// Returns true if either the Pod or the Thing exist.<br/>
         /// Returns false if neither the Pod or the Thing exist.
         /// </returns>
-        public async Task<bool> ExistsConnector(string thingId)
+        public async Task<bool> ExistsConnection(string thingId)
         {
-            return await ExistsConnector(thingId, _namespaceName);
+            return await ExistsConnection(thingId, _namespaceName);
         }
 
         /// <summary>
@@ -255,17 +265,52 @@ namespace OpenTwinsV2.Orchestration.Services
             return await _k8s.GetConfigMap(configId, _namespaceName);
         }
 
+        //TODO: Documentation
+        public async Task<JsonElement> GetConfigMapInfoOfThing(string thingId)
+        {
+            var configMap = await GetConfigMap(BenthosConfigParser.GetConfigName(thingId));
+            
+            if (configMap == null) 
+                return JsonSerializer.SerializeToElement("{}");
+
+            // 1. Process the Data dictionary to make YAML/multiline strings readable
+            var processedData = new Dictionary<string, object>();
+
+            var yamlDeserializer = new DeserializerBuilder()
+            .IgnoreUnmatchedProperties()
+            .Build();
+            
+            if (configMap.Data != null)
+                foreach (var kvp in configMap.Data)
+                    if (kvp.Value != null && kvp.Value.Contains('\n'))
+                        processedData[kvp.Key] = kvp.Value.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
+                    else
+                        processedData[kvp.Key] = kvp.Value ?? "";
+            
+
+            var relevantInfo = new
+            {
+                Name = configMap.Metadata?.Name,
+                Namespace = configMap.Metadata?.NamespaceProperty,
+                CreationTime = configMap.Metadata?.CreationTimestamp,
+                Labels = configMap.Metadata?.Labels,
+                Data = processedData
+            };
+
+            return JsonSerializer.SerializeToElement(relevantInfo);
+        }
+
         /// <summary>
         /// Gets the full ConfigMap for Kuebernetes Pod from the provided ThingDescription.
         /// </summary>
-        /// <param name="thingId">The identifier of the Connector Thing.</param>
-        /// <param name="thingDescription">The ThingDescription of the Connector Thing.</param>
-        /// <returns>Returns the full ConfigMap for the Connector Thing.</returns>
-        public async Task<V1ConfigMap> GetConnectorConfigFromThingDescription(string thingId, JsonNode thingDescription)
+        /// <param name="thingId">The identifier of the Connection Thing.</param>
+        /// <param name="thingDescription">The ThingDescription of the Connection Thing.</param>
+        /// <returns>Returns the full ConfigMap for the Connection Thing.</returns>
+        public async Task<V1ConfigMap> GetConnectionConfigFromThingDescription(string thingId, JsonNode thingDescription)
         {
             var input = BenthosConfigParser.GetInputFromThingDescription(thingDescription);
             var configMap = ParseThingDescriptionIntoBenthosConfig(thingDescription, thingId, input);
-            var yaml = await GetKafkaOutput("./Sources/kafka.yaml");
+            var yaml = await GetKafkaOutput(Path.Combine(AppContext.BaseDirectory, "Sources", "kafka.yaml"));
             configMap = MergeOutputYamlIntoConfig(yaml, configMap);
             return configMap;
         }
@@ -274,7 +319,7 @@ namespace OpenTwinsV2.Orchestration.Services
         /// Creates a Benthos Pod.
         /// </summary>
         /// <param name="jobId">The identifier of the job.</param>
-        /// <param name="thingId">OPTIONAL. The identifier of the Connector Thing.</param>
+        /// <param name="thingId">OPTIONAL. The identifier of the Connection Thing.</param>
         /// <returns></returns>
         public async Task CreateBenthosPod(string jobId, string thingId = "")
         {
@@ -296,30 +341,30 @@ namespace OpenTwinsV2.Orchestration.Services
         /// It restarts a Pod by recreating it with the same ConfigMap.
         /// </summary>
         /// <param name="jobId">The identifier of the job.</param>
-        /// <param name="connector">OPTIONAL. if the pod is a Connector. By default: false.</param>
+        /// <param name="Connection">OPTIONAL. if the pod is a Connection. By default: false.</param>
         /// <returns></returns>
-        public async Task RestartPod(string jobId, bool connector = false)
+        public async Task RestartPod(string jobId, bool Connection = false)
         {
             var pod = await _k8s.GetBenthosPod(jobId, _namespaceName);
-            if(connector && !await IsPodAConnector(jobId))
-                throw new Exception("The pod in question is not a Connector.");
-            await _k8s.RestartBenthosPod(pod, _namespaceName, connector);
+            if(Connection && !await IsPodAConnection(jobId))
+                throw new Exception("The pod in question is not a Connection.");
+            await _k8s.RestartBenthosPod(pod, _namespaceName, Connection);
         }
 
-        public async Task<bool> IsPodAConnector(string jobId)
+        public async Task<bool> IsPodAConnection(string jobId)
         {
             if(!await ExistsPod(jobId))
                 throw new KeyNotFoundException("The pod does not exist");
-            return await _k8s.IsPodAConnector(jobId, _namespaceName);
+            return await _k8s.IsPodAConnection(jobId, _namespaceName);
         }
 
         /// <summary>
-        /// Creates a Connector (Pod + Thing).
+        /// Creates a Connection (Pod + Thing).
         /// </summary>
         /// <param name="thingId">The identifier of the Thing.</param>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <returns></returns>
-        public async Task CreateConnector(string thingId, JsonNode thingDescription, string namespaceName)
+        public async Task CreateConnection(string thingId, JsonNode thingDescription, string namespaceName)
         {
             //create or modify the Thing
             await CreateThing(thingDescription);
@@ -330,7 +375,7 @@ namespace OpenTwinsV2.Orchestration.Services
             {
                 try
                 {
-                    configMap = await GetConnectorConfigFromThingDescription(thingId, thingDescription);
+                    configMap = await GetConnectionConfigFromThingDescription(thingId, thingDescription);
                     await _k8s.CreateConfigMap(configMap, namespaceName);
                 }
                 catch (ArgumentNullException)
@@ -350,7 +395,7 @@ namespace OpenTwinsV2.Orchestration.Services
                     await _k8s.CreateBenthosPod(jobId, namespaceName, thingId);
                 }catch(Exception ex)
                 {
-                    throw new Exception($"Something went wrong while creating the Connector: {ex.Message}");
+                    throw new Exception($"Something went wrong while creating the Connection: {ex.Message}");
                 }
             }
             catch (Exception)
@@ -362,27 +407,27 @@ namespace OpenTwinsV2.Orchestration.Services
         }
 
         /// <summary>
-        /// Creates a Connector (Pod + Thing).
+        /// Creates a Connection (Pod + Thing).
         /// </summary>
         /// <param name="thingId">The identifier of the Thing.</param>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <returns></returns>
-        public async Task CreateConnector(string thingId, JsonNode thingDescription)
+        public async Task CreateConnection(string thingId, JsonNode thingDescription)
         {
-            await CreateConnector(thingId, thingDescription, _namespaceName);
+            await CreateConnection(thingId, thingDescription, _namespaceName);
         }
 
         /// <summary>
-        /// Modifies a Connector (Pod + Thing)
+        /// Modifies a Connection (Pod + Thing)
         /// </summary>
-        /// <param name="thingId">The identifier of the Connector Thing.</param>
-        /// <param name="thingDescription">The ThingDescription of the Connector Thing.</param>
+        /// <param name="thingId">The identifier of the Connection Thing.</param>
+        /// <param name="thingDescription">The ThingDescription of the Connection Thing.</param>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <returns></returns>
-        public async Task ModifyConnector(string thingId, JsonNode thingDescription, string namespaceName)
+        public async Task ModifyConnection(string thingId, JsonNode thingDescription, string namespaceName)
         {
             var priorThing = await GetThing(thingId);
-            var configMap = await GetConnectorConfigFromThingDescription(thingId, thingDescription);
+            var configMap = await GetConnectionConfigFromThingDescription(thingId, thingDescription);
             try{
                 await CreateThing(thingId, thingDescription);
                 await _k8s.ModifyBenthosPod(thingId, configMap, namespaceName);
@@ -395,15 +440,15 @@ namespace OpenTwinsV2.Orchestration.Services
         }
 
         /// <summary>
-        /// Modifies a Connector (Pod + Thing)
+        /// Modifies a Connection (Pod + Thing)
         /// </summary>
-        /// <param name="thingId">The identifier of the Connector Thing.</param>
-        /// <param name="thingDescription">The ThingDescription of the Connector Thing.</param>
+        /// <param name="thingId">The identifier of the Connection Thing.</param>
+        /// <param name="thingDescription">The ThingDescription of the Connection Thing.</param>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <returns></returns>
-        public async Task ModifyConnector(string thingId, JsonNode thingDescription)
+        public async Task ModifyConnection(string thingId, JsonNode thingDescription)
         {
-            await ModifyConnector(thingId, thingDescription, _namespaceName);
+            await ModifyConnection(thingId, thingDescription, _namespaceName);
         }
 
         /// <summary>
@@ -417,10 +462,10 @@ namespace OpenTwinsV2.Orchestration.Services
         }
 
         /// <summary>
-        /// Deletes a Benthos Pod or Connector (if specified).
+        /// Deletes a Benthos Pod or Connection (if specified).
         /// </summary>
         /// <param name="jobId">The identifier of the job.</param>
-        /// <param name="thingId">OPTIONAL. The identifier of the Connector Thing.</param>
+        /// <param name="thingId">OPTIONAL. The identifier of the Connection Thing.</param>
         /// <returns></returns>
         
         public async Task DeleteBenthosJob(string jobId)
@@ -429,14 +474,14 @@ namespace OpenTwinsV2.Orchestration.Services
         }
 
         /// <summary>
-        /// Deletes a Connector (Pod + Thing).
+        /// Deletes a Connection (Pod + Thing).
         /// </summary>
-        /// <param name="thingId">The identifier of the Connector Thing.</param>
+        /// <param name="thingId">The identifier of the Connection Thing.</param>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <returns></returns>
         /// <exception cref="KeyNotFoundException">Thrown if no Thing with such identifier could be found.</exception>
         /// <exception cref="Exception">Thrown if something went wrong while the deletion of either the Thing or the Pod.</exception>
-        public async Task DeleteConnector(string thingId, string namespaceName)
+        public async Task DeleteConnection(string thingId, string namespaceName)
         {
             var thing = await GetThing(thingId) ?? throw new KeyNotFoundException("There is no Thing with such identifier");
 
@@ -445,13 +490,13 @@ namespace OpenTwinsV2.Orchestration.Services
                 await DeleteThing(thingId);
             }catch(Exception ex)
             {
-                throw new Exception($"Something went wrong wile deleting the Connector Thing: {ex.Message}");
+                throw new Exception($"Something went wrong wile deleting the Connection Thing: {ex.Message}");
             }
 
             // var jobId = BenthosConfigParser.GetJobIdFromThingId(thingId);
             try
             {
-                await _k8s.DeleteBenthosJob(thingId, namespaceName, connector:true);
+                await _k8s.DeleteBenthosJob(thingId, namespaceName, Connection:true);
             }catch(Exception ex)
             {
                 await CreateThing(thing);
@@ -460,25 +505,25 @@ namespace OpenTwinsV2.Orchestration.Services
         }
 
         /// <summary>
-        /// Deletes a Connector (Pod + Thing).
+        /// Deletes a Connection (Pod + Thing).
         /// </summary>
-        /// <param name="thingId">The identifier of the Connector Thing.</param>
+        /// <param name="thingId">The identifier of the Connection Thing.</param>
         /// <returns></returns>
         /// <exception cref="KeyNotFoundException">Thrown if no Thing with such identifier could be found.</exception>
         /// <exception cref="Exception">Thrown if something went wrong while the deletion of either the Thing or the Pod.</exception>
-        public async Task DeleteConnector(string thingId)
+        public async Task DeleteConnection(string thingId)
         {
-            await DeleteConnector(thingId, _namespaceName);
+            await DeleteConnection(thingId, _namespaceName);
         }
 
         /// <summary>
-        /// It restarts a Connector Pod.
+        /// It restarts a Connection Pod.
         /// </summary>
-        /// <param name="thingId">The identifier of the Connector Thing.</param>
+        /// <param name="thingId">The identifier of the Connection Thing.</param>
         /// <returns></returns>
-        public async Task RestartConnector(string thingId)
+        public async Task RestartConnection(string thingId)
         {
-            await RestartPod(BenthosConfigParser.GetJobIdFromThingId(thingId), connector: true);
+            await RestartPod(BenthosConfigParser.GetJobIdFromThingId(thingId), Connection: true);
         }
 
         /// <summary>
@@ -570,34 +615,34 @@ namespace OpenTwinsV2.Orchestration.Services
         }
 
         /// <summary>
-        /// Gets all stored Connectors.
+        /// Gets all stored Connections.
         /// </summary>
-        /// <param name="page">The number of current page of Connectors.</param>
-        /// <param name="pageSize">The size of the pages of Connectors.</param>
-        /// <param name="filter">The optional string filter applied to Connectors. If not specified no filter will be applied.</param>
+        /// <param name="page">The number of current page of Connections.</param>
+        /// <param name="pageSize">The size of the pages of Connections.</param>
+        /// <param name="filter">The optional string filter applied to Connections. If not specified no filter will be applied.</param>
         /// <returns>
-        /// Returns an Array with all Connector's Thing Desszcription and job identifiers.
+        /// Returns an Array with all Connection's Thing Desszcription and job identifiers.
         /// </returns>
-        public async Task<PagedResult<JsonElement>> GetConnectors(int page, int pageSize, string? filter)
+        public async Task<PagedResult<JsonElement>> GetConnections(int page, int pageSize, string? filter)
         {
-            return await GetConnectors(page, pageSize, filter, _namespaceName);
+            return await GetConnections(page, pageSize, filter, _namespaceName);
         }
 
         /// <summary>
-        /// Gets all stored Connectors.
+        /// Gets all stored Connections.
         /// </summary>
-        /// <param name="page">The number of current page of Connectors.</param>
-        /// <param name="pageSize">The size of the pages of Connectors.</param>
-        /// <param name="filter">The optional string filter applied to Connectors. If not specified no filter will be applied.</param>
+        /// <param name="page">The number of current page of Connections.</param>
+        /// <param name="pageSize">The size of the pages of Connections.</param>
+        /// <param name="filter">The optional string filter applied to Connections. If not specified no filter will be applied.</param>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <returns>
-        /// Returns an Array with all Connector's Thing Desszcription and job identifiers.
+        /// Returns an Array with all Connection's Thing Descriptions.
         /// </returns>
-        public async Task<PagedResult<JsonElement>> GetConnectors(int page, int pageSize, string? filter, string namespaceName)
+        public async Task<PagedResult<JsonElement>> GetConnections(int page, int pageSize, string? filter, string namespaceName)
         {
             var offset = (page - 1) * pageSize;
 
-            (int totalCount, var pods) = await _k8s.GetAllConnectorPods(namespaceName, offset, pageSize, string.IsNullOrWhiteSpace(filter) ? "" : filter);
+            (int totalCount, var pods) = await _k8s.GetAllConnectionPods(namespaceName, offset, pageSize, string.IsNullOrWhiteSpace(filter) ? "" : filter);
             var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
 
             //now that we have the pods, and can obtain the jobId, get the ThingDescription
@@ -606,9 +651,9 @@ namespace OpenTwinsV2.Orchestration.Services
                 // task: get the thingId and the jobId
                 try
                 {
-                    var jobId = _k8s.GetOriginalValue(pod);
+                    // var jobId = _k8s.GetOriginalValue(pod);
                     var td = await GetThing(_k8s.GetOriginalValue(pod, thingId: true));
-                    result.Add(JsonSerializer.Deserialize<JsonElement>(new JsonObject { ["jobId"] = jobId, ["thingDescription"] = td}));
+                    result.Add(JsonSerializer.Deserialize<JsonElement>(td));
                 }
                 catch (Exception)
                 {
@@ -620,32 +665,66 @@ namespace OpenTwinsV2.Orchestration.Services
         }
 
         /// <summary>
-        /// Gets an specific Connector by its Thing identifier.
+        /// Gets an specific Connection by its Thing identifier.
         /// </summary>
-        /// <param name="thingId">The identifier of the Connector Thing.</param>
-        /// <returns>Returns both the JsonNode of the Thing Description and the job identifier of the Connector.</returns>
+        /// <param name="thingId">The identifier of the Connection Thing.</param>
+        /// <returns>Returns both the JsonNode of the Thing Description and the job identifier of the Connection.</returns>
         /// <exception cref="InvalidOperationException">Thrown if there are more tha one Pod with the provided Thing identifier (illegal).</exception>
         /// <exception cref="Exception">Thrown if there is any other issue encountered while obtaining either the job identifier or the Thing Description.</exception>
         
-        public async Task<(JsonNode?, string?)> GetConnectorByThingId(string thingId)
+        public async Task<(JsonNode?, string?)> GetConnectionByThingId(string thingId)
         {
-            return await GetConnectorByThingId(thingId, _namespaceName);
+            return await GetConnectionByThingId(thingId, _namespaceName);
         }
 
         /// <summary>
-        /// Gets an specific Connector by its Thing identifier.
+        /// Gets an specific Connection by its Thing identifier.
         /// </summary>
-        /// <param name="thingId">The identifier of the Connector Thing.</param>
+        /// <param name="thingId">The identifier of the Connection Thing.</param>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
-        /// <returns>Returns both the JsonNode of the Thing Description and the job identifier of the Connector.</returns>
+        /// <returns>Returns both the JsonNode of the Thing Description and the job identifier of the Connection.</returns>
         /// <exception cref="InvalidOperationException">Thrown if there are more tha one Pod with the provided Thing identifier (illegal).</exception>
         /// <exception cref="Exception">Thrown if there is any other issue encountered while obtaining either the job identifier or the Thing Description.</exception>
-        public async Task<(JsonNode?, string?)> GetConnectorByThingId(string thingId, string namespaceName)
+        public async Task<(JsonNode?, string?)> GetConnectionByThingId(string thingId, string namespaceName)
         {
-            var pod = await _k8s.GetConnectorPodByJobId(thingId, _namespaceName);
+            var pod = await _k8s.GetConnectionPodByThingId(thingId, _namespaceName);
             var jobId = _k8s.GetOriginalValue(pod);
             var td = await GetThing(thingId);
             return (td, jobId);
+        }
+
+        public async Task<JsonElement> GetConnectionPodInfo(string thingId)
+        {
+            var pod = await _k8s.GetConnectionPodByThingId(thingId, _namespaceName);
+            var relevantInfo = new
+            {
+                Name = (pod.Metadata?.Annotations.TryGetValue("original-job-id", out var ogJobId) ?? false) ? ogJobId : pod.Metadata?.Name,
+                JobId = pod.Metadata?.Name,
+                Namespace = pod.Metadata?.NamespaceProperty,
+                Phase = pod.Status?.Phase ?? "Unknown", 
+                Node = pod.Spec?.NodeName,
+                StartTime = pod.Status?.StartTime,
+                RestartPolicy = pod.Spec?.RestartPolicy ?? "Unkown",
+                Containers = pod.Status?.ContainerStatuses?.Select(c => new
+                {
+                    Name = c.Name,
+                    Ready = c.Ready,
+                    RestartCount = c.RestartCount,
+                    Image = c.Image,
+                    State = c.State?.Running != null ? "Running" :
+                            c.State?.Waiting != null ? $"Waiting ({c.State?.Waiting.Reason})" :
+                            c.State?.Terminated != null ? $"Terminated ({c.State?.Terminated.Reason})" : "Unknown"
+                })
+            };
+
+            return JsonSerializer.SerializeToElement(relevantInfo);
+        }
+
+        public async Task<List<JsonObject>> GetConnectionPodLogs(string thingId)
+        {
+            var pod = await _k8s.GetConnectionPodByThingId(thingId, _namespaceName);
+
+            return await _k8s.GetPodLogs(pod.Metadata.Name, _namespaceName);
         }
 
         #endregion

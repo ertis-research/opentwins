@@ -15,7 +15,7 @@ namespace OpenTwinsV2.Orchestration.Services
         public NamespaceInitializer(IConfiguration config, IServiceScopeFactory scopeFactory)
         {
             _config = config;
-            _defaultNs = config["ConnectorNamespace"] ?? throw new MissingFieldException("There is no Namespace Name stored in Configuration");
+            _defaultNs = config["ConnectionNamespace"] ?? throw new MissingFieldException("There is no Namespace Name stored in Configuration");
             // _k8s = k8s;
             _scopeFactory = scopeFactory;
         }
@@ -54,7 +54,7 @@ namespace OpenTwinsV2.Orchestration.Services
                     if(!await k8s.IsPodHealthy(pod, _defaultNs))
                     {
                         string originalJobId = k8s.GetOriginalValue(pod);
-                        bool connector = await k8s.IsPodAConnector(originalJobId, _defaultNs);
+                        bool connector = await k8s.IsPodAConnection(originalJobId, _defaultNs);
                         await k8s.RestartBenthosPod(pod, _defaultNs, connector);
                     }
                 }

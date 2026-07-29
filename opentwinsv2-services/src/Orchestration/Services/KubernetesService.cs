@@ -4,6 +4,8 @@ using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using k8s;
@@ -342,18 +344,18 @@ namespace Orchestration.Services
         #region Pods
 
         /// <summary>
-        /// Checks if a Pod or Connector (if specified) exists with a given job identifier.
+        /// Checks if a Pod or Connection (if specified) exists with a given job identifier.
         /// </summary>
         /// <param name="jobId">The job identifier.</param>
         /// <param name="namespaceName">The Kubernetes namespace name</param>
-        /// <param name="connector">OPTIONAL. Wether we are looking for a Connector or not. By defualt: false.</param>
+        /// <param name="Connection">OPTIONAL. Wether we are looking for a Connection or not. By defualt: false.</param>
         /// <returns>
-        /// Returns true if the Pod or Connector exists.<br/>
-        /// Returns false if the Pod or Connector does not exist.
+        /// Returns true if the Pod or Connection exists.<br/>
+        /// Returns false if the Pod or Connection does not exist.
         /// </returns>
-        public async Task<bool> ExistsPod(string jobId, string namespaceName, bool connector = false)
+        public async Task<bool> ExistsPod(string jobId, string namespaceName, bool Connection = false)
         {
-            return (await _k8s.CoreV1.ListNamespacedPodAsync(namespaceParameter: namespaceName, labelSelector: $"app=benthos-worker,{(connector ? "connector=true," : "")}job-id={ToK8sLabelValue(jobId)}")).Items.Count>0;
+            return (await _k8s.CoreV1.ListNamespacedPodAsync(namespaceParameter: namespaceName, labelSelector: $"app=benthos-worker,{(Connection ? "Connection=true," : "")}job-id={ToK8sLabelValue(jobId)}")).Items.Count>0;
         }
 
         /// <summary>
@@ -414,19 +416,48 @@ namespace Orchestration.Services
             return pods.Items.Single();
         }
 
+        //TODO: Documentation
+        public async Task<List<JsonObject>> GetPodLogs(string podName, string namespaceName)
+        {
+            using var stream = await _k8s.CoreV1.ReadNamespacedPodLogAsync(podName, namespaceName);
+            using var reader = new StreamReader(stream);
+            var rawLogs = await reader.ReadToEndAsync();
+            var logLines = rawLogs.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
+            var structuredLogs = new List<JsonObject>();
+
+            foreach(var line in logLines)
+            {
+                try
+                {
+                    var log = JsonNode.Parse(line) ?? throw new JsonException();
+                    structuredLogs.Add(log as JsonObject ?? throw new JsonException());
+                }
+                catch (JsonException)
+                {
+                    structuredLogs.Add(new JsonObject
+                    {
+                        ["level"] = "system",
+                        ["time"] = DateTime.UtcNow.ToString("o"),
+                        ["msg"] = line
+                    });
+                }
+            }
+            return [.. structuredLogs];
+        }
+
         /// <summary>
-        /// Checks if a Pod is a Connector Pod.
+        /// Checks if a Pod is a Connection Pod.
         /// </summary>
         /// <param name="jobId">The identifier of the job.</param>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <returns>
-        /// Returns true if the Pod is a Connector.<br/>
-        /// Returns false if the Pod is not a Connector.
+        /// Returns true if the Pod is a Connection.<br/>
+        /// Returns false if the Pod is not a Connection.
         /// </returns>
-        public async Task<bool> IsPodAConnector(string jobId, string namespaceName)
+        public async Task<bool> IsPodAConnection(string jobId, string namespaceName)
         {
             var pod = await GetBenthosPod(jobId, namespaceName);
-            return pod.Metadata.Labels.ContainsKey("connector") && pod.Metadata.Labels["connector"]=="true" && pod.Metadata.Labels.ContainsKey("thingId");
+            return pod.Metadata.Labels.ContainsKey("Connection") && pod.Metadata.Labels["Connection"]=="true" && pod.Metadata.Labels.ContainsKey("thingId");
         }
 
         /// <summary>
@@ -468,7 +499,7 @@ namespace Orchestration.Services
         /// </summary>
         /// <param name="jobId">The identifier of the job.</>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
-        /// <param name="thingId">OPTIONAL. The identifier of the Connector Thing.</param>
+        /// <param name="thingId">OPTIONAL. The identifier of the Connection Thing.</param>
         /// <param name="deleteConfigInFailure">OPTIONAL. If the configMap should be deleted in case of failure creating the pod. By default: true</param>
         /// <returns></returns>
         public async Task CreateBenthosPod(string jobId, string namespaceName, string thingId = "", bool deleteConfigOnFailure = true)
@@ -490,7 +521,7 @@ namespace Orchestration.Services
                 {
                     annotations.Add("original-thing-id", thingId);
                     labels.Add("thing-id", safeThingId);
-                    labels.Add("connector", "true");
+                    labels.Add("Connection", "true");
                 }
 
 
@@ -635,18 +666,18 @@ namespace Orchestration.Services
         }
 
         /// <summary>
-        /// Deletes a Benthos Pod or Connector (if specified).
+        /// Deletes a Benthos Pod or Connection (if specified).
         /// </summary>
         /// <param name="jobId">The identifier of the job.</param>
         /// <param name="namespaceName">The Kubernetes namespace name</param>
         /// <param name="deleteConfig">OPTIONAL. If the configMap should be deleted as well. By default: true</param>
-        /// <param name="thingId">OPTIONAL. The identifier of the Connector Thing.</param>
-        /// <param name="connector">OPTIONAL. If the Pod to delete is a Connector. By default: false.</param>
+        /// <param name="thingId">OPTIONAL. The identifier of the Connection Thing.</param>
+        /// <param name="Connection">OPTIONAL. If the Pod to delete is a Connection. By default: false.</param>
         /// <returns></returns>
-        public async Task DeleteBenthosJob(string jobId, string namespaceName, bool deleteConfig = true, bool connector = false)
+        public async Task DeleteBenthosJob(string jobId, string namespaceName, bool deleteConfig = true, bool Connection = false)
         {
             
-            var safeJobId = connector ? ToK8sLabelValue(BenthosConfigParser.GetJobIdFromThingId(jobId)) : ToK8sLabelValue(jobId);
+            var safeJobId = Connection ? ToK8sLabelValue(BenthosConfigParser.GetJobIdFromThingId(jobId)) : ToK8sLabelValue(jobId);
             try
             {
                 await _k8s.CoreV1.DeleteNamespacedPodAsync(safeJobId, namespaceName);
@@ -663,18 +694,18 @@ namespace Orchestration.Services
         /// </summary>
         /// <param name="pod">The Kubernetes Pod object to restart.</param>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
-        /// <param name="connector">OPTIONAL. If the pod to restart is a Connector. By default: false.</param>
+        /// <param name="Connection">OPTIONAL. If the pod to restart is a Connection. By default: false.</param>
         /// <returns></returns>
-        public async Task RestartBenthosPod(V1Pod pod, string namespaceName, bool connector = false)
+        public async Task RestartBenthosPod(V1Pod pod, string namespaceName, bool Connection = false)
         {
             //Restart the pod
 
             //1 - Look what configMap it has in its volumes
 
-            //check if it's a connector -> obtain thing id
+            //check if it's a Connection -> obtain thing id
             //otherwise, only the jobId
             var jobId = GetOriginalValue(pod, thingId: false);
-            var thingId = connector ? GetOriginalValue(pod, thingId: true) : "";
+            var thingId = Connection ? GetOriginalValue(pod, thingId: true) : "";
 
             //2 - Delete the Pod, but not the configMap (mark false flag)
             await DeleteBenthosJob(jobId, namespaceName, deleteConfig: false);
@@ -685,25 +716,25 @@ namespace Orchestration.Services
                 await CreateBenthosPod(jobId, namespaceName, thingId: thingId, deleteConfigOnFailure: false);
             }catch(Exception ex)
             {
-                Console.WriteLine($"WARNING. The restart of the pod failed, There's residual configMap and Connector Thing remaining.\nError: {ex.Message}");
+                Console.WriteLine($"WARNING. The restart of the pod failed, There's residual configMap and Connection Thing remaining.\nError: {ex.Message}");
             }
         }
 
         #endregion
 
-        #region Connector Pods
+        #region Connection Pods
 
         /// <summary>
-        /// gets a Connector Benthos Pod by its Thing identifier.
+        /// gets a Connection Benthos Pod by its Thing identifier.
         /// </summary>
-        /// <param name="thingId">The identifier of the Connector Thing.</param>
+        /// <param name="thingId">The identifier of the Connection Thing.</param>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
-        /// <returns>Returns the Connector Pod.</returns>
+        /// <returns>Returns the Connection Pod.</returns>
         /// <exception cref="KeyNotFoundException">Thrown if no Pods with such Thing identifier was found.</exception>
         /// <exception cref="InvalidOperationException">Thrown if there is more than one Pod with the same Thing identifier.</exception>
-        public async Task<V1Pod> GetConnectorPodByJobId(string thingId, string namespaceName)
+        public async Task<V1Pod> GetConnectionPodByThingId(string thingId, string namespaceName)
         {
-            var pods = await _k8s.CoreV1.ListNamespacedPodAsync(namespaceName, labelSelector: $"app=benthos-worker,connector=true,thing-id={ToK8sLabelValue(thingId)}");
+            var pods = await _k8s.CoreV1.ListNamespacedPodAsync(namespaceName, labelSelector: $"app=benthos-worker,Connection=true,thing-id={ToK8sLabelValue(thingId)}");
             if(pods.Items.Count==0)
                 throw new KeyNotFoundException($"There are no pods with the thingId {thingId}");
             if(pods.Items.Count>1)
@@ -712,13 +743,13 @@ namespace Orchestration.Services
         }
 
         /// <summary>
-        /// Gets all Connector Benthos Pods.
+        /// Gets all Connection Benthos Pods.
         /// </summary>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
-        /// <returns>Returns the list of Connector Pods.</returns>
-        public async Task<(int, List<V1Pod>)>GetAllConnectorPods(string namespaceName, int offset, int pageSize, string filter)
+        /// <returns>Returns the list of Connection Pods.</returns>
+        public async Task<(int, List<V1Pod>)>GetAllConnectionPods(string namespaceName, int offset, int pageSize, string filter)
         {
-            var pods = await _k8s.CoreV1.ListNamespacedPodAsync(namespaceName, labelSelector: $"app=benthos-worker,connector=true");
+            var pods = await _k8s.CoreV1.ListNamespacedPodAsync(namespaceName, labelSelector: $"app=benthos-worker,Connection=true");
             
             var filteredPods = pods.Items
                 .Where(pod => pod.Metadata.Annotations.ContainsKey("original-thing-id") && pod.Metadata.Annotations["original-thing-id"].Contains(filter, StringComparison.OrdinalIgnoreCase))

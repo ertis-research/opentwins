@@ -41,6 +41,7 @@ namespace OpenTwinsV2.Orchestration.Formatters
 
         private sealed class BenthosConfig
         {
+            public BenthosLogger Logger {get; init;} = default!;
             public Dictionary<string, object> Input {get; init;} = default!;
             public BenthosPipeline Pipeline {get; init;} = default!;
         }
@@ -53,6 +54,16 @@ namespace OpenTwinsV2.Orchestration.Formatters
         private sealed class BenthosPipeline
         {
             public List<BenthosProcessor> Processors {get; init;} = new();
+        }
+
+        private sealed class BenthosLogger
+        {
+            public string Level { get; set; } = "INFO";
+            public string Format { get; set; } = "json";
+            
+            // YamlDotNet handles snake_case automatically if you configured 
+            // UnderscoredNamingConvention.Instance, so this becomes 'add_timestamp'
+            public bool AddTimestamp { get; set; } = true; 
         }
 
         private static ThingDescription? DeserializeJsonThingDescription(JsonNode json)
@@ -220,6 +231,12 @@ namespace OpenTwinsV2.Orchestration.Formatters
         {
             var benthosConfig = new BenthosConfig
             {
+                Logger = new BenthosLogger
+                {
+                    Level = "INFO",
+                    Format = "json",
+                    AddTimestamp = true
+                },
                 Input = new Dictionary<string, object>
                 {
                     [protocol] = config

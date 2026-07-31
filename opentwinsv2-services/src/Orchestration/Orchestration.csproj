@@ -12,9 +12,9 @@
     <PackageReference Include="Dapr.AspNetCore" Version="1.16.1" />
     <PackageReference Include="Dapr.Client" Version="1.16.1" />
     <PackageReference Include="KubernetesClient" Version="18.0.13" />
-    <PackageReference Include="Microsoft.OpenApi.Readers" Version="1.6.28" />
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.4.0" />
-    <PackageReference Include="Microsoft.OpenApi" Version="1.6.28" />
+    <PackageReference Include="Microsoft.OpenApi.Readers" Version="1.6.22" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />  
+    <PackageReference Include="Microsoft.OpenApi" Version="1.6.22" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
     <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
   </ItemGroup>

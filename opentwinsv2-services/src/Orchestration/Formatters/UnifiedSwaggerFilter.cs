@@ -1,7 +1,6 @@
 using Microsoft.OpenApi.Models;
 using Microsoft.OpenApi.Readers; // This should now work automatically
 using Swashbuckle.AspNetCore.SwaggerGen;
-using System.Text;
 
 public class UnifiedSwaggerFilter : IDocumentFilter
 {

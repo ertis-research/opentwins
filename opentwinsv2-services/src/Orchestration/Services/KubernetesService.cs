@@ -327,6 +327,7 @@ namespace Orchestration.Services
         /// Checks that the Container of the provieded Pod reached a successfull state after initialization.
         /// </summary>
         /// <param name="pod">The Kubernetes Pod object.</param>
+        /// <param name="namespaceName">The Kubernetes namespace name</param>
         /// <returns></returns>
         /// <exception cref="Exception">Thrown if the Pod's Container is stuck at Waiting status or reached Terminated status.</exception>
         public async Task CheckContainerStatus(V1Pod pod, string namespaceName)
@@ -417,29 +418,29 @@ namespace Orchestration.Services
         }
 
         //TODO: Documentation
-        public async Task<List<JsonObject>> GetPodLogs(string podName, string namespaceName)
+        public async Task<List<Log>> GetPodLogs(string podName, string namespaceName)
         {
             using var stream = await _k8s.CoreV1.ReadNamespacedPodLogAsync(podName, namespaceName);
             using var reader = new StreamReader(stream);
             var rawLogs = await reader.ReadToEndAsync();
             var logLines = rawLogs.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
-            var structuredLogs = new List<JsonObject>();
+            var structuredLogs = new List<Log>();
 
             foreach(var line in logLines)
             {
                 try
                 {
-                    var log = JsonNode.Parse(line) ?? throw new JsonException();
-                    structuredLogs.Add(log as JsonObject ?? throw new JsonException());
+                    var log = JsonSerializer.Deserialize<Log>(line) ?? throw new JsonException("Failed to deserialize log line.");
+                    structuredLogs.Add(log);
                 }
                 catch (JsonException)
                 {
-                    structuredLogs.Add(new JsonObject
-                    {
-                        ["level"] = "system",
-                        ["time"] = DateTime.UtcNow.ToString("o"),
-                        ["msg"] = line
-                    });
+                    structuredLogs.Add(new Log
+                    (
+                        "system",
+                        DateTime.UtcNow,
+                        line
+                    ));
                 }
             }
             return [.. structuredLogs];
@@ -497,10 +498,10 @@ namespace Orchestration.Services
         /// <summary>
         /// Creates a Benthos Pod.
         /// </summary>
-        /// <param name="jobId">The identifier of the job.</>
+        /// <param name="jobId">The identifier of the job.</param>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <param name="thingId">OPTIONAL. The identifier of the Connection Thing.</param>
-        /// <param name="deleteConfigInFailure">OPTIONAL. If the configMap should be deleted in case of failure creating the pod. By default: true</param>
+        /// <param name="deleteConfigOnFailure">OPTIONAL. If the configMap should be deleted in case of failure creating the pod. By default: true</param>
         /// <returns></returns>
         public async Task CreateBenthosPod(string jobId, string namespaceName, string thingId = "", bool deleteConfigOnFailure = true)
         {
@@ -671,7 +672,6 @@ namespace Orchestration.Services
         /// <param name="jobId">The identifier of the job.</param>
         /// <param name="namespaceName">The Kubernetes namespace name</param>
         /// <param name="deleteConfig">OPTIONAL. If the configMap should be deleted as well. By default: true</param>
-        /// <param name="thingId">OPTIONAL. The identifier of the Connection Thing.</param>
         /// <param name="Connection">OPTIONAL. If the Pod to delete is a Connection. By default: false.</param>
         /// <returns></returns>
         public async Task DeleteBenthosJob(string jobId, string namespaceName, bool deleteConfig = true, bool Connection = false)
@@ -746,6 +746,9 @@ namespace Orchestration.Services
         /// Gets all Connection Benthos Pods.
         /// </summary>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
+        /// <param name="offset">The offset of the first Connection.</param>
+        /// <param name="pageSize">The size of the page.</param>
+        /// <param name="filter">The filter to be applied in the search.</param>
         /// <returns>Returns the list of Connection Pods.</returns>
         public async Task<(int, List<V1Pod>)>GetAllConnectionPods(string namespaceName, int offset, int pageSize, string filter)
         {

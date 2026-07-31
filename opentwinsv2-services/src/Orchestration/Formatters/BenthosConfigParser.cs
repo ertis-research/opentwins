@@ -291,7 +291,7 @@ namespace OpenTwinsV2.Orchestration.Formatters
         /// Extracts input and thingId from a Thing Description.
         /// </summary>
         /// <param name="thingDescription">The Json of the Thing Description.</param>
-        /// <returns>Returns both the input and the thingId of the Connector Thing.</returns>
+        /// <returns>Returns both the input and the thingId of the Connection Thing.</returns>
         /// <exception cref="ArgumentException">Thrown if there's any issue with the format of the id field in the Thing Description</exception>
         public static string GetInputFromThingDescription(JsonNode thingDescription)
         {

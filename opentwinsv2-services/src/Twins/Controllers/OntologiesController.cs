@@ -616,6 +616,7 @@ namespace OpenTwinsV2.Twins.Controllers
         /// <response code="409">There are repited identifiers in the Graph.</response>
         /// <response code="500">An issue was encountered while validating the Graph or instanciating the Things.</response>
         [HttpPut("{ontologyId}/instanciate")]
+        [SwaggerExample(TwinsAPIExamples.OntologyInstanciateGraph)]
         [Produces("application/json")]
         [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -678,6 +679,7 @@ namespace OpenTwinsV2.Twins.Controllers
         /// <response code="409">There are repited identifiers in the Graph or there is already a Twin with the identifier provided.</response>
         /// <response code="500">An issue was encountered while validating the Graph or instanciating the Things.</response>
         [HttpPut("{ontologyId}/instanciate/{twinId}")]
+        [SwaggerExample(TwinsAPIExamples.OntologyInstanciateGraph)]
         [Produces("application/json")]
         [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -868,7 +870,7 @@ namespace OpenTwinsV2.Twins.Controllers
         [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
-        public async Task<IActionResult> SparQLQueryInOntology(string ontologyId, [FromForm] string stringQuery)
+        public async Task<IActionResult> SparQLQueryInOntology(string ontologyId, [FromForm] [SwaggerFormExample(TwinsAPIExamples.SparQLQuery)] string stringQuery)
         {
             //check if the stringQuery is empty
             if (string.IsNullOrWhiteSpace(stringQuery))

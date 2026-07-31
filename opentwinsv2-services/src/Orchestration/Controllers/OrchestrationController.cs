@@ -9,9 +9,10 @@ using Microsoft.AspNetCore.Mvc;
 using OpenTwinsV2.Orchestration.Services;
 using k8s;
 using k8s.Models;
-using Microsoft.OpenApi.Expressions;
+// using Microsoft.OpenApi.Expressions;
 using OpenTwinsV2.Orchestration.Formatters;
 using OpenTwinsV2.Shared.Models;
+using System.Text.Json.Serialization;
 // using OpenTwinsV2.Orchestration.Services.BenthosService;
 
 namespace OpenTwinsV2.Orchestration.Controllers
@@ -31,12 +32,13 @@ namespace OpenTwinsV2.Orchestration.Controllers
         /// Deploys a Kubernetes Benthos Pod with the provided configuration.
         /// </summary>
         /// <param name="benthosConfig">Configuration of the Pod in yaml plain text.</param>
-        /// <returns>
-        /// Returns 200 Ok with a success message and the job identifier of the Pod.<br/>
-        /// Returns 500 Internal Server Error if any issue is encountered while creating the configMap or the Pod itself.
-        /// </returns>
+        /// <response code="200">The pod has been successfully created.</response>
+        /// <response code="500">Error while creating the pod or its configMap.</response>
         [HttpPost("")]
         [Consumes("text/plain")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> DeployBenthos([FromBody] string benthosConfig)
         {
             if (string.IsNullOrWhiteSpace(benthosConfig))
@@ -74,12 +76,14 @@ namespace OpenTwinsV2.Orchestration.Controllers
         /// Kills the Benthos Pod with the provided job identifier.
         /// </summary>
         /// <param name="jobId">The identifier of the Benthos pod's job.</param>
-        /// <returns>
-        /// Returns 204 No Content if the Pod is deleted successfully.<br/>
-        /// Returns 404 Not Found if there is no Benthos Pod with such job identifier.<br/>
-        /// Returns 500 Internal Server Error if any issue is encountered while deleting the pod or its configMap.
-        /// </returns>
+        /// <response code="204">The pod has been successfully deleted.</response>
+        /// <response code="404">There is no pod with the provided identifier.</response>
+        /// <response code="500">Error while deleting the pod or its configMap.</response>
         [HttpDelete("{jobId}")]
+        [Produces("application/json")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> KillJob(string jobId)
         {
             
@@ -103,11 +107,12 @@ namespace OpenTwinsV2.Orchestration.Controllers
         /// <param name="page">The number of current page of Connections.</param>
         /// <param name="pageSize">The size of the pages of Connections.</param>
         /// <param name="search">The optional string filter applied to Connections. If not specified no filter will be applied.</param>
-        /// <returns>
-        /// Returns 200 Ok with the list of Connections.<br/>
-        /// Returns 500 Internal Server Error if any issue is encountered while obtaining the Connections.
-        /// </returns>
+        /// <response code="200">All the Connections.</response>
+        /// <response code="500">Error while obtaining the Connections.</response>
         [HttpGet("/connections/")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> GetAllConnections(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
@@ -128,13 +133,17 @@ namespace OpenTwinsV2.Orchestration.Controllers
         /// Creates a Connection and its Benthos Pod with the thingDescription provided.
         /// </summary>
         /// <param name="thingDescription">The ThingDescription of the Connection.</param>
-        /// <returns>
-        /// Returns 200 Ok with a success message and the job identifier of the Pod.<br/>
-        /// Returns 400 Bad Request if the thingId is empty or null, or if the ThingDescription provided to Things is of bad format.<br/>
-        /// Returns 409 Conflict if there is already a Thing or a Benthos Pod with that identifier.<br/>
-        /// Returns 500 Internal Server Error if any issue was encountered while connecting to Things, creating the Thing, obtaining the default ThingDescription or creating the Pod or 8its configMap.
-        /// </returns>
+        /// <response code="200">The Connection has been successfully created.</response>
+        /// <response code="400">The provided identifier was null or empty.</response>
+        /// <response code="409">There is already a Thing or a pod with the provided identifier</response>
+        /// <response code="500">Error while connecting to Things, obtaining the default ThingDescription or creating the Thing, pod or configMap.</response>
         [HttpPost("/connections/")]
+        [SwaggerExample(OrchestrationAPIExamples.CreateConnection)]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status409Conflict)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> CreateConnection([FromBody] JsonNode thingDescription)
         {
             if(thingDescription is null)
@@ -194,13 +203,17 @@ namespace OpenTwinsV2.Orchestration.Controllers
         /// </summary>
         /// <param name="thingId">The identifier of the Connection Thing.</param>
         /// <param name="thingDescription">The ThingDescription of the Connection Thing.</param>
-        /// <returns>
-        /// Returns 200 Ok with a success message and the job identifier of the Pod.<br/>
-        /// Returns 400 Bad Request if the thingId is empty or null, the ThingDescription provided to Things is of bad format or if the thingId of the request and the ThingDescription does not match.<br/>
-        /// Returns 409 Conflict if there is already a Thing or a Benthos Pod with that identifier.<br/>
-        /// Returns 500 Internal Server Error if any issue was encountered while connecting to Things, creating the Thing, obtaining the default ThingDescription or creating the Pod or 8its configMap.
-        ///</returns>
+        /// <response code="200">The Connection's been successfully edited or created.</response>
+        /// <response code="400">The provided identifier was null or empty, the ThingDescription is malformed or if its identifier and the provided one do not match.</response>
+        /// <response code="409">There is already a Thing or a Benthos Pod with the provided identifier.</response>
+        /// <response code="500">Error while connecting to Things, obtaining the default ThingDescription or creating the Thing, pod or configMap.</response>
         [HttpPut("/connections/{thingId}")]
+        [SwaggerExample(OrchestrationAPIExamples.CreateConnection)]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status409Conflict)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> CreateConnection(string thingId, [FromBody] JsonNode thingDescription)
         {
             if(thingDescription is null)
@@ -242,13 +255,16 @@ namespace OpenTwinsV2.Orchestration.Controllers
         /// Deletes a Connection, including its Thing and its Benthos Pod.
         /// </summary>
         /// <param name="thingId">The identifier of the Connection.</param>
-        /// <returns>
-        /// Returns 204 No Content if the Connection was deleted successfully.<br/>
-        /// Returns 400 Bad Request if the identifier is empty or null.<br/>
-        /// Returns 404 Not Found if the Thing or the Benthos Pod could not be found.<br/>
-        /// Returns 500 Internal Server Error if any issue was encountered while connecting to Things, deleting the Pod, its configuration or its Thing. 
-        /// </returns>
+        /// <response code="204">The Connection was successfully deleted.</response>
+        /// <response code="400">The provided identifier was null or empty.</response>
+        /// <response code="404">There is no Connection with the provided identifier.</response>
+        /// <response code="500">Error while connecting to Things, deleting the Pod, its configuration or its Thing.</response>
         [HttpDelete("/connections/{thingId}")]
+        [Produces("application/json")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status409Conflict)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> DeleteConnection(string thingId)
         {
 
@@ -275,13 +291,16 @@ namespace OpenTwinsV2.Orchestration.Controllers
         /// Gets the Thing Description of the Connection.
         /// </summary>
         /// <param name="thingId">The identifier of the Connection</param>
-        /// <returns>
-        /// Returns 200 Ok with the Thing Description of the Connection.<br/>
-        /// Returns 400 Bad Request if the identifier is null or empty.<br/>
-        /// Returns 404 Not Found if the Thing or the Benthos Pod could not be found.<br/>
-        /// Returns 500 Internal Server Error if any issue is encountered while connecting to Things, obtaining the ThingDescription or the Benthos Pod.
-        /// </returns>
+        /// <response code="200">The Connection's ThingDescription.</response>
+        /// <response code="400">The provided identifier was null or empty.</response>
+        /// <response code="404">There is no Connection with the provided identifier.</response>
+        /// <response code="500">Error while connecting to Things, obtaining the ThingDescription or the Benthos Pod.</response>
         [HttpGet("/connections/{thingId}")]
+        [Produces(typeof(ThingDescription))]
+        [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status409Conflict)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> GetConnectionThingDescription(string thingId)
         {
 
@@ -308,7 +327,19 @@ namespace OpenTwinsV2.Orchestration.Controllers
             }
         }
 
+        /// <summary>
+        /// Retrieves the Connection's k8s pod information.
+        /// </summary>
+        /// <param name="thingId">The identifier of the Connection.</param>
+        /// <response code="200">The pod information of the Connection.</response>
+        /// <response code="400">The provided identifier is null or empty.</response>
+        /// <response code="404">There is no Connection with the provided identifier.</response>
         [HttpGet("/connections/{thingId}/pod")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(Pod), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status409Conflict)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> GetConnectionPod(string thingId)
         {
             if(string.IsNullOrWhiteSpace(thingId))
@@ -317,10 +348,30 @@ namespace OpenTwinsV2.Orchestration.Controllers
             if(!await _benthosService.ExistsThing(thingId))
                 return NotFound($"There is no Thing with thingId {thingId}.");
             
+            var localOptions = new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = null, // Keeps PascalCase
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+            };
+
+            // return Content(JsonSerializer.Serialize(await _benthosService.GetConnectionPodInfo(thingId), localOptions), "application/json");
+            // return new JsonResult(await _benthosService.GetConnectionPodInfo(thingId), new JsonSerializerOptions
+            // {
+            //     PropertyNamingPolicy = null // Keeps PascalCase locally
+            // });
+
             return Ok(await _benthosService.GetConnectionPodInfo(thingId));
         }
 
+        /// <summary>
+        /// Retrieves the Connection's k8s pod logs.
+        /// </summary>
+        /// <param name="thingId">The identifier of the Connection.</param>
+        /// <response code="200">The Connection's pod logs.</response>
+        /// <response code="400">The provided identifier was null or empty.</response>
+        /// <response code="404">There is no Connection with the provided identifier.</response>
         [HttpGet("/connections/{thingId}/logs")]
+        [ProducesResponseType(typeof(Pod), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetConnectionLogs(string thingId)
         {
             if(string.IsNullOrWhiteSpace(thingId))
@@ -333,7 +384,15 @@ namespace OpenTwinsV2.Orchestration.Controllers
             return Ok(await _benthosService.GetConnectionPodLogs(thingId));
         }
 
+        /// <summary>
+        /// Retrieves the Connection's k8s configMap information.
+        /// </summary>
+        /// <param name="thingId">The identifier of the Connection.</param>
+        /// <response code="200">The Connection's configMap information.</response>
+        /// <response code="400">The provided identifier was null or empty.</response>
+        /// <response code="404">There is no Connection with the provided identifier.</response>
         [HttpGet("/connections/{thingId}/configMap")]
+        [ProducesResponseType(typeof(ConfigMap), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetConnectionConfigMap(string thingId)
         {
             if(string.IsNullOrWhiteSpace(thingId))

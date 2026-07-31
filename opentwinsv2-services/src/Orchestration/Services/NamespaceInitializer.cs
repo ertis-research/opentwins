@@ -54,8 +54,8 @@ namespace OpenTwinsV2.Orchestration.Services
                     if(!await k8s.IsPodHealthy(pod, _defaultNs))
                     {
                         string originalJobId = k8s.GetOriginalValue(pod);
-                        bool connector = await k8s.IsPodAConnection(originalJobId, _defaultNs);
-                        await k8s.RestartBenthosPod(pod, _defaultNs, connector);
+                        bool connection = await k8s.IsPodAConnection(originalJobId, _defaultNs);
+                        await k8s.RestartBenthosPod(pod, _defaultNs, connection);
                     }
                 }
             }

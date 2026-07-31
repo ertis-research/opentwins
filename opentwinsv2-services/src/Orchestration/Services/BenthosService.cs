@@ -19,6 +19,7 @@ using k8s.ClientSets;
 using Orchestration.Services;
 using OpenTwinsV2.Shared.Models;
 using Json.More;
+using Microsoft.VisualBasic;
 
 
 namespace OpenTwinsV2.Orchestration.Services
@@ -60,7 +61,7 @@ namespace OpenTwinsV2.Orchestration.Services
         /// <returns></returns>
         /// <exception cref="TimeoutException">Thrown if Things Service health check failed.</exception>
         /// <exception cref="Exception">Thrown if the response obtained from the client is not successful.</exception>
-        public async Task CreateThing(JsonNode thingDescription, bool isConnection = false)
+        public async Task CreateThing(JsonNode thingDescription)
         {
             //Connection type
             var td = thingDescription.AsObject();
@@ -257,7 +258,6 @@ namespace OpenTwinsV2.Orchestration.Services
         /// Gets the Kubernetes ConfigMap with the provided identifier.
         /// </summary>
         /// <param name="configId">The identifier of the Kubernetes ConfigMap.</param>
-        /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <returns>Returns the specific ConfigMap.</returns>
         /// <exception cref="KeyNotFoundException">Thrown if no ConfigMap with such identifier was found.</exception>
         public async Task<V1ConfigMap> GetConfigMap(string configId)
@@ -266,12 +266,12 @@ namespace OpenTwinsV2.Orchestration.Services
         }
 
         //TODO: Documentation
-        public async Task<JsonElement> GetConfigMapInfoOfThing(string thingId)
+        public async Task<ConfigMap> GetConfigMapInfoOfThing(string thingId)
         {
             var configMap = await GetConfigMap(BenthosConfigParser.GetConfigName(thingId));
             
             if (configMap == null) 
-                return JsonSerializer.SerializeToElement("{}");
+                return new ConfigMap(null, null, null, null, null);
 
             // 1. Process the Data dictionary to make YAML/multiline strings readable
             var processedData = new Dictionary<string, object>();
@@ -288,16 +288,16 @@ namespace OpenTwinsV2.Orchestration.Services
                         processedData[kvp.Key] = kvp.Value ?? "";
             
 
-            var relevantInfo = new
-            {
-                Name = configMap.Metadata?.Name,
-                Namespace = configMap.Metadata?.NamespaceProperty,
-                CreationTime = configMap.Metadata?.CreationTimestamp,
-                Labels = configMap.Metadata?.Labels,
-                Data = processedData
-            };
+            var relevantInfo = new ConfigMap(
+            
+                Name: configMap.Metadata?.Name,
+                Namespace: configMap.Metadata?.NamespaceProperty,
+                CreationTime: configMap.Metadata?.CreationTimestamp,
+                Labels: configMap.Metadata?.Labels?.ToDictionary(),
+                Data: processedData ?? []
+            );
 
-            return JsonSerializer.SerializeToElement(relevantInfo);
+            return relevantInfo;
         }
 
         /// <summary>
@@ -362,6 +362,7 @@ namespace OpenTwinsV2.Orchestration.Services
         /// Creates a Connection (Pod + Thing).
         /// </summary>
         /// <param name="thingId">The identifier of the Thing.</param>
+        /// <param name="thingDescription">The ThingDewscription of the Connection.</param>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <returns></returns>
         public async Task CreateConnection(string thingId, JsonNode thingDescription, string namespaceName)
@@ -410,7 +411,7 @@ namespace OpenTwinsV2.Orchestration.Services
         /// Creates a Connection (Pod + Thing).
         /// </summary>
         /// <param name="thingId">The identifier of the Thing.</param>
-        /// <param name="namespaceName">The Kubernetes namespace name.</param>
+        /// <param name="thingDescription">The ThingDescription of the Connection.</param>
         /// <returns></returns>
         public async Task CreateConnection(string thingId, JsonNode thingDescription)
         {
@@ -444,7 +445,6 @@ namespace OpenTwinsV2.Orchestration.Services
         /// </summary>
         /// <param name="thingId">The identifier of the Connection Thing.</param>
         /// <param name="thingDescription">The ThingDescription of the Connection Thing.</param>
-        /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <returns></returns>
         public async Task ModifyConnection(string thingId, JsonNode thingDescription)
         {
@@ -465,7 +465,6 @@ namespace OpenTwinsV2.Orchestration.Services
         /// Deletes a Benthos Pod or Connection (if specified).
         /// </summary>
         /// <param name="jobId">The identifier of the job.</param>
-        /// <param name="thingId">OPTIONAL. The identifier of the Connection Thing.</param>
         /// <returns></returns>
         
         public async Task DeleteBenthosJob(string jobId)
@@ -531,6 +530,7 @@ namespace OpenTwinsV2.Orchestration.Services
         /// </summary>
         /// <param name="thingDescription">The Thing Description Json.</param>
         /// <param name="id">The identifier of the Pod.</param>
+        /// <param name="input">The input of the Connection.</param>
         /// <returns>Returns the Parsed ConfigMap.</returns>
         public V1ConfigMap ParseThingDescriptionIntoBenthosConfig(JsonNode thingDescription, string id, string input)
         {
@@ -543,6 +543,7 @@ namespace OpenTwinsV2.Orchestration.Services
         /// <param name="thingDescription">The Thing Description Json.</param>
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <param name="id">The identifier of the Pod.</param>
+        /// <param name="input">The input of the Connection.</param>
         /// <returns>Returns the Parsed ConfigMap.</returns>
         public V1ConfigMap ParseThingDescriptionIntoBenthosConfig(JsonNode thingDescription, string namespaceName, string id, string input)
         {
@@ -693,34 +694,33 @@ namespace OpenTwinsV2.Orchestration.Services
             return (td, jobId);
         }
 
-        public async Task<JsonElement> GetConnectionPodInfo(string thingId)
+        public async Task<Pod> GetConnectionPodInfo(string thingId)
         {
             var pod = await _k8s.GetConnectionPodByThingId(thingId, _namespaceName);
-            var relevantInfo = new
-            {
-                Name = (pod.Metadata?.Annotations.TryGetValue("original-job-id", out var ogJobId) ?? false) ? ogJobId : pod.Metadata?.Name,
-                JobId = pod.Metadata?.Name,
-                Namespace = pod.Metadata?.NamespaceProperty,
-                Phase = pod.Status?.Phase ?? "Unknown", 
-                Node = pod.Spec?.NodeName,
-                StartTime = pod.Status?.StartTime,
-                RestartPolicy = pod.Spec?.RestartPolicy ?? "Unkown",
-                Containers = pod.Status?.ContainerStatuses?.Select(c => new
-                {
-                    Name = c.Name,
-                    Ready = c.Ready,
-                    RestartCount = c.RestartCount,
-                    Image = c.Image,
-                    State = c.State?.Running != null ? "Running" :
+
+            var relevantInfo = new Pod(
+                Name: (pod.Metadata?.Annotations.TryGetValue("original-job-id", out var ogJobId) ?? false) ? ogJobId : pod.Metadata?.Name,
+                JobId: pod.Metadata?.Name,
+                Namespace: pod.Metadata?.NamespaceProperty,
+                Phase: pod.Status?.Phase ?? "Unknown", 
+                Node: pod.Spec?.NodeName,
+                StartTime: pod.Status?.StartTime,
+                RestartPolicy: pod.Spec?.RestartPolicy ?? "Unkown",
+                Containers: pod.Status?.ContainerStatuses?.Select(c => new Container(
+                    Name: c.Name,
+                    Ready: c.Ready,
+                    RestartCount: c.RestartCount,
+                    Image: c.Image,
+                    State: c.State?.Running != null ? "Running" :
                             c.State?.Waiting != null ? $"Waiting ({c.State?.Waiting.Reason})" :
                             c.State?.Terminated != null ? $"Terminated ({c.State?.Terminated.Reason})" : "Unknown"
-                })
-            };
+                )).ToList() ?? []
+            );
 
-            return JsonSerializer.SerializeToElement(relevantInfo);
+            return relevantInfo;
         }
 
-        public async Task<List<JsonObject>> GetConnectionPodLogs(string thingId)
+        public async Task<List<Log>> GetConnectionPodLogs(string thingId)
         {
             var pod = await _k8s.GetConnectionPodByThingId(thingId, _namespaceName);
 

@@ -11,15 +11,22 @@ using Json.More;
 using System.Text.Json.Nodes;
 using System.Net;
 using Dapr;
+using System.Text.Json.Serialization;
+using System.Data.SqlTypes;
 
 [ApiController]
 [Route("things")]
 public class ThingsController : ControllerBase
 {
+    private record MultiStatusResponse (
+            [property: JsonPropertyName("Id")] string Id,
+            [property: JsonPropertyName("Status")] HttpStatusCode Status,
+            [property: JsonPropertyName("Message")] string Message
+        );
     private const string ActorType = Actors.ThingActor;
     private readonly IActorProxyFactory _actorProxyFactory;
     private readonly ILogger<ThingsController> _logger;
-    private readonly ThingsQueryService _thingsQueryService; // <--- Nuevo servicio
+    private readonly ThingsQueryService _thingsQueryService;
     private readonly StatusManager _statusManager;
     private readonly ThingsManagerService _thingsManager;
 
@@ -32,6 +39,15 @@ public class ThingsController : ControllerBase
         _thingsManager = thingsManager;
     }
 
+    /// <summary>
+    /// Retrieves all the Things with their ThingDescriptions.
+    /// </summary>
+    /// <param name="showConnections">OPTIONAL. Whether or not to include the Connections in the search. By default: false.</param>
+    /// <param name="page">The number of the current page of Things.</param>
+    /// <param name="pageSize">The size of the pages of Things.</param>
+    /// <param name="search">The optional string filter applied to the identifier of the Things.</param>
+    /// <response code="200">All the Things.</response>
+    /// <response code="500">Error while retrieving the Things.</response>
     [HttpGet("")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(PagedResult<object>), StatusCodes.Status200OK)]
@@ -39,7 +55,7 @@ public class ThingsController : ControllerBase
         [FromQuery] bool showConnections = false,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        [FromQuery] string? search = null) // <--- Nuevo parámetro opcional
+        [FromQuery] string? search = null)
     {
         try
         {
@@ -57,6 +73,11 @@ public class ThingsController : ControllerBase
     /// <summary>
     /// Returns a lightweight list of things (ID and Title only), optimized for dropdowns/lists.
     /// </summary>
+    /// <param name="page">The number of the current page of Things.</param>
+    /// <param name="pageSize">The size of the pages of Things.</param>
+    /// <param name="search">The optional string filter applied to the identifier of the Things.</param>
+    /// <response code="200">The lightweight list of Things.</response>
+    /// <response code="500">Error while retrieving the Things.</response>
     [HttpGet("summary")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(PagedResult<ThingSummary>), StatusCodes.Status200OK)]
@@ -81,13 +102,13 @@ public class ThingsController : ControllerBase
     /// Creates a new Thing using the provided Thing Description JSON.
     /// </summary>
     /// <param name="value">A JSON object containing the Thing Description.</param>
-    /// <returns>
-    /// Returns 200 OK with the created Thing Description.<br/>
-    /// Returns 400 Bad Request if the input is invalid or the JSON format is incorrect.
-    /// </returns>
+    /// <response code="200">The Thing has been successfully created, and returns the ThingDescription.</response>
+    /// <response code="400">Invalid input or malformed ThingDescription.</response>
+    /// <response code="500">Error while creating the Thing or retreaving its ThingDescription afterwards.</response>
     [HttpPost("")]
+    [SwaggerExample(ThingsAPIExamples.CreateExample)]
     [Produces("application/json")]
-    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ThingDescription), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateThing([FromBody] JsonElement value)
     {
@@ -109,9 +130,6 @@ public class ThingsController : ControllerBase
         {
             return BadRequest("Invalid JSON format.");
         }
-
-        //TODO: REMOVE
-        // IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(id), ActorType);
 
         string td;
         try
@@ -143,9 +161,14 @@ public class ThingsController : ControllerBase
     /// Returns 400 Bad Request if the JSON is invalid or missing required fields.<br/>
     /// Returns 409 Conflict if the <paramref name="thingId"/> does not match the ID in the JSON.
     /// </returns>
+    /// <response code="200">The Thing has been successfully created or updated. It returns the final ThingDescription.</response>
+    /// <response code="400">Invalid input or malformed JSON or ThingDescription.</response>
+    /// <response code="409"><paramref name="thingId"/>does not match the id field in <paramref name="value"/>.</response>
+    /// <response code="500">Error while committing changes or retrieving the ThingDescription afterwards.</response>
     [HttpPut("{thingId}")]
+    [SwaggerExample(ThingsAPIExamples.CreateExample)]
     [Produces("application/json")]
-    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ThingDescription), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(string), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CreateThing(string thingId, [FromBody] JsonElement value)
@@ -173,9 +196,6 @@ public class ThingsController : ControllerBase
         }
 
         if (id != thingId) return Conflict("The 'id' in ThingDescription does not match the 'thingId' in the URL.");
-
-        //TODO: REMOVE
-        // IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(id), ActorType);
 
         string td;
         try
@@ -227,13 +247,15 @@ public class ThingsController : ControllerBase
     /// </summary>
     /// <param name="graph">A JSON array containing the Thing Descriptions objects.</param>
     /// <param name="operationid">OPTIONAL. The operation id that requested it.</param>
-    /// <returns>
-    /// Returns 207 MultiStatus with the created or updated Thing Description or error messages.<br/>
-    /// Returns 400 Bad Request if the JSON is invalid or missing required fields.<br/>
-    /// </returns>
+    /// <response code="200"><paramref name="graph"/> only contains one Thing and its creation or update was successful.</response>
+    /// <response code="207">List of final status codes for each Thing in <paramref name="graph"/></response>
+    /// <response code="400">The <paramref name="graph"/> is invalid or malformed, or it only contains one Thing and its ThingDescription is invalid or malformed.</response>
+    /// <response code="500">Error while reading <paramref name="graph"/> or saving the new ThingDescriptions.</response>
     [HttpPut("")]
+    [SwaggerExample(ThingsAPIExamples.CreateBulkExample)]
     [Produces("application/json")]
-    [ProducesResponseType(typeof(JsonElement), StatusCodes.Status207MultiStatus)]
+    [ProducesResponseType(typeof(List<MultiStatusResponse>), StatusCodes.Status207MultiStatus)]
+    [ProducesResponseType(typeof(ThingDescription), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(string), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CreateThings([FromBody] JsonElement graph, string? operationid=null)
@@ -255,30 +277,30 @@ public class ThingsController : ControllerBase
             }
             catch (ArgumentException ex)
             {
-                responses.Add(new
-                {
-                    Id = thing.TryGetProperty("id", out var id1) ? id1.GetString() : thing.TryGetProperty("@id", out var id2) ? id2.GetString() : $"Thing in position {list.IndexOf(thing)}",
-                    Status = HttpStatusCode.BadRequest,
-                    Message = ex.Message
-                });
+                responses.Add(new MultiStatusResponse
+                (
+                    thing.TryGetProperty("id", out var id1) ? id1.GetString()! : thing.TryGetProperty("@id", out var id2) ? id2.GetString()! : $"Thing in position {list.IndexOf(thing)}",
+                    HttpStatusCode.BadRequest,
+                    ex.Message
+                ));
                 continue;
             }
             catch (JsonException)
             {
-                responses.Add(new
-                {
-                    Id = thing.TryGetProperty("id", out var id1) ? id1.GetString() : thing.TryGetProperty("@id", out var id2) ? id2.GetString() : $"Thing in position {list.IndexOf(thing)}",
-                    Status = HttpStatusCode.BadRequest,
-                    Message = "Invalid JSON format."
-                });
+                responses.Add(new MultiStatusResponse(
+                
+                    thing.TryGetProperty("id", out var id1) ? id1.GetString()! : thing.TryGetProperty("@id", out var id2) ? id2.GetString()! : $"Thing in position {list.IndexOf(thing)}",
+                    HttpStatusCode.BadRequest,
+                    "Invalid JSON format."
+                ));
                 continue;
             }
-            responses.Add(new
-            {
-                Id = id,
-                Status = HttpStatusCode.Accepted,
-                Message = rawJson
-            });
+            responses.Add(new MultiStatusResponse(
+            
+                id,
+                HttpStatusCode.OK,
+                rawJson
+            ));
         }
 
         try
@@ -317,12 +339,11 @@ public class ThingsController : ControllerBase
     /// Retrieves the Thing Description (TD) for the specified <paramref name="thingId"/>.
     /// </summary>
     /// <param name="thingId">The identifier of the Thing.</param>
-    /// <returns>
-    /// Returns 200 OK with the Thing Description.<br/>
-    /// Returns 404 Not Found if the Thing was not found.<br/>
-    /// Returns 500 Internal Server Error if there was an error retrieving the Thing.
-    /// </returns>
+    /// <response code="200">The Thing's ThingDescription.</response>
+    /// <response code="404">The Thing was not found.</response>
+    /// <response code="500">Error while retrieving the Thing.</response>
     [HttpGet("{thingId}")]
+    [ProducesResponseType(typeof(ThingDescription), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetThingDescription(string thingId)
     {
         try
@@ -345,7 +366,15 @@ public class ThingsController : ControllerBase
 
     }
 
+    /// <summary>
+    /// Retrieves the Thing's status.
+    /// </summary>
+    /// <param name="thingId">The identifier of the Thing.</param>
+    /// <response code="200">The Thing's status.</response>
+    /// <response code="404">The Thing was not found.</response>
+    /// <response code="500">Error while consulting the Thing's status.</response>
     [HttpGet("{thingId}/status")]
+    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetThingStatus(string thingId)
     {
         try
@@ -368,11 +397,9 @@ public class ThingsController : ControllerBase
     /// Deletes a Thing by its identifier.
     /// </summary>
     /// <param name="thingId">The identifier of the Thing to delete.</param>
-    /// <returns>
-    /// Returns 204 No Content if the Thing was successfully deleted.<br/>
-    /// Returns 404 Not Found if the Thing was not found.<br/>
-    /// Returns 500 Internal Server Error if there was an error deleting the Thing.
-    /// </returns>
+    /// <response code="204">The Thing has successfully deleted.</response>
+    /// <response code="404">The Thing was not found.</response>
+    /// <response code="500">Error while deleting the Thing.</response>
     [HttpDelete("{thingId}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
@@ -403,16 +430,25 @@ public class ThingsController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Deletes the Things with the identifiers of each JSON object in the list provided.
+    /// </summary>
+    /// <param name="graph">The list with the objects with the identifiers.</param>
+    /// <param name="operationid">OPTIONAL. The identifier of the operation.</param>
+    /// <response code="204">The Things has been successfully deleted.</response>
+    /// <response code="400">At least one Thing does not have an identifier.</response>
+    /// <response code="500">Error while bulk deleting Things.</response>
     [HttpDelete("")]
-    [ProducesResponseType(typeof(JsonElement), StatusCodes.Status207MultiStatus)]
-    [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
+    [SwaggerExample(ThingsAPIExamples.DeleteBulkExample)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DeleteThings([FromBody] JsonElement graph, string? operationid=null)
     {
         if(graph.AsNode() is not JsonArray)
             return BadRequest("JSON is not an Array");
 
-        var responses = new List<dynamic>();
+        // var responses = new List<dynamic>();
 
         var list = graph.EnumerateArray().ToList();
         // var options = new ParallelOptions { MaxDegreeOfParallelism = 150 };
@@ -423,15 +459,15 @@ public class ThingsController : ControllerBase
                 try{
                     idList.Add((thing.TryGetProperty("@id", out var id1) ? id1.GetString() : thing.TryGetProperty("id", out var id2) ? id2.GetString() : thing.TryGetProperty("thingId", out var id3) ? id3.GetString() : throw new ArgumentException("The 'thingId' cannot be null or empty.")) ?? "");
                 }
-                catch(ArgumentException ex)
+                catch(ArgumentException)
                 {
-                    responses.Add(new
-                    {
-                        Id = $"Thing in position {list.IndexOf(thing)}",
-                        Status = HttpStatusCode.BadRequest,
-                        ex.Message
-                    });
-                    continue;
+                    // responses.Add(new
+                    // {
+                    //     Id = $"Thing in position {list.IndexOf(thing)}",
+                    //     Status = HttpStatusCode.BadRequest,
+                    //     ex.Message
+                    // });
+                    return BadRequest($"the Thign in position {list.IndexOf(thing)} does not have an id.");
                 }
 
         try
@@ -444,18 +480,17 @@ public class ThingsController : ControllerBase
             return StatusCode(500, $"Internal server error while deleting the Thing: {ex.Message}");
         }
         
-        return Accepted();
+        return NoContent();
     }
 
     /// <summary>
     /// Retrieves the current state of the specified Thing.
     /// </summary>
     /// <param name="thingId">The identifier of the Thing.</param>
-    /// <returns>
-    /// Returns 200 OK with the current state.<br/>
-    /// Returns 404 Not Found if the state does not exist.
-    /// </returns>
+    /// <response code="200">The Thing's current state.</response>
+    /// <response code="404">The Thing was not found.</response>
     [HttpGet("{thingId}/state")]
+    [ProducesResponseType(typeof(Dictionary<string, PropertyState>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCurrentState(string thingId)
     {
         IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
@@ -470,12 +505,11 @@ public class ThingsController : ControllerBase
     /// </summary>
     /// <param name="thingId">The identifier of the Thing.</param>
     /// <param name="newState">A JSON object containing the new state.</param>
-    /// <returns>
-    /// Returns 204 No Content if the update was successful.<br/>
-    /// Returns 400 Bad Request if the state is null or undefined.<br/>
-    /// Returns 500 Internal Server Error if the update could not be processed.
-    /// </returns>
+    /// <response code="204">The update was successful.</response>
+    /// <response code="400">The state was null or undefined.</response>
+    /// <response code="500">Error while updating the state.</response>
     [HttpPut("{thingId}/state")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> PutCurrentState(string thingId, [FromBody] JsonElement newState)
     {
         if (newState.ValueKind == JsonValueKind.Undefined || newState.ValueKind == JsonValueKind.Null)
@@ -513,9 +547,7 @@ public class ThingsController : ControllerBase
     /// <param name="thingId">The identifier of the Thing.</param>
     /// <param name="actionName">The name of the action to execute.</param>
     /// <param name="body">Optional parameters for the action, passed as JSON.</param>
-    /// <returns>
-    /// Returns 200 OK if the action was executed successfully.
-    /// </returns>
+    /// <response code="200">The action was executed successfully.</response>
     [HttpPost("{thingId}/action/{actionName}/execute")]
     public async Task<IActionResult> ExecuteAction(string thingId, string actionName, [FromBody] string body)
     {
@@ -529,23 +561,20 @@ public class ThingsController : ControllerBase
     /// Adds a new link to the specified Thing.
     /// </summary>
     /// <param name="thingId">The identifier of the Thing.</param>
-    /// <param name="links">A JSON object containing the links to add.</param>
-    /// <returns>
-    /// Returns 200 OK with the updated Thing Description.<br/>
-    /// Returns 400 Bad Request if the link is invalid.<br/>
-    /// Returns 404 Not Found if the Thing was not found.
-    /// </returns>
+    /// <param name="links">A JSON list containing the links to add.</param>
+    /// <response code="200">The links have successfully been added. Returns the updated ThingDescription.</response>
+    /// <response code="400">At least one of the links provided in <paramref name="links"/> is invalid.</response>
+    /// <response code="404">The Thing was not found.</response>
     [HttpPost("{thingId}/links")]
     [Produces("application/td+json")]
-    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+    [SwaggerExample(ThingsAPIExamples.CreateLinks)]
+    [ProducesResponseType(typeof(ThingDescription), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> AddLink(string thingId, [FromBody] JsonElement links)
     {
         if (links.ValueKind == JsonValueKind.Undefined || links.ValueKind == JsonValueKind.Null)
             return BadRequest("The link cannot be null or undefined.");
-
-        // IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
 
         try
         {
@@ -571,22 +600,19 @@ public class ThingsController : ControllerBase
     /// <param name="href">The target ID of the link to update.</param>
     /// <param name="rel">The relationship of the link to update.</param>
     /// <param name="link">A JSON object containing the updated link.</param>
-    /// <returns>
-    /// Returns 200 OK with the updated Thing Description.<br/>
-    /// Returns 400 Bad Request if the link is invalid.<br/>
-    /// Returns 404 Not Found if the Thing or link was not found.
-    /// </returns>
+    /// <response code="200">The link has been successfully been updated. Returns the updated ThingDescription.</response>
+    /// <response code="400">The <paramref name="link"/> is invalid or malformed.</response>
+    /// <response code="404">The Thign was not found or it has no link with name <paramref name="rel"/> or target <paramref name="href"/>.</response>
     [HttpPut("{thingId}/links/{rel}/{*href}")]
+    [SwaggerExample(ThingsAPIExamples.UpdateLink)]
     [Produces("application/td+json")]
-    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ThingDescription), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateLink(string thingId, string href, string rel, [FromBody] JsonElement link)
     {
         if (link.ValueKind == JsonValueKind.Undefined || link.ValueKind == JsonValueKind.Null)
             return BadRequest("The link cannot be null or undefined.");
-
-        // IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
 
         try
         {
@@ -612,10 +638,8 @@ public class ThingsController : ControllerBase
     /// <param name="thingId">The identifier of the Thing.</param>
     /// <param name="href">The href of the link to remove.</param>
     /// <param name="rel">The relationship of the link to update.</param>
-    /// <returns>
-    /// Returns 204 No Content if the link was removed successfully.<br/>
-    /// Returns 404 Not Found if the Thing or the link does not exist.
-    /// </returns>
+    /// <response code="204">The link has been successfully deleted.</response>
+    /// <response code="404">The Thing was not found or it has no link with name <paramref name="rel"/> and target <paramref name="href"/>.</response>
     [HttpDelete("{thingId}/links/{rel}/{*href}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
@@ -623,8 +647,6 @@ public class ThingsController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(href))
             return BadRequest("Target cannot be null or undefined.");
-
-        // IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
 
         try
         {
@@ -648,22 +670,19 @@ public class ThingsController : ControllerBase
     /// </summary>
     /// <param name="thingId">The identifier of the Thing.</param>
     /// <param name="subscription">A JSON object containing the subscription to add.</param>
-    /// <returns>
-    /// Returns 200 OK with the updated Thing Description.<br/>
-    /// Returns 400 Bad Request if the subscription is invalid.<br/>
-    /// Returns 404 Not Found if the Thing was not found.
-    /// </returns>
+    /// <response code="200">The subscription has been successfully added. Returns the updated ThingDescription.</response>
+    /// <response code="400">The <paramref name="subscription"/> is invalid or malformed.</response>
+    /// <response code="404">The Thing was not found.</response>
     [HttpPut("{thingId}/subscriptions")]
+    [SwaggerExample(ThingsAPIExamples.CreateSubscription)]
     [Produces("application/td+json")]
-    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ThingDescription), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> AddSubscription(string thingId, [FromBody] JsonElement subscription)
     {
         if (subscription.ValueKind == JsonValueKind.Undefined || subscription.ValueKind == JsonValueKind.Null)
             return BadRequest("The subscription cannot be null or undefined.");
-
-        // IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
 
         try
         {
@@ -687,10 +706,8 @@ public class ThingsController : ControllerBase
     /// </summary>
     /// <param name="thingId">The identifier of the Thing.</param>
     /// <param name="subscriptionId">The identifier or target URI of the subscription to remove.</param>
-    /// <returns>
-    /// Returns 204 No Content if the subscription was removed successfully.<br/>
-    /// Returns 404 Not Found if the Thing or the subscription does not exist.
-    /// </returns>
+    /// <response code="204">Subscription successfully deleted.</response>
+    /// <response code="404">The Thing was not found or it didn't have a subscription with identifier <paramref name="subscriptionId"/>.</response>
     [HttpDelete("{thingId}/subscriptions/{*subscriptionId}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
@@ -698,8 +715,6 @@ public class ThingsController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(subscriptionId))
             return BadRequest("The 'subscriptionId' parameter cannot be empty.");
-
-        // IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
 
         try
         {
@@ -717,6 +732,4 @@ public class ThingsController : ControllerBase
             return StatusCode(500, $"Internal error: {ex.Message}");
         }
     }
-
-
 }

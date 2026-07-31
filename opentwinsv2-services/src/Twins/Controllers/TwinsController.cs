@@ -83,6 +83,7 @@ namespace OpenTwinsV2.Twins.Controllers
         /// <response code="409">There is already a Twin with the provided identifier.</response>
         /// <response code="500">There was an issue creating the Thing.</response>
         [HttpPost("{twinId}")]
+        [SwaggerExample(TwinsAPIExamples.CreateTwin)]
         [Produces("application/json")]
         [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(string), StatusCodes.Status409Conflict)]
@@ -688,7 +689,7 @@ namespace OpenTwinsV2.Twins.Controllers
         [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
-        public async Task<IActionResult> SparQLQueryInTwin(string twinId, [FromForm] string stringQuery)
+        public async Task<IActionResult> SparQLQueryInTwin(string twinId, [FromForm] [SwaggerFormExample(TwinsAPIExamples.SparQLQuery)] string stringQuery)
         {
             //check if the stringQuery is empty
             if (string.IsNullOrWhiteSpace(stringQuery))

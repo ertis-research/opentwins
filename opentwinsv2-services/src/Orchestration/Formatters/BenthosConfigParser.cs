@@ -80,7 +80,7 @@ namespace OpenTwinsV2.Orchestration.Formatters
             var requiredKeys = new Dictionary<string, string[]>
             {
                 { "mqtt",  new[] { "urls", "topics" } },
-                { "kafka", new[] { "addresses", "topics" } },
+                { "kafka", new[] { "addresses", "topics", "consumer_group" } },
                 { "amqp",  new[] { "url", "exchanges" } },
                 { "nats",  new[] { "urls", "subject" } }
             };

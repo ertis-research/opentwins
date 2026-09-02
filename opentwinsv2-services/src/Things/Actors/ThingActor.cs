@@ -33,7 +33,8 @@ namespace OpenTwinsV2.Things.Actors
             ActorLogger.Info(Id.GetId(), "Activating actor");
             try
             {
-                await _descriptionManager.LoadDescriptionAsync(_thingId);
+                ThingDescription = await _descriptionManager.LoadDescriptionAsync(_thingId);
+                _logic.UpdateCurrentThingDescription(ThingDescription);
                 CurrentState = await _stateManager.LoadStateAsync(_thingId);
                 _logic.UpdateCurrentState(CurrentState);
             }

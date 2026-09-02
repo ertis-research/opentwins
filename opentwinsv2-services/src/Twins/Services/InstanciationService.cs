@@ -711,7 +711,7 @@ namespace OpenTwinsV2.Twins.Services
                         _ => []
                     };
                     foreach(var objEl in objArr)
-                        if(objEl is JsonObject objElObj && ((obj!["@id"] ?? obj["id"]) ?? "") is JsonValue targetObjId && !string.IsNullOrWhiteSpace(targetObjId.GetString()))
+                        if(objEl is JsonObject objElObj && ((objElObj!["@id"] ?? objElObj["id"]) ?? "") is JsonValue targetObjId && !string.IsNullOrWhiteSpace(targetObjId.GetString()))
                         {
                             var targetId = targetObjId!.GetString()!;
                             if(!graph.Any(thing => (thing!["@id"]?.GetValue<string>() ?? thing!["id"]!.GetValue<string>()) == targetId))

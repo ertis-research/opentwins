@@ -16,7 +16,7 @@ namespace OpenTwinsV2.Things.Actors.Services
     internal class ThingLogicManager
     {
         private readonly DescriptionManagerService _descManager;
-        private readonly ThingDescription? _thingDescription;
+        private ThingDescription? _thingDescription;
         private Dictionary<string, PropertyState> _currentState;
         private readonly StateManagerService _stateManager;
         private readonly StateService _stateService;
@@ -74,6 +74,11 @@ namespace OpenTwinsV2.Things.Actors.Services
         public void UpdateCurrentState(Dictionary<string, PropertyState> newState)
         {
             _currentState = newState;
+        }
+
+        public void UpdateCurrentThingDescription(ThingDescription? td)
+        {
+            _thingDescription = td;
         }
 
         private async Task ApplyLogicToDerivedProperties()

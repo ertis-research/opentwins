@@ -537,6 +537,8 @@ namespace Orchestration.Services
                     },
                     Spec = new V1PodSpec
                     {
+                        // BackoffLimit = 0,
+                        TerminationGracePeriodSeconds = 0,
                         RestartPolicy = "Never",
                         ImagePullSecrets = !string.IsNullOrEmpty(secretName) 
                             ? new List<V1LocalObjectReference> { new V1LocalObjectReference{Name = secretName} }
@@ -575,6 +577,16 @@ namespace Orchestration.Services
                                             SecretKeyRef = new V1SecretKeySelector { Name = secretName, Key = "password" }
                                         }
                                     }
+                                },
+                                LivenessProbe = new V1Probe
+                                {
+                                    FailureThreshold = 2,
+                                    HttpGet = new V1HTTPGetAction
+                                    {
+                                        Path = "/ready",
+                                        Port = 4195
+                                    },
+                                    InitialDelaySeconds = 5
                                 }
                             }
                         },
@@ -616,7 +628,7 @@ namespace Orchestration.Services
                     if(deleteConfigOnFailure)
                         await DeleteConfigMap(BenthosConfigParser.GetConfigName(!string.IsNullOrWhiteSpace(thingId) ? thingId : jobId), namespaceName);
                 }catch{}
-                throw;
+                // throw;
             }
 
             //Check the status after it's been created, the config may not be valid and can be stuck at error status

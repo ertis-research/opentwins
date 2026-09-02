@@ -393,7 +393,7 @@ namespace OpenTwinsV2.Orchestration.Services
                 }
                 try
                 {
-                    await _k8s.CreateBenthosPod(jobId, namespaceName, thingId);
+                    await _k8s.CreateBenthosPod(jobId, namespaceName, thingId, deleteConfigOnFailure: false);
                 }catch(Exception ex)
                 {
                     throw new Exception($"Something went wrong while creating the Connection: {ex.Message}");
@@ -498,7 +498,7 @@ namespace OpenTwinsV2.Orchestration.Services
                 await _k8s.DeleteBenthosJob(thingId, namespaceName, Connection:true);
             }catch(Exception ex)
             {
-                await CreateThing(thing);
+                // await CreateThing(thing);
                 throw new Exception($"Something went wrong wile deleting in Kubernetes: {ex.Message}");
             }
         }

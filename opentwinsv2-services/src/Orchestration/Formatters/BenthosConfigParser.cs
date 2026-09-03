@@ -6,6 +6,8 @@ using k8s.Models;
 using System.Text.Json.Serialization;
 using System.ComponentModel;
 using Orchestration.Services;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace OpenTwinsV2.Orchestration.Formatters
 {
@@ -101,7 +103,7 @@ namespace OpenTwinsV2.Orchestration.Formatters
             }
         }
 
-        private static Dictionary<string, object> ValidateThingDescription(ThingDescription td, string input)
+        private static Dictionary<string, object> ValidateThingDescription(ThingDescription td, string input, bool authEnabled = false)
         {
             if(td is null)
                 throw new ArgumentNullException("The ThingDescription Object ob5tained was null");
@@ -126,6 +128,30 @@ namespace OpenTwinsV2.Orchestration.Formatters
                 {
                     cleanConfig[kvp] = ConvertWOTType(td.Properties[kvp].Const, td.Properties[kvp].Type) ?? throw new Exception();
                 }catch(Exception){continue;}
+            }
+
+            if (authEnabled)
+            {
+                //depending on the protocol, the auth parameters are in one form or another
+                switch (input)
+                {
+                    case "mqtt":
+                        cleanConfig["user"] = "${USERNAME}";
+                        cleanConfig["password"] = "${PASSWORD}";
+                        break;
+
+                    case "kafka": 
+                        cleanConfig["sasl"] = new Dictionary<string, object>
+                        {
+                            ["mechanism"] = "PLAIN",
+                            ["user"] = "${USERNAME}",
+                            ["password"] = "${PASSWORD}"
+                        };
+                        //TODO: Enforce tls?
+                        break;
+                    default: Console.WriteLine($"WARNING: Auth not available for {input} protocol.");
+                        break;
+                }
             }
 
             return cleanConfig;
@@ -288,6 +314,20 @@ namespace OpenTwinsV2.Orchestration.Formatters
         }
 
         /// <summary>
+        /// Gets the secret name for the given Thing identifier.
+        /// </summary>
+        /// <param name="thingId">The identifier of the Thing.</param>
+        /// <returns>Returns the generated secret name</returns>
+        public static string GetSecretNameFronThingId(string thingId)
+        {
+            using var sha256 = SHA256.Create();
+            byte[] hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(thingId));
+            string fullHash = Convert.ToHexString(hashBytes).ToLower();
+            string shortHash = fullHash.Substring(0, 16);
+            return $"auth-{shortHash}";
+        }
+
+        /// <summary>
         /// Extracts input and thingId from a Thing Description.
         /// </summary>
         /// <param name="thingDescription">The Json of the Thing Description.</param>
@@ -322,11 +362,11 @@ namespace OpenTwinsV2.Orchestration.Formatters
 
         #region Parsing Config
 
-        public static V1ConfigMap ParseBenthosConfig(JsonNode json, string namespaceName, string id, string input)
+        public static V1ConfigMap ParseBenthosConfig(JsonNode json, string namespaceName, string id, string input, V1Secret? authSecret)
         {
             var td = DeserializeJsonThingDescription(json) ?? throw new Exception("The ThingDescription obtained from the Json was null");
             
-            Dictionary<string, object> configDic = ValidateThingDescription(td, input);
+            Dictionary<string, object> configDic = ValidateThingDescription(td, input, authSecret is not null);
 
             var configYaml = ParseToBenthosConfigYaml(td.Id, input, configDic);
             

@@ -208,16 +208,16 @@ namespace Orchestration.Services
             return true;
         }
 
-        public async Task CreateSecretInNamespace(string secretName, string namespaceName, V1Secret secret, bool overrideSecret = false)
-        {
-            var exists = await ExistsSecretInNamespace(secretName, namespaceName);
-            if(!overrideSecret && exists)
-                throw new InvalidOperationException($"There is already a secret called {secretName} in the namespace called {namespaceName}");
-            else if(!overrideSecret || !exists)
-                await _k8s.CoreV1.CreateNamespacedSecretAsync(secret, namespaceName);
-            else 
-                await _k8s.CoreV1.ReplaceNamespacedSecretAsync(secret, secretName, namespaceName);
-        }
+        // public async Task CreateSecretInNamespace(string secretName, string namespaceName, V1Secret secret, bool overrideSecret = false)
+        // {
+        //     var exists = await ExistsSecretInNamespace(secretName, namespaceName);
+        //     if(!overrideSecret && exists)
+        //         throw new InvalidOperationException($"There is already a secret called {secretName} in the namespace called {namespaceName}");
+        //     else if(!overrideSecret || !exists)
+        //         await _k8s.CoreV1.CreateNamespacedSecretAsync(secret, namespaceName);
+        //     else 
+        //         await _k8s.CoreV1.ReplaceNamespacedSecretAsync(secret, secretName, namespaceName);
+        // }
 
         #endregion
 
@@ -486,13 +486,41 @@ namespace Orchestration.Services
 
                 if (pod.Status.Phase == "Failed")
                 {
-                    throw new Exception("Pod failed to start");
+                    // throw new Exception("Pod failed to start");
+                    return;
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(2));
             }
 
-            throw new TimeoutException("Pod did not become ready in time");
+            // throw new TimeoutException("Pod did not become ready in time");
+        }
+
+        /// <summary>
+        /// Creates a Kubernetes secret with the user and password provided.
+        /// </summary>
+        /// <param name="thingId">The identifier of the Thing.</param>
+        /// <param name="namespaceName">The Kubernetes namespace name</param>
+        /// <param name="user">The user parameter of the secret.</param>
+        /// <param name="pwd">The password parameter of the secret.</param>
+        /// <returns>
+        /// The created Kubernetes secret.
+        /// </returns>
+        public async Task<V1Secret> CreateSecret(string thingId, string namespaceName, string user, string pwd)
+        {
+            var secretName = BenthosConfigParser.GetSecretNameFronThingId(thingId);
+            var secret = new V1Secret
+            {
+                Metadata = new V1ObjectMeta { Name = secretName },
+                Type = "Opaque", // Standard, simple secret
+                StringData = new Dictionary<string, string>
+                {
+                    { "user", user },
+                    { "password", pwd }
+                }
+            };
+            var createdSecret = await _k8s.CoreV1.CreateNamespacedSecretAsync(secret, namespaceName);
+            return createdSecret;
         }
 
         /// <summary>
@@ -502,8 +530,9 @@ namespace Orchestration.Services
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <param name="thingId">OPTIONAL. The identifier of the Connection Thing.</param>
         /// <param name="deleteConfigOnFailure">OPTIONAL. If the configMap should be deleted in case of failure creating the pod. By default: true</param>
+        /// <param name="secret">The Kubernetes secret with the authentication parameters.</param>
         /// <returns></returns>
-        public async Task CreateBenthosPod(string jobId, string namespaceName, string thingId = "", bool deleteConfigOnFailure = true)
+        public async Task CreateBenthosPod(string jobId, string namespaceName, string thingId = "", bool deleteConfigOnFailure = true, V1Secret? secret = null)
         {
             // if(!string.IsNullOrWhiteSpace(thingId))
             //     await CreateThing(thingId);
@@ -513,7 +542,6 @@ namespace Orchestration.Services
             {
                 var image = _config["BenthosWorker:Image"] ?? "jeffail/benthos:latest";
                 var pullPolicy = _config["BenthosWorker:PullPolicy"] ?? "IfNotPresent";
-                var secretName = _config["BenthosWorker:PullSecret"] ?? "k8s--orchestration--secret"; // Might be null
                 var labels = new Dictionary<string, string> { { "app", "benthos-worker" }, { "job-id", safeJobId }};
                 var safeThingId = !string.IsNullOrWhiteSpace(thingId) ? ToK8sLabelValue( thingId) : "";
 
@@ -525,6 +553,7 @@ namespace Orchestration.Services
                     labels.Add("Connection", "true");
                 }
 
+                var secretName = secret.Name();
 
                 pod = new V1Pod
                 {
@@ -550,7 +579,13 @@ namespace Orchestration.Services
                                 Name= "benthos",
                                 Image = image,
                                 ImagePullPolicy = pullPolicy,
-                                Args = new List<string> {"-c", $"/{BenthosConfigParser.GetConfigName(!string.IsNullOrWhiteSpace(thingId) ? thingId : jobId)}/benthos.yaml", "-w"}, //-w flag makes it so that the pod watches for changes in the configMap and reloads itself when it happens
+                                Command = new List<string> { "/bin/sh", "-c" },
+                                        
+                                // 2. Trap the termination signal and force an exit code of 1
+                                Args = new List<string> 
+                                { 
+                                    $"trap 'exit 1' TERM; /benthos -c /{BenthosConfigParser.GetConfigName(!string.IsNullOrWhiteSpace(thingId) ? thingId : jobId)}/benthos.yaml -w & wait $!" 
+                                },
                                 VolumeMounts = new List<V1VolumeMount>
                                 {
                                     new V1VolumeMount
@@ -559,34 +594,47 @@ namespace Orchestration.Services
                                         MountPath = $"/{BenthosConfigParser.GetConfigName(!string.IsNullOrWhiteSpace(thingId) ? thingId : jobId)}"
                                     }
                                 },
-                                Env = new List<V1EnvVar>
+                                Env = secretName is null ? [
+                                    new V1EnvVar { Name = "BENTHOS_SHUTDOWN_DELAY", Value = "5s" }
+                                ] : new List<V1EnvVar>
                                 {
                                     new V1EnvVar
                                     {
-                                        Name = "MQTT_USERNAME",
+                                        Name = "USERNAME",
                                         ValueFrom = new V1EnvVarSource
                                         {
-                                            SecretKeyRef = new V1SecretKeySelector { Name = secretName, Key = "username" }
+                                            SecretKeyRef = new V1SecretKeySelector { Name = secretName, Key = "user" }
                                         }
                                     },
                                     new V1EnvVar
                                     {
-                                        Name = "MQTT_PASSWORD",
+                                        Name = "PASSWORD",
                                         ValueFrom = new V1EnvVarSource
                                         {
                                             SecretKeyRef = new V1SecretKeySelector { Name = secretName, Key = "password" }
                                         }
                                     }
                                 },
-                                LivenessProbe = new V1Probe
+                                StartupProbe = new V1Probe
                                 {
-                                    FailureThreshold = 2,
                                     HttpGet = new V1HTTPGetAction
                                     {
                                         Path = "/ready",
                                         Port = 4195
                                     },
-                                    InitialDelaySeconds = 5
+                                    PeriodSeconds = 5,
+                                    FailureThreshold = 12 
+                                },
+                                LivenessProbe = new V1Probe
+                                {
+                                    PeriodSeconds = 5,
+                                    FailureThreshold = 3,
+                                    HttpGet = new V1HTTPGetAction
+                                    {
+                                        Path = "/ready",
+                                        Port = 4195
+                                    },
+                                    InitialDelaySeconds = 15,
                                 }
                             }
                         },
@@ -620,7 +668,22 @@ namespace Orchestration.Services
 
             try
             {
-                await _k8s.CoreV1.CreateNamespacedPodAsync(pod, namespaceName);
+                V1Pod createdPod;
+                createdPod = await _k8s.CoreV1.CreateNamespacedPodAsync(pod, namespaceName.Trim());
+
+                if(secret is not null)
+                {
+                    secret.Metadata.OwnerReferences = [new V1OwnerReference{
+                        ApiVersion = "v1",
+                        Kind = "Pod",
+                        Name = createdPod.Metadata.Name,
+                        Uid = createdPod.Metadata.Uid,
+                        Controller = true,
+                        BlockOwnerDeletion = true
+                    }];
+                    await _k8s.CoreV1.ReplaceNamespacedSecretAsync(secret, secret.Metadata.Name, namespaceName);
+                }
+                    
             }catch(Exception)
             {
                 try
@@ -628,30 +691,30 @@ namespace Orchestration.Services
                     if(deleteConfigOnFailure)
                         await DeleteConfigMap(BenthosConfigParser.GetConfigName(!string.IsNullOrWhiteSpace(thingId) ? thingId : jobId), namespaceName);
                 }catch{}
-                // throw;
+                throw;
             }
 
             //Check the status after it's been created, the config may not be valid and can be stuck at error status
-            try
-            {
-                await CheckPodStatus(pod, namespaceName);
-            }
-            catch (Exception ex)
-            {
-                var logs = await FormatPodLogs(safeJobId, namespaceName);
-                //await DeleteBenthosJob(jobId, namespaceName, deleteConfig: deleteConfigOnFailure);
-                throw new Exception($"Original: {ex.Message}\nLogs right before failure and deletion: {logs}");
-            }
+            // try
+            // {
+            //     await CheckPodStatus(pod, namespaceName);
+            // }
+            // catch (Exception ex)
+            // {
+            //     var logs = await FormatPodLogs(safeJobId, namespaceName);
+            //     await DeleteBenthosJob(jobId, namespaceName, deleteConfig: deleteConfigOnFailure);
+            //     throw new Exception($"Original: {ex.Message}\nLogs right before failure and deletion: {logs}");
+            // }
 
-            try
-            {
-                await CheckContainerStatus(pod, namespaceName);
-            }
-            catch (Exception)
-            {
-                await DeleteBenthosJob(jobId, namespaceName, deleteConfig: deleteConfigOnFailure);
-                throw;
-            }
+            // try
+            // {
+            //     await CheckContainerStatus(pod, namespaceName);
+            // }
+            // catch (Exception)
+            // {
+            //     await DeleteBenthosJob(jobId, namespaceName, deleteConfig: deleteConfigOnFailure);
+            //     throw;
+            // }
         }
 
         /// <summary>

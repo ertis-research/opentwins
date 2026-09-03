@@ -305,11 +305,12 @@ namespace OpenTwinsV2.Orchestration.Services
         /// </summary>
         /// <param name="thingId">The identifier of the Connection Thing.</param>
         /// <param name="thingDescription">The ThingDescription of the Connection Thing.</param>
+        /// <param name="authSecret">The Kubernetes secret with the authentication parameters.</param>
         /// <returns>Returns the full ConfigMap for the Connection Thing.</returns>
-        public async Task<V1ConfigMap> GetConnectionConfigFromThingDescription(string thingId, JsonNode thingDescription)
+        public async Task<V1ConfigMap> GetConnectionConfigFromThingDescription(string thingId, JsonNode thingDescription, V1Secret? authSecret = null)
         {
             var input = BenthosConfigParser.GetInputFromThingDescription(thingDescription);
-            var configMap = ParseThingDescriptionIntoBenthosConfig(thingDescription, thingId, input);
+            var configMap = ParseThingDescriptionIntoBenthosConfig(thingDescription, thingId, input, authSecret);
             var yaml = await GetKafkaOutput(Path.Combine(AppContext.BaseDirectory, "Sources", "kafka.yaml"));
             configMap = MergeOutputYamlIntoConfig(yaml, configMap);
             return configMap;
@@ -368,15 +369,53 @@ namespace OpenTwinsV2.Orchestration.Services
         public async Task CreateConnection(string thingId, JsonNode thingDescription, string namespaceName)
         {
             //create or modify the Thing
-            await CreateThing(thingDescription);
+            //TODO: Check for auth fields -> extract them
+
+            ThingDescription? serTd = JsonSerializer.Deserialize<ThingDescription>(thingDescription);
+            bool hasUser = serTd?.Properties?.ContainsKey("connectionUser") ?? false;
+            bool hasPwd = serTd?.Properties?.ContainsKey("connectionPwd") ?? false;
+
+            string? user = null;
+            string? pwd = null;
+            
+            if(!(hasPwd && hasUser) && (hasPwd || hasUser))
+                throw new ArgumentException($"The provided Connection thing Description has incomplete auth data");
+            else if(hasPwd || hasUser)
+            {
+                //Store and strip the data
+                user = serTd!.Properties!["connectionUser"].Const?.ToString();
+                pwd = user is null ? null : serTd!.Properties!["connectionPwd"].Const?.ToString();
+                if(pwd is null)
+                    user = null;
+                serTd.Properties.Remove("connectionUser");
+                serTd.Properties.Remove("connectionPwd");
+            }
+
+            JsonNode newTd = JsonSerializer.SerializeToNode(serTd) ?? thingDescription;
+
+            await CreateThing(newTd ?? thingDescription);
             V1ConfigMap? configMap = null;
             
             var jobId = BenthosConfigParser.GetJobIdFromThingId(thingId);
+            bool authEnabled = (pwd is not null) && (user is not null);
+            V1Secret? secret = null;
             try
             {
+                if(authEnabled)
+                {
+                    //Create secret
+                    try
+                    {
+                        secret = await _k8s.CreateSecret(thingId, _namespaceName, user!, pwd!);
+                    }catch(Exception ex)
+                    {
+                        throw new Exception($"Something went wrong while creating the secret: {ex.Message}");
+                    }
+
+                }
                 try
                 {
-                    configMap = await GetConnectionConfigFromThingDescription(thingId, thingDescription);
+                    configMap = await GetConnectionConfigFromThingDescription(thingId, newTd ?? thingDescription, secret);
                     await _k8s.CreateConfigMap(configMap, namespaceName);
                 }
                 catch (ArgumentNullException)
@@ -393,7 +432,7 @@ namespace OpenTwinsV2.Orchestration.Services
                 }
                 try
                 {
-                    await _k8s.CreateBenthosPod(jobId, namespaceName, thingId, deleteConfigOnFailure: false);
+                    await _k8s.CreateBenthosPod(jobId, namespaceName, thingId, deleteConfigOnFailure: true, secret);
                 }catch(Exception ex)
                 {
                     throw new Exception($"Something went wrong while creating the Connection: {ex.Message}");
@@ -531,10 +570,11 @@ namespace OpenTwinsV2.Orchestration.Services
         /// <param name="thingDescription">The Thing Description Json.</param>
         /// <param name="id">The identifier of the Pod.</param>
         /// <param name="input">The input of the Connection.</param>
+        /// <param name="authSecret">The Kubernetes secret with the authentication parameters.</param>
         /// <returns>Returns the Parsed ConfigMap.</returns>
-        public V1ConfigMap ParseThingDescriptionIntoBenthosConfig(JsonNode thingDescription, string id, string input)
+        public V1ConfigMap ParseThingDescriptionIntoBenthosConfig(JsonNode thingDescription, string id, string input, V1Secret? authSecret = null)
         {
-            return ParseThingDescriptionIntoBenthosConfig(thingDescription, _namespaceName, id, input);
+            return ParseThingDescriptionIntoBenthosConfig(thingDescription, _namespaceName, id, input, authSecret);
         }
 
         /// <summary>
@@ -544,10 +584,11 @@ namespace OpenTwinsV2.Orchestration.Services
         /// <param name="namespaceName">The Kubernetes namespace name.</param>
         /// <param name="id">The identifier of the Pod.</param>
         /// <param name="input">The input of the Connection.</param>
+        /// <param name="authSecret">The Kubernetes secret with the authentication parameters.</param>
         /// <returns>Returns the Parsed ConfigMap.</returns>
-        public V1ConfigMap ParseThingDescriptionIntoBenthosConfig(JsonNode thingDescription, string namespaceName, string id, string input)
+        public V1ConfigMap ParseThingDescriptionIntoBenthosConfig(JsonNode thingDescription, string namespaceName, string id, string input, V1Secret? authSecret = null)
         {
-            return BenthosConfigParser.ParseBenthosConfig(thingDescription, namespaceName, KubernetesService.ToK8sLabelValue(id), input);
+            return BenthosConfigParser.ParseBenthosConfig(thingDescription, namespaceName, KubernetesService.ToK8sLabelValue(id), input, authSecret);
         }
 
         /// <summary>

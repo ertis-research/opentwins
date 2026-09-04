@@ -217,7 +217,8 @@ namespace OpenTwinsV2.Twins.Builders
             var payload = new JsonArray { sourceThing };
 
             Console.WriteLine($"TD: {td}");
-            if (td.Links == null || td.Links.Count == 0)
+            //Check for already existent relations from prior twin creation
+            if (td.Links == null || td.Links.Count == 0 || (uidTargets.TryGetValue(td.Id!, out var thingId) && !thingId.Contains("_:relativeUid")))
                 return payload;
 
             foreach (var link in td.Links)
@@ -234,7 +235,6 @@ namespace OpenTwinsV2.Twins.Builders
                 }
                 else
                 {
-                    Console.WriteLine($"PLACEHOLDER ID: {link.Href}");
                     targetCounter++;
                     string blankTarget = $"_:t{targetCounter}";
                     var placeholder = BuildPlaceholderThing(source);
@@ -242,8 +242,6 @@ namespace OpenTwinsV2.Twins.Builders
                     payload.Add(placeholder);
                     targetUid = blankTarget;
                 }
-                Console.WriteLine($"TARGET ADDED: {targetUid}");
-
                 var bid = InstanciationService.GetBidirectionalRelationPayload(uid ?? "_:source", targetUid, link.Rel, currentPayload ?? []);
                 if(bid is null){
                     var unidir = InstanciationService.GetUnidirectionalRelationPayload(targetUid, uid ?? "_:source", link.Href.ToString(), currentPayload ?? []);
@@ -254,7 +252,6 @@ namespace OpenTwinsV2.Twins.Builders
                     else
                     {
                         var relation = BuildRelation(link, targetUid, sourceUid: uid ?? "_:source", relCounter: relCounter, bidir: false);
-                        Console.WriteLine($"RELATION ADDED: {relation}");
                         payload.Add(relation);
                     }   
                 }

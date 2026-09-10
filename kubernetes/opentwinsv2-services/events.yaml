@@ -36,8 +36,10 @@ kind: Service
 metadata:
   name: opentwinsv2-events-svc
 spec:
+  type: NodePort
   selector:
     app: opentwinsv2-events
   ports:
     - port: 80
       targetPort: 8080
+      nodePort: 30356 

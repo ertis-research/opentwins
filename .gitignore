@@ -18,6 +18,7 @@ opentwinsv2-services/src/Twins/appsettings.json
 
 # dotenv files
 .env
+.csproj.lscache
 
 # Entornos virtuales
 env/
@@ -503,3 +504,4 @@ $RECYCLE.BIN/
 *.swp
 
 opentwinsv2-services/src/Twins/daprConfig.yaml
+*.lscache

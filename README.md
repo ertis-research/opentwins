@@ -31,3 +31,7 @@ You can find more information about OpenTwins and its architecture in the public
 
 >Infante S, Robles J, Martín C, et al. Distributed digital twins on the open-source OpenTwins framework. [Advanced Engineering Informatics, 2025, vol. 64, p. 102970](https://doi.org/10.1016/j.aei.2024.102970).
 
+>Robles, J., Infante, S., Martín, C., & Díaz, M. (2026). Composite Digital Twins: From Formalization to a Scalable, Semantic Graph-Based Architecture with OpenTwins. [IEEE Transactions on Software Engineering](https://doi.org/10.1109/TSE.2026.3727063).
+
+
+

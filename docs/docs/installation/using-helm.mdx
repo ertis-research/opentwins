@@ -23,10 +23,10 @@ import TabItem from '@theme/TabItem';
 First of all, you have to add ERTIS Research group helm repository to your helm repository list:
 
 ```bash
-helm repo add ertis https://ertis-research.github.io/Helm-charts/
+helm repo add ertis https://ertis-research.github.io/helm-charts/
 ```
 
-Once done, the next step is installing the chart by executing this line on your terminal (in our case, we will use `opentwins` as release name and `opentwins` as namespace, but you can choose the one that you prefeer). To customize the installation, please refer to [Helm's values](https://github.com/ertis-research/Helm-charts/blob/main/OpenTwins/values.yaml) file.
+Once done, the next step is installing the chart by executing this line on your terminal (in our case, we will use `opentwins` as release name and `opentwins` as namespace, but you can choose the one that you prefeer). To customize the installation, please refer to [Helm's values](https://github.com/ertis-research/helm-charts/blob/main/OpenTwins/values.yaml) file.
 
 :::warning
 We recommend to modify the **default passwords and tokens** for Grafana and InfluxDB before deploying the platform. Currently, to avoid potential problems, we do not recommend changing Eclipse Ditto's username and password.

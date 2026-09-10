@@ -154,10 +154,10 @@ OpenTwins supports the use of Mosquitto and Kafka as intermediaries, but **we re
 :::
 
 - [App documentation](https://mosquitto.org/documentation/)
-- [Helm values file](https://github.com/ertis-research/Helm-charts/blob/main/mosquitto/values.yaml)
+- [Helm values file](https://github.com/ertis-research/helm-charts/blob/main/mosquitto/values.yaml)
 
 ```bash
-helm repo add ertis https://ertis-research.github.io/Helm-charts/
+helm repo add ertis https://ertis-research.github.io/helm-charts/
 helm repo update
 helm install mosquitto ertis/mosquitto -n opentwins --wait --dependency-update -f values.yaml
 ```

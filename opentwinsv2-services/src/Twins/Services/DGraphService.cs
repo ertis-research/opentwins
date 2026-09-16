@@ -1,19 +1,27 @@
+using System.Collections;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using AngleSharp.Dom;
 using Api;
+using Badgerpb4;
 using Dapr;
 using Dgraph4Net;
 using Google.Protobuf;
 using Grpc.Core;
 using Json.More;
+using Lucene.Net.Index;
+using Microsoft.AspNetCore.Authentication;
 using OpenTwinsV2.Shared.Models;
 using OpenTwinsV2.Twins.Builders;
 using OpenTwinsV2.Twins.Models;
+using Pb;
 using Twins.Models;
+using Twins.Services;
 using VDS.RDF;
 
 namespace OpenTwinsV2.Twins.Services
@@ -22,8 +30,8 @@ namespace OpenTwinsV2.Twins.Services
     {
         private readonly Dgraph4NetClient _client;
         private readonly Channel _channel;
+        private readonly int _batchMaxSize;
         private readonly ILogger<DGraphService> _logger;
-
         private readonly ThingsService _thingsService;
 
         public DGraphService(IConfiguration configuration, ILogger<DGraphService> logger, ThingsService thingsService)
@@ -34,6 +42,7 @@ namespace OpenTwinsV2.Twins.Services
             _client = new Dgraph4NetClient(_channel);
             _logger = logger;
             _thingsService = thingsService;
+            _batchMaxSize = int.TryParse(configuration["ExportBatchSize"] ?? "100", out int batchInt) ? batchInt : 100;
         }
 
         #region Schema
@@ -379,24 +388,149 @@ namespace OpenTwinsV2.Twins.Services
 
         public async Task<Response> AddNQuadTripleAsync(List<string> nquads)
         {
+            //check if payload will surpass the client's maximum allowed payload size per transaction 
+            int payloadBytes = 0;
+            foreach(var triple in nquads)
+                payloadBytes = payloadBytes + Encoding.UTF8.GetByteCount(triple) + 1;
+
+            if(payloadBytes < 3_900_000)
+            {
+                //does not surpass the maximum size, send as it is
+
+                var triples = ListNQuadsToMutationFormat(nquads);
+                var txn = _client.NewTransaction();
+                try
+                {
+                    var mutation = new Mutation
+                    {
+                        SetNquads = ByteString.CopyFromUtf8(triples)
+                    };
+                    var response = await txn.Mutate(mutation);
+                    await txn.Commit();
+                    foreach (var kv in response.Uids)
+                        Console.WriteLine($"{kv.Key} => {kv.Value}");
+                    return response;
+                }
+                catch
+                {
+                    await txn.DisposeAsync();
+                    throw;
+                }
+            }
+            else
+                //the payload is too big to send in one go -> uid allocation and substitution from nquads for batch transactions
+                return await AddBatchNQuadTripleAsync(nquads);
+            
+        }
+
+        private async Task<Response> AddBatchNQuadTripleAsync(List<string> nquads)
+        {
             var txn = _client.NewTransaction();
             try
             {
-                var triples = ListNQuadsToMutationFormat(nquads);
+                var blankNodes = new HashSet<string>();
+                var blankNodeRegex = new Regex(@"_:([^\s""<>]+)", RegexOptions.Compiled);
+                foreach(var nquad in nquads)
+                    foreach(System.Text.RegularExpressions.Match match in blankNodeRegex.Matches(nquad))
+                        blankNodes.Add(match.Groups[1].Value);
 
-                var mutation = new Mutation
+                Response? dummyResponse = null;
+                var assignedUids = new Dictionary<string, string>();
+
+                if(blankNodes.Count > 0)
                 {
-                    SetNquads = ByteString.CopyFromUtf8(triples)
-                };
-                var response = await txn.Mutate(mutation);
-                await txn.Commit();
-                foreach (var kv in response.Uids)
-                {
-                    Console.WriteLine($"{kv.Key} => {kv.Value}");
+                    //send dummy nquads for the data base to assign an uid to each node.
+                    var dummyBuilder = new StringBuilder();
+                    foreach(var node in blankNodes)
+                        dummyBuilder.AppendLine($"_:{node} <_temp_alloc> \"1\" .");
+
+                    var dummyMutation = new Mutation { SetNquads = ByteString.CopyFromUtf8(dummyBuilder.ToString())};
+                    dummyResponse = await txn.Mutate(dummyMutation); //after this mutation, the dta base has assigned uids to each node
+
+                    var deleteBuilder = new StringBuilder();
+                    foreach(var uid in dummyResponse.Uids)
+                    {
+                        assignedUids[uid.Key] = uid.Value;
+                        Console.WriteLine($"{uid.Key} => {uid.Value}");
+                        deleteBuilder.AppendLine($"<{uid.Value}> <_temp_alloc> \"1\" .");
+                    }
+
+                    var cleanupMutation = new Mutation { DelNquads = ByteString.CopyFromUtf8(deleteBuilder.ToString()) };
+                    await txn.Mutate(cleanupMutation); //after this we have an uid for each node, without any dummy data
                 }
-                return response;
+
+                var batches = NQuadsService.BatchAndReplaceUids(nquads, assignedUids);
+
+                foreach(var batchNQuads in batches)
+                {
+                    var batchMutation = new Mutation { SetNquads = ByteString.CopyFromUtf8(batchNQuads) };
+                    await txn.Mutate(batchMutation);
+                }
+
+                await txn.Commit();
+
+                return dummyResponse ?? new Response();
             }
-            catch
+            catch (Exception)
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+        }
+
+        private async Task<List<JsonElement>> ExportInChunksSafelyAsync(List<string> uids, string queryContent)
+        {
+            string uidList = string.Join(",", uids.Select(uid => $"\"{uid}\""));
+            var txn = _client.NewTransaction();
+            try
+            {
+                var query = $@"{{
+                    nodes(func: uid({uidList})) {queryContent}
+                }}";
+
+                var res = await txn.Query(query);
+                var json = res.Json.ToStringUtf8();
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if (!root.TryGetProperty("nodes", out JsonElement nodesArray) || nodesArray.GetArrayLength() == 0)
+                    return [];
+
+                var jsonList = JsonSerializer.Deserialize<List<JsonElement>>(nodesArray);
+                return jsonList ?? [];
+            }catch(RpcException ex) when (ex.Status.Detail.Contains("Exceeded query edge limit"))
+            {
+                //batch too big
+                if(uids.Count == 1)
+                {
+                    //TODO: Scenario: one massive node with over 1M edges
+                    return [];
+                }
+                else
+                {
+                    //split chunk size
+                    int mid = uids.Count / 2;
+                    var firstHalf = uids.Take(mid).ToList();
+                    var secondHalf = uids.Skip(mid).ToList();
+
+                    //concurrent consults to the db
+                    var tasks = new[]
+                    {
+                        ExportInChunksSafelyAsync(firstHalf, queryContent),
+                        ExportInChunksSafelyAsync(secondHalf, queryContent)
+                    };
+
+                    var results = await Task.WhenAll(tasks);
+
+                    var combinedList = new List<JsonElement>(results[0].Count + results[1].Count);
+                    combinedList.AddRange(results[0]);
+                    combinedList.AddRange(results[1]);
+
+                    return combinedList;
+                }
+            }
+            catch (Exception) //Uncontrolled exception
             {
                 await txn.DisposeAsync();
                 throw;
@@ -599,12 +733,6 @@ namespace OpenTwinsV2.Twins.Services
             newJson[property] = child.AsNode()!.DeepClone();
             return JsonSerializer.Deserialize<JsonElement>(newJson);
         }
-
-
-        // public async Task<JsonObject> GetFromUid(string uid)
-        // {
-            
-        // }
 
         #endregion
 
@@ -2719,7 +2847,6 @@ namespace OpenTwinsV2.Twins.Services
             if(fullJson.Value.TryGetProperty("shapes", out var shapes))
                 return JsonSerializer.Deserialize<List<JsonElement>>(shapes.GetRawText()) ?? [];
             return [];
-            
         }
 
         public async Task<JsonElement?> GetShapeGraphNestedFullJson(string shapeId)
@@ -2728,13 +2855,20 @@ namespace OpenTwinsV2.Twins.Services
 
             var query = $@"
             {{
-                shapeGraphs(func: eq(shapeId, ""{shapeId}"")) @recurse(depth: 100, loop: true) {{
-                    uid
-                    dgraph.type
-                    expand(_all_)
-                    ~*
+                shape(func: eq(shapeId, ""{shapeId}"")){{
+                    shapeId
+                    namespace{{
+                        prefix
+                        uri
+                    }}
+                    shapes{{
+                        uid
+                        nodeShapeId
+                        dgraph.type
+                    }}
                 }}
-            }}";
+            }}
+            ";
 
             var res = await txn.Query(query);
             var json = res.Json.ToStringUtf8(); ;
@@ -2742,17 +2876,157 @@ namespace OpenTwinsV2.Twins.Services
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            // Acceder a things[0]["~twins"]
-            if (!root.TryGetProperty("shapeGraphs", out JsonElement shapeGraphsArray) || shapeGraphsArray.GetArrayLength() == 0)
-            {
+            if (!root.TryGetProperty("shape", out JsonElement shapeGraphsArray) || shapeGraphsArray.GetArrayLength() == 0)
                 return null;
+
+            var shape = shapeGraphsArray[0];
+
+            var uids = (shape.TryGetProperty("shapes", out var uidOgList) ? uidOgList.EnumerateArray() : []).Select(uidEl => uidEl.TryGetProperty("uid", out var uid) ? uid.ToString() : null).Where(uid => uid is not null)!.ToList<string>();
+        
+            var results = await ExtractGraphBatchedAsync(uids);
+
+            var completeGraph = JsonObject.Create(shape);
+            completeGraph!["shapes"] = results;
+            return JsonSerializer.SerializeToElement(completeGraph);
+        }
+
+        private async Task<JsonArray> ExtractGraphBatchedAsync(List<string> startingUids)
+        {
+            var visited = new ConcurrentDictionary<string, JsonObject>();
+            var currentLevelUids = new HashSet<string>(startingUids);
+
+            IEnumerable<JsonObject> finalNodes = Array.Empty<JsonObject>();
+
+            var semaphore = new SemaphoreSlim(4);
+            int batchSize = 1000;
+            int edgeLimit = 10000;
+
+            while (currentLevelUids.Count > 0)
+            {
+                //split uid list into batches of the indicated size
+                var batches = currentLevelUids.Chunk(batchSize).ToList();
+                var fetchTasks = new List<Task<List<JsonNode>>>();
+
+                currentLevelUids.Clear();
+
+                foreach(var batch in batches)
+                    fetchTasks.Add(FetchBatchAsync(batch, edgeLimit, semaphore));
+
+                var batchResults = await Task.WhenAll(fetchTasks);
+
+                foreach(JsonObject node in batchResults.SelectMany(n => n.Select(node => node.AsObject()))){
+                    var uid = node["uid"]?.GetValue<string>()! ?? throw new ArgumentNullException("uid is null");
+                    visited[uid] = node;
+
+                    //get the next uids that should be looked over
+                    var subUids = node
+                    .Select(prop => prop.Value)
+                    .Where(v => v != null)
+                    .SelectMany(v => v is JsonArray arr ? arr.ToList()! : new List<JsonNode>{v!}) 
+                    .OfType<JsonObject>() 
+                    .Where(obj => obj.ContainsKey("uid") && obj["uid"] is not null) 
+                    .Select(obj => obj["uid"]!.GetValue<string>()) 
+                    .ToList();
+                    
+                    if(subUids.Count == edgeLimit)
+                    {
+                        var remainingUids = await DrainSuperNodeEdgeAsync(uid, edgeLimit);
+                        subUids.AddRange(remainingUids);
+                    }
+
+                    foreach(var subUid in subUids)
+                        if(!visited.ContainsKey(subUid!))
+                            currentLevelUids.Add(subUid!);
+
+                }                
             }
 
+            var recons = startingUids.Select(uid=> FormatService.BuildNodeRecursive(uid, visited, [])).ToJsonArray();
+            return recons;
+        }
 
-            var shapeProp = shapeGraphsArray[0];
-            var shapes = JsonSerializer.Deserialize<JsonElement>(shapeProp.GetRawText());
-            return shapes;
-        } 
+        private async Task<List<JsonNode>> FetchBatchAsync(string[] uidBatch, int limit, SemaphoreSlim semaphore)
+        {
+            await semaphore.WaitAsync();
+            var txn = _client.NewTransaction();
+            try
+            {
+                string uidList = string.Join(", ", uidBatch.Select(u => $"\"{u}\""));
+                string query = $@"
+                {{
+                    node(func: uid({uidList})){{
+                        uid
+                        dgraph.type
+                        expand(_all_)(first: {limit}){{
+                            uid
+                            expand(_all_)
+                        }}
+                    }}
+                }}
+                ";
+
+                var res = await txn.Query(query);
+                var json = res.Json.ToStringUtf8(); ;
+
+                JsonNode root = JsonNode.Parse(json)!; 
+
+                var node = root["node"];
+
+                if(node is null)
+                    return [];
+                return node.AsArray()!.ToList<JsonNode>();
+            }
+            finally
+            {
+                await txn.DisposeAsync();
+                semaphore.Release();
+            }
+        }
+
+        private async Task<List<string>> DrainSuperNodeEdgeAsync(string uid, int limit)
+        {
+            var additionalUids = new List<string>();
+            int curretOffset = limit;
+            bool hasMore = true;
+            var txn = _client.NewTransaction();
+            try
+            {
+                while (hasMore)
+                {
+                    string query = $@"
+                    {{
+                        node(func: uid(""{uid}"")){{
+                            expand(_all_)(first: {limit}, offset: {curretOffset}){{
+                                uid
+                            }}
+                        }}
+                    }}
+                    ";
+                    var res = await txn.Query(query);
+                    using var doc = JsonDocument.Parse(res.Json.ToStringUtf8());
+
+                    var root = doc.RootElement;
+
+                    if(!root.TryGetProperty("node", out var nodeEl))
+                        return [];
+
+                    var fetchedUids = nodeEl.EnumerateArray().Where(el => el.TryGetProperty("uid", out var uid) && !string.IsNullOrWhiteSpace(uid.GetString())).Select(el => el.GetProperty("uid").GetString()!).ToList();
+                    additionalUids.AddRange(fetchedUids);
+
+                    if(fetchedUids.Count < limit)
+                        hasMore = false;
+                    else
+                        curretOffset += limit;
+
+                }
+            }
+            catch (Exception)
+            {
+                await txn.DisposeAsync();
+                throw;
+            }
+            return additionalUids;
+        }
 
         public async Task<bool> ExistsNodeShapeInShapeGraphAsync (string shapeId, string nodeShapeId){
             var query = $@"

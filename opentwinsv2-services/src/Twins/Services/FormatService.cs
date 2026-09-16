@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http.Features;
 using OpenTwinsV2.Twins.Services;
 using Twins.Models;
 using VDS.RDF;
@@ -347,5 +349,63 @@ namespace Twins.Services
             return stream;
         }
 
+        /// <summary>
+        /// Obtains the fully completed and filled node.
+        /// </summary>
+        /// <param name="uid">The uid of the node.</param>
+        /// <param name="cache">The dictionary with the nodes.</param>
+        /// <param name="currentPath">The set of uids already visited to prevent a loop.</param>
+        /// <returns>The fully completed node.</returns>
+        public static JsonObject? BuildNodeRecursive(string uid, ConcurrentDictionary<string, JsonObject> cache, HashSet<string> currentPath)
+        {
+            if (!cache.TryGetValue(uid, out var cachedNode))
+                return null; // Node wasn't fetched, return null to omit it
+            
+
+            if (!currentPath.Add(uid))
+                // We are in a loop. Return a shallow pointer object to break the cycle.
+                return new JsonObject { ["uid"] = uid, ["_cycle_detected"] = true };
+            
+
+            var reconstructedNode = new JsonObject();
+
+            foreach (var property in cachedNode)
+                // If the property is a JsonArray, it's a list of edges/relations to resolve
+                if (property.Value is JsonArray edgeArray)
+                {
+                    var newArray = new JsonArray();
+                    
+                    foreach (var edge in edgeArray)
+                    {
+                        if (edge is JsonObject edgeObj && edgeObj.TryGetPropertyValue("uid", out var childUidNode) && childUidNode is not null)
+                        {
+                            string childUid = childUidNode.GetValue<string>();
+                            
+                            // Recursively fetch and build the nested child
+                            var nestedChild = BuildNodeRecursive(childUid, cache, currentPath);
+                            if (nestedChild != null)
+                                newArray.Add(nestedChild);
+                        }else if(edge != null)
+                            newArray.Add(edge.DeepClone());
+                    }
+                    reconstructedNode[property.Key] = newArray;
+                }
+                else if(property.Value is JsonObject jsonObj)
+                {
+                    if (jsonObj.TryGetPropertyValue("uid", out var childUidNode) && childUidNode is not null)
+                    {
+                        string childUid = childUidNode.GetValue<string>();
+                        var nestedChild = BuildNodeRecursive(childUid, cache, currentPath);
+                        reconstructedNode[property.Key] = nestedChild ?? jsonObj.DeepClone();
+                    }
+                    else
+                        reconstructedNode[property.Key] = jsonObj.DeepClone();
+                }
+                else if (property.Value != null)
+                    reconstructedNode[property.Key] = property.Value.DeepClone();
+                
+            currentPath.Remove(uid);
+            return reconstructedNode;
+        }
     }
 }

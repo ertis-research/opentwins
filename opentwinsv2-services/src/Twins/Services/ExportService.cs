@@ -64,8 +64,15 @@ namespace OpenTwinsV2.Twins.Services
                 {
                     if (existing is not null)
                     {
-                        pref = existing["prefix"]?.GetValue<string>() ?? pref;
-                        uri = existing["uri"]?.GetValue<string>() ?? uri;
+                        if(existing["prefix"] is null)
+                            existing["prefix"] = pref;
+                        else
+                            pref = existing["prefix"]!.GetValue<string>();
+
+                        if(existing["uri"] is null)
+                            existing["uri"] = uri;
+                        else
+                            uri = existing["uri"]!.GetValue<string>();
                     }
                 }
                 else if(!twin)
@@ -606,7 +613,7 @@ namespace OpenTwinsV2.Twins.Services
                     {
                         var valueName = value["Target.name"]!.GetValue<string>();
                         CheckPrefixes(value, nsDic, defaultPrefix, defaultUri, "Target", valueName);
-                        var valuePrefix = value!["Target.prefix"]!["prefix"]!.GetValue<string>();
+                        var valuePrefix = value!["Target.prefix"]?["prefix"]?.GetValue<string>() ?? "";
                         MergeIntoParent(parent, $"{valuePrefix}:{valueName}", key);
                     }else if (nodeValType.Equals("NodeShape"))
                     {
@@ -660,7 +667,7 @@ namespace OpenTwinsV2.Twins.Services
         }
 
         /// <summary>
-        /// Falttens the Shape Node Json Node.
+        /// Flattens the Shape Node Json Node.
         /// </summary>
         /// <param name="nodeShape">The original Shape Node Json Node.</param>
         /// <param name="nsDic">The namespace dictionary.</param>

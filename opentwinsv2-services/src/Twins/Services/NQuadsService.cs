@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Runtime.Serialization;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Xml;
 using Dgraph4Net;
 using HtmlAgilityPack;
@@ -24,6 +25,48 @@ namespace OpenTwinsV2.Twins.Services
     /// </summary>
     public static class NQuadsService
     {
+        #region Batch Replace
+        public static readonly Regex UidRegex = new Regex(@"_:[^\s""<>]+", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// Replaces relative UIDs with permanent UIDs from DGraph payload and divides the payload in batches.
+        /// </summary>
+        /// <param name="nquads">The list of NQuads.</param>
+        /// <param name="assignedUids">The Dictionary that maps the original relative UID with the corresponding definitive one.</param>
+        /// <param name="batchSizeItems">The maximum size per batch.</param>
+        /// <returns>The list of upload batches of the DGraph operation.</returns>
+        public static IEnumerable<string> BatchAndReplaceUids(IEnumerable<string> nquads, Dictionary<string, string> assignedUids, int batchSizeItems = 10_000)
+        {
+            var formattedUids = new Dictionary<string, string>(assignedUids.Count);
+
+            foreach((string id, string uid) in assignedUids)
+                formattedUids[$"_:{id}"] = $"<{uid}>";
+
+            var batchBuffer = new List<string>(batchSizeItems);
+
+            foreach(string nquad in nquads)
+            {
+                if(!nquad.Contains("_:"))
+                    batchBuffer.Add(nquad);
+                else
+                {
+                    string replacedNquad = UidRegex.Replace(nquad, match => formattedUids.TryGetValue(match.Value, out string? realUid) ? (realUid ?? match.Value) : match.Value);
+                    batchBuffer.Add(replacedNquad);
+                }
+
+                if(batchBuffer.Count >= batchSizeItems)
+                {
+                    yield return string.Join("\n", batchBuffer);
+                    batchBuffer.Clear();
+                }
+            }
+
+            if(batchBuffer.Count > 0)
+                yield return string.Join("\n", batchBuffer);
+        }
+        
+        #endregion
+
         /// <summary>
         /// Extracts the uid of the node provided.
         /// </summary>
@@ -140,7 +183,7 @@ namespace OpenTwinsV2.Twins.Services
             {
                 //the Thing doesn't exist, we have to create it
                 //typeOfNode is the thingId, but we need the prefix too
-                typeUid = $"_:{ontologyId}_{typeOfNode}";
+                typeUid = $"_:{ontologyId}_{FormatService.SanitizeTypeAndUIDValues(typeOfNode)}";
                 AddNQuadThingNodeTriples(typeUid, typeOfNode, ontologyId, typePrefix, nquads);
             } 
             return typeUid;
@@ -205,7 +248,7 @@ namespace OpenTwinsV2.Twins.Services
 
             var namespace_uid = $"_:{ontology}namespace_{prefix.ToLowerInvariant()}";
 
-            string attribute_uid = $"_:att_{predicate}_{Guid.NewGuid()}";
+            string attribute_uid = $"_:att_{FormatService.SanitizeTypeAndUIDValues(predicate)}_{Guid.NewGuid()}";
             nquads.Add($"{attribute_uid} <dgraph.type> \"Attribute\" .");
             nquads.Add($"{attribute_uid} <Attribute.key> \"{predicate}\" .");
             nquads.Add($"{attribute_uid} <Attribute.type> \"{literalType}\" .");
@@ -243,7 +286,7 @@ namespace OpenTwinsV2.Twins.Services
 
             var namespace_uid = $"_:{ontology}namespace_{prefix.ToLowerInvariant()}";
             //Relation node
-            string relation_uid = $"_:rel_{predicate}_{Guid.NewGuid()}";
+            string relation_uid = $"_:rel_{FormatService.SanitizeTypeAndUIDValues(predicate)}_{Guid.NewGuid()}";
             nquads.Add($"{relation_uid} <dgraph.type> \"Relation\" .");
             nquads.Add($"{relation_uid} <Relation.name> \"{predicate}\" .");
             nquads.Add($"{relation_uid} <Relation.createdAt> \"{DateTime.UtcNow:O}\" .");

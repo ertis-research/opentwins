@@ -504,4 +504,6 @@ $RECYCLE.BIN/
 *.swp
 
 opentwinsv2-services/src/Twins/daprConfig.yaml
-*.lscache
+opentwinsv2-services/src/Orchestration/Sources/ConnectorDescription.json*
+
+.lscache

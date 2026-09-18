@@ -240,6 +240,10 @@ namespace OpenTwinsV2.Twins.Services
                 
                 }
 
+                type NonFunctional{
+                
+                }
+
                 type Namespace {
                     namespaceId
                     prefix
@@ -862,12 +866,51 @@ namespace OpenTwinsV2.Twins.Services
             return false;
         }
 
-        public async Task InstanciateAPlaceHolderThing(string thingId)
+        public async Task InstanciateAPlaceHolderThingAsync(string thingId)
         {
             //Delete Placeholder type
-            await DeleteThingTypeFromThing(thingId, "Placeholder");
+            var uid = (await GetUidsByThingIdsAsync([thingId])).TryGetValue(thingId, out var thingUid) ? thingUid : throw new KeyNotFoundException($"Thing {thingId} not found in DGraph"); 
+            await DeleteEntitiesAsync([new JsonObject{
+                ["uid"] = uid,
+                ["dgraph.type"] = "Placeholder"
+            }]);
 
             //TODO: Complete Info???
+        }
+
+        public async Task<bool> IsThingNonFunctionalAsync(string thingId)
+        {
+            var query = $@"
+            {{
+                exists(func: eq(thingId, ""{thingId}"")) @filter(type(NonFunctional)){{
+                    uid
+                }}
+            }}";
+
+            var response = await _client.NewTransaction().Query(query);
+            var json = response.Json.ToStringUtf8();
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("exists", out var existsArray) && existsArray.ValueKind == JsonValueKind.Array)
+                return existsArray.GetArrayLength() > 0;
+            return false;
+        }
+
+        public async Task InstanciateNonFunctionalThingAsync(string thingId)
+        {
+            var uid = (await GetUidsByThingIdsAsync([thingId])).TryGetValue(thingId, out var thingUid) ? thingUid : throw new KeyNotFoundException($"Thing {thingId} not found in DGraph"); 
+            await DeleteEntitiesAsync([new JsonObject{
+                ["uid"] = uid,
+                ["dgraph.type"] = "NonFunctional"
+            }]);
+        }
+
+        public async Task TurnThingIntoNonFunctional(string thingId)
+        {
+            var uid = (await GetUidsByThingIdsAsync([thingId])).TryGetValue(thingId, out var thingUid) ? thingUid : throw new KeyNotFoundException($"Thing {thingId} not found in DGraph"); 
+            await AddNQuadTripleAsync([$"<{uid}> <dgraph.type> \"NonFunctional\"."]);
         }
 
         public async Task<List<string>> GetThingTypes(string thingId)
@@ -1292,6 +1335,7 @@ namespace OpenTwinsV2.Twins.Services
                     hasAttribute{{
                         Attribute.key
                         Attribute.value
+                        Attribute.type
                         Attribute.prefix{{
                             namespaceId
                             prefix

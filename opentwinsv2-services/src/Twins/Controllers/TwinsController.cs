@@ -108,7 +108,7 @@ namespace OpenTwinsV2.Twins.Controllers
             if(!string.IsNullOrWhiteSpace(shapeId) && !await _dgraphService.ExistsShapeGraphByIdAsync(shapeId))
                 return NotFound("There is no Shape Graph with the provided identifier.");
 
-            Dictionary<string, ThingDescription> thingDescriptions = [];
+            Dictionary<string, ThingDescription?> thingDescriptions = [];
             //Is graph valid and every Thing in it exists in Twins. Otherwise: error (Before making any changes)
             //At the same time, load already the TD of the Thing to avoid repeating requests
 
@@ -118,17 +118,21 @@ namespace OpenTwinsV2.Twins.Controllers
                 
                 foreach(var id in idList)
                 {
-                    var td = await _thingsService.GetThingAsync(id);
-                    thingDescriptions[id] = td;
+                    try
+                    {
+                        var td = await _thingsService.GetThingAsync(id);
+                        thingDescriptions[id] = td;
+                    }
+                    catch (KeyNotFoundException)
+                    {
+                        thingDescriptions[id] = null;; //No error: Later on when the value is accessed and it is null, then it will be assumed as a NonFunctional Thing
+                    }
+                    
                 }
             }
             catch (ArgumentException ex)
             {
                 return BadRequest(ex.Message);
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound($"There is a Thing in the provided graph that does not exist: {ex.Message}");
             }
             catch (InvalidOperationException)
             {
@@ -147,7 +151,7 @@ namespace OpenTwinsV2.Twins.Controllers
                     if(await _dgraphService.IsThingAPlaceholderAsync(twinId))
                     
                         //Manage Placeholder completion    
-                        await _dgraphService.InstanciateAPlaceHolderThing(twinId);
+                        await _dgraphService.InstanciateAPlaceHolderThingAsync(twinId);
                     
                     //Add Twin Type. It's not already a Twin because it would've failed by now
                     await _dgraphService.AddNQuadTripleAsync([$"<{(await _dgraphService.GetUidsByThingIdsAsync([twinId]))[twinId]}> <dgraph.type> \"Twin\" ."]);
@@ -164,7 +168,7 @@ namespace OpenTwinsV2.Twins.Controllers
                     if(await _dgraphService.IsThingAPlaceholderAsync(twinId))
                     {
                         //Manage Placeholder completion
-                        await _dgraphService.InstanciateAPlaceHolderThing(twinId);
+                        await _dgraphService.InstanciateAPlaceHolderThingAsync(twinId);
                         await _dgraphService.AddThingTypeIntoThing(twinId, "Twin");          
                     }
                     else
@@ -441,7 +445,7 @@ namespace OpenTwinsV2.Twins.Controllers
                     {
                         _logger.LogDebug("Thing {ThingId} already exists -> add twin relation only", thingId);
                         if(isPlaceholder)
-                            await _dgraphService.InstanciateAPlaceHolderThing(thingId);
+                            await _dgraphService.InstanciateAPlaceHolderThingAsync(thingId);
                         var responseTwinAnexion = await _dgraphService.AddThingToTwinAsync(thingId, twinId);
                         responses.Add(new
                         {
@@ -553,7 +557,7 @@ namespace OpenTwinsV2.Twins.Controllers
         {
             try
             {
-                return Ok(await _dgraphService.RemoveThingFromTwinAsync(twinId, thingId));
+                return Ok(await _dgraphService.RemoveThingFromTwinAsync(thingId, twinId));
             }
             catch (KeyNotFoundException ex)
             {

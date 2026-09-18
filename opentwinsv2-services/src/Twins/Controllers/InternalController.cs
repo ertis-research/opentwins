@@ -23,6 +23,16 @@ namespace Twins.Controllers
             _dgraphService = dgraphService;
         }
 
+        private async Task NonFunctionalThingCheckAsync(string thingId)
+        {
+            if(await _dgraphService.IsThingNonFunctionalAsync(thingId))
+            {
+                _logger.LogDebug("Turning {thingId} Thing functional", thingId);
+                await _dgraphService.InstanciateNonFunctionalThingAsync(thingId);
+                _logger.LogDebug("{thingId} Thing is now functional", thingId);
+            }
+        }
+
         [HttpDelete("things/{thingId}")]
         [ApiExplorerSettings(IgnoreApi = true)]
         public async Task<IActionResult> HandleDeleteThing(string thingId)
@@ -38,7 +48,9 @@ namespace Twins.Controllers
             _logger.LogDebug("Processing delete {thingId}", thingId);
             try
             {
-                await _dgraphService.DeleteThingAsync(thingId);
+                // await _dgraphService.DeleteThingAsync(thingId);
+                await _dgraphService.TurnThingIntoNonFunctional(thingId);
+
                 _logger.LogInformation("Delete thing event processed successfully.");
                 return Ok();
             }
@@ -71,6 +83,7 @@ namespace Twins.Controllers
                     _logger.LogWarning("Event discarded: missing  link data.");
                 else
                 {
+                    await NonFunctionalThingCheckAsync(thingId);
                     _logger.LogDebug("Processing Link from {Source}: {Link}", thingId, JsonSerializer.Serialize(link));
                     await _handler.HandleAddLinkAsync(thingId, link);
                     _logger.LogInformation("Add link event processed successfully.");
@@ -93,6 +106,7 @@ namespace Twins.Controllers
             }
 
             _logger.LogDebug("Processing Link from {thingId}: {Link}", thingId, JsonSerializer.Serialize(link));
+            await NonFunctionalThingCheckAsync(thingId);
             await _handler.HandleUpdateLinkAsync(thingId, target, relName, link);
             _logger.LogInformation("Update link event processed successfully.");
 
@@ -109,6 +123,7 @@ namespace Twins.Controllers
                 _logger.LogWarning("Event discarded: missing source data.");
                 return Ok();
             }
+            await NonFunctionalThingCheckAsync(thingId);
             var linkList = JsonSerializer.Deserialize<List<Link>>(jlink) ?? [];
             foreach(var link in linkList)
             {
@@ -197,6 +212,7 @@ namespace Twins.Controllers
                 _logger.LogWarning("Event discarded: missing thingId.");
             try
             {
+                //TODO: NONFUNCTIONAL CONTROL
                 await _dgraphService.AddThingTypeIntoThing(thingId, typeId);
             }catch(KeyNotFoundException ex)
             {

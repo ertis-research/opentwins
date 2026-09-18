@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using AngleSharp.Common;
+using AngleSharp.Dom;
 using Api;
 using Json.More;
 using Lucene.Net.Util;
@@ -71,12 +72,12 @@ namespace OpenTwinsV2.Twins.Services
             return idList;
         } 
 
-        public static bool IsRelationBidirectional(string sourceId, string targetId, string relName, Dictionary<string, ThingDescription> tds, JsonArray graph)
+        public static bool IsRelationBidirectional(string sourceId, string targetId, string relName, Dictionary<string, ThingDescription?> tds, JsonArray graph)
         {
             //Check first if the relation is defined in the ThingDescription, if it's not, then look in the Json Graph
             //every td exists and we have it
 
-            if((tds[targetId].Links ?? []).Any(link => link.Rel == relName && link.Href.ToString() == sourceId))
+            if((tds[targetId]?.Links ?? []).Any(link => link.Rel == relName && link.Href.ToString() == sourceId))
                 return true;
             try
             {
@@ -450,24 +451,7 @@ namespace OpenTwinsV2.Twins.Services
             foreach((var key, var values) in attrs)
                 foreach((var type, var stringValue) in values)
                 {
-                    object? value;
-                    switch (type?.ToLower())
-                    {
-                        case "int":
-                        case "integer":
-                            value = int.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out _) ? int.Parse(stringValue) : stringValue;
-                            break;
-                        case "float":
-                        case "double":
-                            value = double.TryParse(stringValue, NumberStyles.Float, CultureInfo.InvariantCulture, out _) ? float.Parse(stringValue) : stringValue;
-                            break;
-                        case "bool":
-                            value = bool.TryParse(stringValue, out _) ? bool.Parse(stringValue) : stringValue;
-                            break;
-                        default:
-                            value = stringValue;
-                            break;
-                    }
+                    object? value = stringValue is null ? null : FormatService.ParseAttributeValue(type, stringValue);
                     var obj = new JsonObject
                     {
                         ["type"] = type ?? "string"
@@ -578,7 +562,7 @@ namespace OpenTwinsV2.Twins.Services
             var generalDict = (await Task.WhenAll(generalTask)).ToDictionary(x => x.Key!, x => (x.Relations, x.Attributes));
 
             int relationCounter = 0;
-            // int attrCounter = 0;
+            int attrCounter = 0;
 
             foreach((var id, (var type, var graphObject)) in dict)
             {
@@ -589,17 +573,16 @@ namespace OpenTwinsV2.Twins.Services
                 {
                     var thingPayload = ThingBuilder.BuildThing(id, typeUid: typeUids[type], twinUid: twinUid);
                     
-                    // ---------> As of now, Twin's Things attributes are exclusively stored in the statestore
-                    // var attrArray = new JsonArray();
-                    // foreach((var attrKey, var attrList) in attributesDict)
-                    //     foreach((var attrType, var attrValue) in attrList)
-                    //     {
-                    //         attrCounter++;
-                    //         payload.Add(ThingBuilder.BuildAttribute(attrCounter, attrKey, attrType, attrValue));
-                    //         attrArray.Add(new JsonObject{["uid"] = $"_:attr{attrCounter}"});
-                    //     }
-                    // if(attrArray.Count>0)
-                    //     thingPayload["hasAttribute"] = attrArray;
+                    var attrArray = new JsonArray();
+                    foreach((var attrKey, var attrList) in attributesDict)
+                        foreach((var attrType, var attrValue) in attrList)
+                        {
+                            attrCounter++;
+                            payload.Add(ThingBuilder.BuildAttribute(attrCounter, attrKey, attrType, attrValue));
+                            attrArray.Add(new JsonObject{["uid"] = $"_:attr{attrCounter}"});
+                        }
+                    if(attrArray.Count>0)
+                        thingPayload["hasAttribute"] = attrArray;
 
                     thingPayload["uid"] = uids[id];
                     payload.Add(thingPayload);
@@ -670,7 +653,7 @@ namespace OpenTwinsV2.Twins.Services
                 throw new Exception("Things Instanciation failed in Things Service");
         }
 
-        public async Task InstanciateThingGraph(JsonArray graph, string twinId, Dictionary<string, ThingDescription> thingDescriptions)
+        public async Task InstanciateThingGraph(JsonArray graph, string twinId, Dictionary<string, ThingDescription?> thingDescriptions)
         {
             var twinUid = (await _dgraphService.GetUidsByThingIdsAsync([twinId]))[twinId];
 
@@ -682,13 +665,27 @@ namespace OpenTwinsV2.Twins.Services
 
             JsonArray payload = [];
 
-            int relationCounter = 0, targetCounter = 0;
-
+            int relationCounter = 0, targetCounter = 0, attrCounter = 0;
             foreach(var thingId in thingDescriptions.Keys)
             {
-                //Get Thing DGraph Payload (ThingBuilder)
-                //Get Relation from the ThingDescriptions payloads 
-                payload.AddRange(ThingBuilder.BuildPayloadWithLinks(thingDescriptions[thingId], twinUid, uids, ref relationCounter, ref targetCounter, uids[thingId], payload).Select(p => p!.DeepClone()));
+                //Check if its a NonFunctional Thing
+                JsonObject thingPayload = thingDescriptions[thingId] switch
+                {
+                    null => ThingBuilder.BuildNonFunctionalThing(thingId),
+                    _ => new JsonObject
+                    {
+                        ["uid"] = uids[thingId],
+                    }
+                };
+                JsonArray attrArray = [];
+
+                //If it has a functional Thing, add the TD dependant info
+                if(thingDescriptions[thingId] is not null)
+                    //Get Relation from the ThingDescriptions payloads 
+                    //Get Thing DGraph Payload (ThingBuilder)
+                    payload.AddRange(ThingBuilder.BuildPayloadWithLinks(thingDescriptions[thingId]!, twinUid, uids, ref relationCounter, ref targetCounter, uids[thingId], payload).Select(p => p!.DeepClone()));
+                else
+                    thingPayload = ThingBuilder.AddTwinToThing(thingPayload, twinUid);
 
                 //Get Twin exclusive Relations payloads
                 JsonObject graphThing = [];
@@ -702,17 +699,20 @@ namespace OpenTwinsV2.Twins.Services
                 }
                 
                 //before this function it's been controlled that every id in the graph exists, that every property has an id, etc
+                //These are for Twin only relations and attributes!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 foreach((var rel, var obj) in graphThing)
                 {
                     JsonArray objArr = obj switch
                     {
                         JsonObject targetObject => new JsonArray(targetObject.DeepClone()),
+                        JsonValue targetValue => new JsonArray(targetValue.DeepClone()),
                         JsonArray objArray => objArray,
                         _ => []
                     };
                     foreach(var objEl in objArr)
                         if(objEl is JsonObject objElObj && ((objElObj!["@id"] ?? objElObj["id"]) ?? "") is JsonValue targetObjId && !string.IsNullOrWhiteSpace(targetObjId.GetString()))
                         {
+                            //It's a relation (the objetive is an object with an id)
                             var targetId = targetObjId!.GetString()!;
                             if(!graph.Any(thing => (thing!["@id"]?.GetValue<string>() ?? thing!["id"]!.GetValue<string>()) == targetId))
                                 throw new ArgumentException($"The relation {rel} in Thing {thingId} links to a Thing that does not exist ({targetObjId})");
@@ -739,8 +739,21 @@ namespace OpenTwinsV2.Twins.Services
                                     bidir: bidir));
                                 }
                             }
+                        }else if(objEl is JsonValue objValue)
+                        {
+                            //It's an attribute (object is a literal value)
+                            var value = objEl.GetValue<object>().ToString();
+                            if(value is null || value == "id" || value == "@id" || value == "@type")
+                                continue;
+                            var attrPayload = ThingBuilder.BuildAttribute(attrCounter, rel, FormatService.GetAttributeType(value), value);
+                            attrArray.Add(new JsonObject{["uid"] = attrPayload["uid"]!.GetValue<string>()});
+                            payload.Add(attrPayload);
+                            attrCounter++;
                         }
                 }
+                if(attrArray.Count > 0)
+                    thingPayload["hasAttribute"] = attrArray;
+                payload.Add(thingPayload);
             }
 
             //payload ready

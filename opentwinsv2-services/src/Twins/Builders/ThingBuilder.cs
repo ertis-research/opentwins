@@ -129,6 +129,19 @@ namespace OpenTwinsV2.Twins.Builders
             };
         }
 
+        public static JsonObject BuildNonFunctionalThing(string thingId)
+        {
+            return new JsonObject
+            {
+                ["dgraph.type"] = new JsonArray{"Thing", "NonFunctional"},
+                ["thingId"] = thingId,
+                ["name"] = thingId, //TODO: Name?
+                ["createdAt"] = DateTime.UtcNow.ToString("o"),
+                ["twins"] = new JsonArray(),
+                ["domains"] = new JsonArray() 
+            };
+        }
+
         /// <summary>
         /// Decide el nombre de la arista según la relación.
         /// </summary>
@@ -225,7 +238,6 @@ namespace OpenTwinsV2.Twins.Builders
             {
                 Console.WriteLine($"link: {link.Rel.ToSafeString()}");
                 if (link.Rel == null) continue;
-                Console.WriteLine("No me salgo");
                 relCounter++;
                 var source = link.Href.ToString();
                 string targetUid;

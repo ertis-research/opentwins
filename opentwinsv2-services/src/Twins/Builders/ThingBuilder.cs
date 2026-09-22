@@ -99,6 +99,15 @@ namespace OpenTwinsV2.Twins.Builders
             return thing;
         }
 
+        public static JsonObject AddTypeToThing(string thingUid, string typeUid)
+        {
+            return new JsonObject
+            {
+                ["uid"] = thingUid,
+                ["hasType"] = new JsonArray{new JsonObject{ ["uid"] = typeUid }}
+            };
+        }
+
         /// <summary>
         /// Construye un nodo Relation vacío (sin edges todavía).
         /// </summary>
@@ -229,14 +238,12 @@ namespace OpenTwinsV2.Twins.Builders
 
             var payload = new JsonArray { sourceThing };
 
-            Console.WriteLine($"TD: {td}");
             //Check for already existent relations from prior twin creation
             if (td.Links == null || td.Links.Count == 0 || (uidTargets.TryGetValue(td.Id!, out var thingId) && !thingId.Contains("_:relativeUid")))
                 return payload;
 
             foreach (var link in td.Links)
             {
-                Console.WriteLine($"link: {link.Rel.ToSafeString()}");
                 if (link.Rel == null) continue;
                 relCounter++;
                 var source = link.Href.ToString();

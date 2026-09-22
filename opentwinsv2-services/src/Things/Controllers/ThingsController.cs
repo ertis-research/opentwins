@@ -348,7 +348,7 @@ public class ThingsController : ControllerBase
     {
         try
         {
-            IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+            IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(Uri.EscapeDataString(Uri.EscapeDataString(thingId))), ActorType);
             string? td = await actor.GetThingDescriptionAsync();
             if (string.IsNullOrWhiteSpace(td))
             {
@@ -379,7 +379,7 @@ public class ThingsController : ControllerBase
     {
         try
         {
-            IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+            IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(Uri.EscapeDataString(Uri.EscapeDataString(thingId))), ActorType);
             return Ok(await actor.GetThingStatusAsync());
         }catch (ActorMethodInvocationException ex)
         {
@@ -411,7 +411,7 @@ public class ThingsController : ControllerBase
 
         try
         {
-            IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+            IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(Uri.EscapeDataString(Uri.EscapeDataString(thingId))), ActorType);
 
             // bool isDeleted = await actor.DeleteThingAsync(null);
             bool isDeleted = await _thingsManager.DeleteThingAsync(thingId);
@@ -493,7 +493,7 @@ public class ThingsController : ControllerBase
     [ProducesResponseType(typeof(Dictionary<string, PropertyState>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCurrentState(string thingId)
     {
-        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(Uri.EscapeDataString(Uri.EscapeDataString(thingId))), ActorType);
         string state = await actor.GetCurrentStateAsync();
         if (state is null) return NotFound();
         return Content(state, "application/td+json");
@@ -515,7 +515,7 @@ public class ThingsController : ControllerBase
         if (newState.ValueKind == JsonValueKind.Undefined || newState.ValueKind == JsonValueKind.Null)
             return BadRequest("State cannot be null or undefined.");
 
-        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(Uri.EscapeDataString(Uri.EscapeDataString(thingId))), ActorType);
 
         var cloudEvent = new MyCloudEvent<string>(
             id: Guid.NewGuid().ToString(),
@@ -551,7 +551,7 @@ public class ThingsController : ControllerBase
     [HttpPost("{thingId}/action/{actionName}/execute")]
     public async Task<IActionResult> ExecuteAction(string thingId, string actionName, [FromBody] string body)
     {
-        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(Uri.EscapeDataString(Uri.EscapeDataString(thingId))), ActorType);
         await actor.InvokeAction(actionName, body);
         return Ok();
     }

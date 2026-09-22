@@ -12,7 +12,6 @@ using Lucene.Net.QueryParsers.Flexible.Standard.Processors;
 using Lucene.Net.Util;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.VisualBasic;
-using Newtonsoft.Json;
 using OpenTwinsV2.Shared.Constants;
 using Twins.Builders;
 using Twins.Services;
@@ -947,6 +946,25 @@ namespace OpenTwinsV2.Twins.Services
 
             context["@vocab"] ??=  "http://example.org/properties/";
             return context;
+        }
+
+        public static List<(string Prefix, string NamespaceUri)> GetGraphNamespaceMap(IGraph graph)
+        {
+            return [.. graph.NamespaceMap.Prefixes
+            .Select(p => (
+                Prefix:  p,
+                NamespaceUri: graph.NamespaceMap.GetNamespaceUri(p).ToString()
+                )
+            )];
+        } 
+
+        public static JsonObject GetJsonLDContext(IGraph graph)
+        {
+            var nsDict = GetGraphNamespaceMap(graph).ToDictionary(dp => dp.Prefix, dp => dp.NamespaceUri);
+            return new JsonObject
+            {
+                ["@context"] = JsonSerializer.SerializeToNode(nsDict)
+            };
         }
 
         /// <summary>

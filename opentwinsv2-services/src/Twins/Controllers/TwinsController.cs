@@ -80,6 +80,7 @@ namespace OpenTwinsV2.Twins.Controllers
         /// <param name="graph">The Json Graph of the Twin.</param>
         /// <param name="shapeId">OPTIONAL. The identifier of the Shape Graph.</param>
         /// <response code="200">A sucess message.</response>
+        /// <response code="400">A shapeId was provided and it did not validate the Twin's graph.</response>
         /// <response code="409">There is already a Twin with the provided identifier.</response>
         /// <response code="500">There was an issue creating the Thing.</response>
         [HttpPost("{twinId}")]
@@ -114,21 +115,7 @@ namespace OpenTwinsV2.Twins.Controllers
 
             try
             {
-                var idList = _instanciationService.GetIdsFromGraph(graphArr);
-                
-                foreach(var id in idList)
-                {
-                    try
-                    {
-                        var td = await _thingsService.GetThingAsync(id);
-                        thingDescriptions[id] = td;
-                    }
-                    catch (KeyNotFoundException)
-                    {
-                        thingDescriptions[id] = null;; //No error: Later on when the value is accessed and it is null, then it will be assumed as a NonFunctional Thing
-                    }
-                    
-                }
+                thingDescriptions = await _instanciationService.GetTwinsThingDescriptions(graphArr);
             }
             catch (ArgumentException ex)
             {
@@ -145,42 +132,18 @@ namespace OpenTwinsV2.Twins.Controllers
             
             try
             {
-                await _thingsService.GetThingAsync(twinId);
-                if(await _dgraphService.ExistsThingByIdAsync(twinId))
-                {
-                    if(await _dgraphService.IsThingAPlaceholderAsync(twinId))
-                    
-                        //Manage Placeholder completion    
-                        await _dgraphService.InstanciateAPlaceHolderThingAsync(twinId);
-                    
-                    //Add Twin Type. It's not already a Twin because it would've failed by now
-                    await _dgraphService.AddNQuadTripleAsync([$"<{(await _dgraphService.GetUidsByThingIdsAsync([twinId]))[twinId]}> <dgraph.type> \"Twin\" ."]);
-                }
-                else
-                {
-                    //Just create in DGraph with the same id
-                    await _dgraphService.AddThingAsync(ThingBuilder.BuildTwin(twinId));
-                }
+                await _instanciationService.CreateTwin(twinId);
             }
-            catch (KeyNotFoundException)
+            catch (ArgumentException)
             {
-                if(await _dgraphService.ExistsThingByIdAsync(twinId))
-                    if(await _dgraphService.IsThingAPlaceholderAsync(twinId))
-                    {
-                        //Manage Placeholder completion
-                        await _dgraphService.InstanciateAPlaceHolderThingAsync(twinId);
-                        await _dgraphService.AddThingTypeIntoThing(twinId, "Twin");          
-                    }
-                    else
-                        return Conflict("The Thing cannot be instanciated");
-                else
-                {
-                    //basic case: it doesn't exist in either: create in both
-                    await _instanciationService.CreateInstanciationTwin(twinId);
-                }
+                return Conflict("The Twin could not be instanciated");
             }catch(InvalidOperationException ex)
             {
                 return StatusCode(102, $"The Thing is not available as of now: {ex.Message}");
+            }
+            catch(Exception ex)
+            {
+                return StatusCode(500, $"Could not instanciate Twin: {ex.Message}");
             }
             
             if(!string.IsNullOrWhiteSpace(shapeId))
@@ -210,48 +173,136 @@ namespace OpenTwinsV2.Twins.Controllers
         }
 
         /// <summary>
-        /// Retrieves the NQuads of the Twin.
+        /// Creates a Twin with the information of a Turtle RDF Graph.
         /// </summary>
         /// <param name="twinId">The identifier of the Twin.</param>
-        /// <response code="200">The NQuads.</response>
-        /// <response code="404">Either the Twin was not found or no Things were found associated to the Twin.</response>
-        /// <response code="500">There was an issue while retieving the Twin.</response>
-        [HttpGet("{twinId}")]
-        [ProducesResponseType(typeof(ContentResult), StatusCodes.Status200OK, "application/n-quads")]
-        [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound, "application/json")]
-        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError, "application/json")]
-        public async Task<IActionResult> GetTwin(string twinId)
+        /// <param name="twinFile">The TTL file with the RDF Graph.</param>
+        /// <param name="shapeId">OPTIONAL. The identifier of the shape graph for validating the Twin before creating it.</param>
+        /// <returns>
+        /// <response code="200">A sucess message.</response>
+        /// <response code="400">A shapeId was provided and it did not validate the Twin's graph.</response>
+        /// <response code="409">There is already a Twin with the provided identifier.</response>
+        /// <response code="500">There was an issue creating the Thing.</response>
+        /// </returns>
+        [HttpPost("{twinId}/import/ttl")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status409Conflict)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
+        public async Task<IActionResult> ImportTTLTwin(string twinId, IFormFile twinFile, string? shapeId)
         {
+            if(twinFile is null || twinFile.Length == 0)
+                return BadRequest("The uploaded file is null or empty");
+
+            var extension = Path.GetExtension(twinFile.FileName);
+            if(extension == null || extension.ToLower() != ".ttl")
+                return BadRequest($"The uploaded file must be of extension .ttl, instead got {extension ?? "none"}");            
+            
+            if(!string.IsNullOrWhiteSpace(shapeId) && !await _dgraphService.ExistsShapeGraphByIdAsync(shapeId))
+                return NotFound("There is no Shape Graph with the provided identifier.");
+
+            if (await _dgraphService.ExistsTwinAsync(twinId))
+                return Conflict("There is already a twin with this id");
+
+            //Parse Twin TTL file into IGraph object
+            var graph = ImportService.GetGraphFromTTLFile(twinFile);
+
+            //Parse graph into JSON-LD
+            var jsonld = ImportService.GetJsonLDFromGraph(graph);
+
+            if(!(jsonld["@graph"] is JsonNode graphEl && graphEl is JsonArray graphArr))
+                return BadRequest("The graph is of bad format.");
+            
+            if(_instanciationService.AreThereConflictingIdsOnSubGraph(graphArr))
+                return BadRequest("There are repeated ids on the provided graph");
+
+            if(graphArr.Any(thing => (thing!["@id"] ?? thing["id"]) is null))
+                return BadRequest("At least one element in the graph provided does not have an identifier");
+
+            Dictionary<string, ThingDescription?> thingDescriptions = [];
             try
             {
-                var rawJson = await _dgraphService.GetThingsInTwinNQUADSAsync(twinId);
-
-                if (string.IsNullOrWhiteSpace(rawJson))
-                    return NotFound($"No things found for twin {twinId}");
-
-                Console.WriteLine(rawJson);
-
-                using var doc = JsonDocument.Parse(rawJson);
-                var json = doc.RootElement;
-
-                var thingIds = json.GetProperty("things").EnumerateArray().SelectMany(t => t.GetProperty("~twins").EnumerateArray())
-                    .Where(t => t.TryGetProperty("thingId", out var id) && id.ValueKind == JsonValueKind.String)
-                    .Select(t => t.GetProperty("thingId").GetString()!).Distinct().ToList();
-
-                if (thingIds is null || thingIds.Count == 0)
-                    return NotFound($"No things found for twin {twinId}");
-
-                var states = await _thingsService.GetThingsStatesAsync(thingIds);
-                //Console.WriteLine(JsonSerializer.Serialize(states));
-
-                var nquads = _converter.JsonToNquads(rawJson, states);
-
-                // Return as NQUADS (plain text)
-                return Content(nquads, "application/n-quads", Encoding.UTF8);
+                thingDescriptions = await _instanciationService.GetTwinsThingDescriptions(graphArr);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (InvalidOperationException)
+            {
+                return StatusCode(102, $"At least one thing of the graph provided is not available as of now");
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Error retrieving twin {twinId}: {ex.Message}");
+                return StatusCode(500, $"An error has been encountered while obtaining the things' Thing Descriptions: {ex.Message}");
+            }
+
+            //Twin creation
+            try
+            {
+                await _instanciationService.CreateTwin(twinId);
+            }
+            catch (ArgumentException)
+            {
+                return Conflict("The Twin could not be instanciated");
+            }catch(InvalidOperationException ex)
+            {
+                return StatusCode(102, $"The Thing is not available as of now: {ex.Message}");
+            }
+            catch(Exception ex)
+            {
+                return StatusCode(500, $"Could not instanciate Twin: {ex.Message}");
+            }
+
+            if(!string.IsNullOrWhiteSpace(shapeId))
+                try
+                {
+                    string? report = await _instanciationService.ValidateGraphThroughShapeGraph(twinId, graph, shapeId);
+                    if(!string.IsNullOrWhiteSpace(report)){
+                        await DeleteTwin(twinId);
+                        return BadRequest(new {Message=$"Could not instanciate because the given graph does not validate {shapeId} Shape Graph", Report=report});
+                    }
+                }catch(Exception ex)
+                {
+                    return StatusCode(500, $"Something went wrong while validating the Graph: {ex.Message}");
+                }
+
+            try
+            {
+                await _instanciationService.InstanciateThingGraph(graphArr, twinId, thingDescriptions);
+            }catch(Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while instanciating the Twin and its Things: {ex.Message}");
+            }
+
+            return Ok(new { message = "Twin created successfully" });
+        }
+
+        /// <summary>
+        /// Returns the Twin in a JSON format.
+        /// </summary>
+        /// <param name="twinId">The identifier of the Twin.</param>
+        /// <response code="200">The JSON of the Twin.</response>
+        /// <response code="404">The Twin was not found.</response>
+        /// <response code="500">There was an issue while generating the Twin JSON.</response>
+        [HttpGet("{twinId}")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(JsonObject), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
+        public async Task<IActionResult> GetTwin(string twinId)
+        {
+            var check = await _dgraphService.ExistsThingByIdAsync(twinId) && !await _dgraphService.IsThingAPlaceholderAsync(twinId);
+            if (!check)
+                return NotFound(new { message = $"Twin '{twinId}' does not exist" });
+            try
+            {
+                var json = await _exportService.GetJsonWithoutNamespace(twinId);
+                return Ok(json);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Something went wrong while getting the Twin JSON:\n {ex.Message}");
             }
         }
 
@@ -508,8 +559,6 @@ namespace OpenTwinsV2.Twins.Controllers
                     }
                 }
 
-                Console.WriteLine($"PAYLOAD AL ANEXAR AL TWINNNN:\n{JsonSerializer.Serialize(payload)}");
-
                 var response = await _dgraphService.AddEntitiesAsync(payload);
                 foreach(var thingCreated in thingsCreated)
                     responses.Add(new
@@ -570,34 +619,49 @@ namespace OpenTwinsV2.Twins.Controllers
         }
 
         /// <summary>
-        /// Returns the Twin in a JSON format.
+        /// Retrieves the NQuads of the Twin.
         /// </summary>
         /// <param name="twinId">The identifier of the Twin.</param>
-        /// <response code="200">The JSON of the Twin.</response>
-        /// <response code="404">The Twin was not found.</response>
-        /// <response code="500">There was an issue while generating the Twin JSON.</response>
-        [HttpGet("{twinId}/export/Json")]
-        [Produces("application/json")]
-        [ProducesResponseType(typeof(JsonObject), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
-        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
-        public async Task<IActionResult> ExportTwinInJsonFormat(string twinId)
+        /// <response code="200">The NQuads.</response>
+        /// <response code="404">Either the Twin was not found or no Things were found associated to the Twin.</response>
+        /// <response code="500">There was an issue while retieving the Twin.</response>
+        [HttpGet("{twinId}/export/NQUADs")]
+        [ProducesResponseType(typeof(ContentResult), StatusCodes.Status200OK, "application/n-quads")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound, "application/json")]
+        [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError, "application/json")]
+        public async Task<IActionResult> ExportTwinInNQUADsFormat(string twinId)
         {
-            var check = await _dgraphService.ExistsThingByIdAsync(twinId) && !await _dgraphService.IsThingAPlaceholderAsync(twinId);
-            if (!check)
-            {
-                return NotFound(new { message = $"Twin '{twinId}' does not exist" });
-            }
             try
             {
-                var json = await _exportService.GetJsonWithoutNamespace(twinId);
-                return Ok(json);
+                var rawJson = await _dgraphService.GetThingsInTwinNQUADSAsync(twinId);
+
+                if (string.IsNullOrWhiteSpace(rawJson))
+                    return NotFound($"No things found for twin {twinId}");
+
+                Console.WriteLine(rawJson);
+
+                using var doc = JsonDocument.Parse(rawJson);
+                var json = doc.RootElement;
+
+                var thingIds = json.GetProperty("things").EnumerateArray().SelectMany(t => t.GetProperty("~twins").EnumerateArray())
+                    .Where(t => t.TryGetProperty("thingId", out var id) && id.ValueKind == JsonValueKind.String)
+                    .Select(t => t.GetProperty("thingId").GetString()!).Distinct().ToList();
+
+                if (thingIds is null || thingIds.Count == 0)
+                    return NotFound($"No things found for twin {twinId}");
+
+                var states = await _thingsService.GetThingsStatesAsync(thingIds);
+                //Console.WriteLine(JsonSerializer.Serialize(states));
+
+                var nquads = _converter.JsonToNquads(rawJson, states);
+
+                // Return as NQUADS (plain text)
+                return Content(nquads, "application/n-quads", Encoding.UTF8);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Something went wrong while getting the Twin JSON:\n {ex.Message}");
+                return StatusCode(500, $"Error retrieving twin {twinId}: {ex.Message}");
             }
-
         }
 
         /// <summary>

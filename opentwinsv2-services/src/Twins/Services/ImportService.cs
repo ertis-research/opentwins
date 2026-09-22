@@ -4,13 +4,15 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
-using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using OpenTwinsV2.Twins.Services;
 using Twins.Builders;
 using Twins.Models;
 using VDS.Common.Collections.Enumerations;
 using VDS.RDF;
+using VDS.RDF.JsonLd;
 using VDS.RDF.Parsing;
+using VDS.RDF.Writing;
 using static Twins.Models.CustomType;
 
 namespace Twins.Services
@@ -27,6 +29,8 @@ namespace Twins.Services
         {
             _dgraphService = dgraphService;
         }
+
+        #region General
 
         /// <summary>
         /// Checks if the node provided is the first element of a RDF list.
@@ -69,6 +73,100 @@ namespace Twins.Services
 
             return items;
         }
+
+        /// <summary>
+        /// Turns a TTL file into the equivalent IGraph object.
+        /// </summary>
+        /// <param name="file">The TTL file.</param>
+        /// <returns>Returns the IGraph object in memory.</returns>
+        public static IGraph GetGraphFromTTLFile(IFormFile file)
+        {
+            IGraph graph = new Graph();
+            var parser = new TurtleParser();
+
+            //the RDF parser will load into the graph the data from the file using the stream reader
+            using (var stream = file.OpenReadStream())
+            using (var reader = new StreamReader(stream))
+            {
+                parser.Load(graph, reader);
+            }
+
+            return graph;
+        }
+
+        /// <summary>
+        /// Turns a RDF graph into its JSON-LD equivalent.
+        /// </summary>
+        /// <param name="graph">The Graph object.</param>
+        /// <returns>Returns the JSON-LD equivalent object.</returns>
+        public static JsonObject GetJsonLDFromGraph(IGraph graph)
+        {
+            var store = new TripleStore();
+            store.Add(graph);
+
+            var writer = new JsonLdWriter();
+            var expandedJson = writer.SerializeStore(store);
+
+            //get the context of the json ld to allow contraction
+            var context = ExportService.GetJsonLDContext(graph);
+            bool hadEmptyPrefix = context["@context"] is JsonObject obj && obj[""] is not null;
+            if(hadEmptyPrefix)
+            {
+                var contextObj = context["@context"]!.AsObject();
+                contextObj["@vocab"] = contextObj[""]!.DeepClone();
+                contextObj.Remove("");
+            }
+            context["@graph"] = new JsonObject();
+
+            var contextObject = JObject.Parse(JsonSerializer.Serialize(context));
+
+            var options = new JsonLdProcessorOptions();
+            var compactedJson = JsonLdProcessor.Frame(expandedJson, contextObject, options);
+
+            if (hadEmptyPrefix)
+            {
+                var outputContext = compactedJson["@context"] as JObject;
+                if (outputContext != null && outputContext["@vocab"] != null)
+                {
+                    outputContext[""] = outputContext["@vocab"];
+                    outputContext.Remove("@vocab");
+                }
+            }
+
+            string jsonString = compactedJson.ToString();
+            var json = JsonNode.Parse(jsonString)!.AsObject();
+
+            //assign random id to all nodes without id (since it's generated, not throw an error because it depends on the file, not the user)
+            EnforceIdsInGraph(json["@graph"]);
+
+            return json;
+        }
+
+        private static void EnforceIdsInGraph(JsonNode? node)
+        {
+            if(node is null)
+                return;
+            if (node is JsonObject obj)
+            {
+                if((obj["@id"] ?? obj["id"]) is null &&
+                obj["@value"] == null && 
+                obj["@list"] == null && 
+                obj["@context"] == null && 
+                obj["@graph"] == null)
+                {
+                    var newId = "_:" + Guid.NewGuid().ToString("N");
+                    obj["@id"] = newId;
+                }
+                    
+                foreach(var prop in obj)
+                    if(prop.Key != "@context")
+                        EnforceIdsInGraph(prop.Value);
+            }else if(node is JsonArray arr)
+                foreach(var subNode in arr)
+                    EnforceIdsInGraph(subNode);
+        }
+
+        #endregion
 
         #region Shapes
 
@@ -311,15 +409,7 @@ namespace Twins.Services
 
                 //Get prefixes, uri pairs
                 // var ignoredPrefixes = new[] { "swrl:", "swrla:" }; //PROVISIONAL: Ignore 
-                var prefixList = graph.NamespaceMap.Prefixes
-                    // .Where(p => !ignoredPrefixes.Contains(p))
-                    .Select(p => new
-                    {
-                        Prefix = p,
-                        NamespaceUri = graph.NamespaceMap.GetNamespaceUri(p).ToString()
-                    })
-                    .ToList();
-
+                var prefixList = ExportService.GetGraphNamespaceMap(graph);
                 //store them in Namespace nodes
                 foreach (var ns in prefixList)
                 {
@@ -1172,15 +1262,7 @@ namespace Twins.Services
         public async Task<ICollection<string>> GetFullOntologyNQuadsFromFile(string ontologyId, IFormFile ontologyFile, JsonArray shapeGraph)
         {
 
-            IGraph graph = new Graph();
-            var parser = new TurtleParser();
-
-            //the RDF parser will load into the graph the data from the file using the stream reader
-            using (var stream = ontologyFile.OpenReadStream())
-            using (var reader = new StreamReader(stream))
-            {
-                parser.Load(graph, reader);
-            }
+            IGraph graph = GetGraphFromTTLFile(ontologyFile);
 
             var nquads = await GetFullOntologyNQuadsAndShapesFromGraph(ontologyId, graph, shapeGraph);
             // File.WriteAllLines("nquads.txt", nquads);

@@ -210,7 +210,6 @@ namespace OpenTwinsV2.Things.Services
                     var previousState = await _stateService.LoadThingDescriptionBulkState(td.Id!);
                     return (PreviousState: previousState, New: td);
                 }).ToList(); // <-- CRITICAL: Start tasks immediately
-                Console.WriteLine(2);
                 // 2. Await them all
                 var resolvedTasks = await Task.WhenAll(tasks);
 
@@ -232,7 +231,6 @@ namespace OpenTwinsV2.Things.Services
 
                     return (Previous: previousTd, New: pair.New);
                 }).ToList(); // <-- CRITICAL: Materialize now so Parallel doesn't evaluate lazily
-                Console.WriteLine(3);
 
                 // --- Your PostgreSQL code runs exactly the same ---
             var idsArray = tds.Select(x => x.Id).ToArray(); 
@@ -248,8 +246,6 @@ namespace OpenTwinsV2.Things.Services
 
             cmd.Parameters.Add(new NpgsqlParameter("ThingIds", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = idsArray });
             cmd.Parameters.Add(new NpgsqlParameter("NewTds", NpgsqlDbType.Array | NpgsqlDbType.Jsonb) { Value = tdsArray });
-
-            Console.WriteLine(4);
 
             int affected = await cmd.ExecuteNonQueryAsync();
             if (affected == 0) Console.WriteLine($"No row affected for ThingIds provided");
@@ -277,7 +273,7 @@ namespace OpenTwinsV2.Things.Services
             catch (Exception ex)
             {
                 Console.WriteLine($"Could not bulk create in Twins: {ex.Message}");
-            }        
+            }
         }
 
         public async Task DeleteInBulkFromPostgreSqlAsync(IEnumerable<string> ids)

@@ -17,20 +17,22 @@ namespace OpenTwinsV2.Things.Actors
         private readonly ThingLogicManager _logic;
         // private readonly IServiceScopeFactory _scopeFactory;
         private readonly string _thingId;
+        private readonly string _actorId;
         public ThingDescription? ThingDescription { get; private set; }
         public Dictionary<string, PropertyState> CurrentState { get; private set; } = [];
 
         public ThingActor(ActorHost host, StateService stateService, StatusManager statusManager, DescriptionManagerService descriptionManager, StateManagerService stateManager)
         : base(host)
         {
-            _thingId = Id.GetId();
+            _actorId = Uri.UnescapeDataString(Id.GetId());
+            _thingId =  Uri.UnescapeDataString(Uri.UnescapeDataString(_actorId));
             _stateManager = stateManager;
             _descriptionManager = descriptionManager;
             _logic = new ThingLogicManager(_thingId, ThingDescription, CurrentState, stateService, statusManager, _descriptionManager, _stateManager);
         }
         protected override async Task OnActivateAsync()
         {
-            ActorLogger.Info(Id.GetId(), "Activating actor");
+            ActorLogger.Info(_thingId, "Activating actor");
             try
             {
                 ThingDescription = await _descriptionManager.LoadDescriptionAsync(_thingId);
@@ -40,13 +42,13 @@ namespace OpenTwinsV2.Things.Actors
             }
             catch (Exception exc)
             {
-                ActorLogger.Info(Id.GetId(), "There is no data about the thing: its new. " + exc.Message);
+                ActorLogger.Info(_thingId, "There is no data about the thing: its new. " + exc.Message);
             }
         }
 
         protected override async Task OnDeactivateAsync()
         {
-            ActorLogger.Info(Id.GetId(), "Deactivating actor");
+            ActorLogger.Info(_thingId, "Deactivating actor");
             await Task.CompletedTask;
         }
 

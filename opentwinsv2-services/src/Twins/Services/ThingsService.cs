@@ -119,7 +119,7 @@ namespace OpenTwinsV2.Twins.Services
         /// <exception cref="InvalidDataException">Is thrown if the ThingDescription obtaind is not valid.</exception>
         public async Task<ThingDescription> GetThingAsync(string thingId)
         {
-            var proxy = ActorProxy.Create<IThingActor>(new ActorId(thingId), ActorType);
+            var proxy = ActorProxy.Create<IThingActor>(new ActorId(Uri.EscapeDataString(Uri.EscapeDataString(thingId))), ActorType);
             var thingDescriptionJson = await proxy.GetThingDescriptionAsync() ?? throw new KeyNotFoundException($"Thing with ID '{thingId}' was not found.");
 
             ThingDescription? td = JsonSerializer.Deserialize<ThingDescription>(thingDescriptionJson, new JsonSerializerOptions
@@ -140,7 +140,7 @@ namespace OpenTwinsV2.Twins.Services
         /// <exception cref="KeyNotFoundException">Is thrown if the Thing could not be found by its identifier.</exception>
         public async Task<JsonElement> GetThingState(string thingId)
         {
-            var proxy = ActorProxy.Create<IThingActor>(new ActorId(thingId), ActorType);
+            var proxy = ActorProxy.Create<IThingActor>(new ActorId(Uri.EscapeDataString(Uri.EscapeDataString(thingId))), ActorType);
             var stateJson = await proxy.GetCurrentStateAsync() ?? throw new KeyNotFoundException($"Thing with ID '{thingId}' was not found.");
 
             using var doc = JsonDocument.Parse(stateJson);

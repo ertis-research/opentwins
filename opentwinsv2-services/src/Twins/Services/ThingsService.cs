@@ -8,7 +8,6 @@ using Dapr.Client;
 using OpenTwinsV2.Shared.Constants;
 using OpenTwinsV2.Shared.Models;
 using OpenTwinsV2.Shared.Utilities;
-
 namespace OpenTwinsV2.Twins.Services
 {
     /// <summary>
@@ -142,9 +141,8 @@ namespace OpenTwinsV2.Twins.Services
         {
             var proxy = ActorProxy.Create<IThingActor>(new ActorId(Uri.EscapeDataString(Uri.EscapeDataString(thingId))), ActorType);
             var stateJson = await proxy.GetCurrentStateAsync() ?? throw new KeyNotFoundException($"Thing with ID '{thingId}' was not found.");
-
-            using var doc = JsonDocument.Parse(stateJson);
-            return doc.RootElement.Clone();
+            var stateWrapper = JsonSerializer.Deserialize<StateWrapper<Dictionary<string, object>>>(stateJson) ?? throw new Exception("Failed while obtaining the wrapper");
+            return JsonSerializer.SerializeToElement(stateWrapper.Data);
         }
 
         /// <summary>

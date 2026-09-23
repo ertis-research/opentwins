@@ -89,7 +89,8 @@ namespace OpenTwinsV2.Things.Services
                     {
                         await _stateService.PublishDeletedThingDescriptionEvent(thingId);
                         await _queryService.DeleteFromPostgreSqlAsync(thingId);
-                        await _statusManager.DeleteThingStatus(thingId);
+                        // await _statusManager.DeleteThingStatus(thingId);
+                        await _statusManager.SaveDeletingThingStatus(thingId, "");
                         ActorLogger.Info(thingId, $"Thing successfully deleted");
                     }
                     catch (Exception ex)
@@ -102,7 +103,7 @@ namespace OpenTwinsV2.Things.Services
             {
                 await _stateService.PublishDeletedThingDescriptionEvent(thingId);
                 await _queryService.DeleteFromPostgreSqlAsync(thingId);
-                await _statusManager.DeleteThingStatus(thingId);
+                // await _statusManager.DeleteThingStatus(thingId);
                 ActorLogger.Info(thingId, $"Thing successfully deleted");
             }
         }

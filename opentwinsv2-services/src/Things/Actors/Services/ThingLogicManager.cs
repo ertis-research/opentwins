@@ -10,6 +10,7 @@ using Dapr;
 using OpenTwinsV2.Things.Services;
 using OpenTwinsV2.Shared.Utilities;
 using OpenTwinsV2.Shared.Constants;
+using System.Runtime.CompilerServices;
 
 namespace OpenTwinsV2.Things.Actors.Services
 {
@@ -17,7 +18,7 @@ namespace OpenTwinsV2.Things.Actors.Services
     {
         private readonly DescriptionManagerService _descManager;
         private ThingDescription? _thingDescription;
-        private Dictionary<string, PropertyState> _currentState;
+        private Dictionary<string, PropertyState>? _currentState;
         private readonly StateManagerService _stateManager;
         private readonly StateService _stateService;
         // private readonly EventsService _eventsService;
@@ -39,18 +40,17 @@ namespace OpenTwinsV2.Things.Actors.Services
         public async Task<string?> GetThingDescriptionAsync()
         {
             //check thing's availability in state
-            var status = (await _statusManager.GetThingStatus(_thingId)).Status;
-            if(status is null)
+            try
             {
-                // Check if it exists on the databases anyway (old things without status), and if it is, save the ok status
-                var description = await _descManager.LoadDescriptionAsync(_thingId);
-                if(description is null)
-                    return null;
-                //load an ok status
-                await _statusManager.SaveOkThingStatus(_thingId);
-                return description.ToString();
-            }    
-            else if(status == Status.DeleteStatus)
+                await CheckThingStatus();
+            }
+            catch (KeyNotFoundException)
+            {
+                return null;
+            }
+            
+            var status = (await _statusManager.GetThingStatus(_thingId)).Status;
+            if(status == Status.DeleteStatus)
                 return null;
             else if (status == Status.UpdateStatus || status == Status.CreateStatus)
                 throw new InvalidOperationException();
@@ -61,33 +61,44 @@ namespace OpenTwinsV2.Things.Actors.Services
             return _thingDescription?.ToString();
         }
 
+        public async Task SetOkStatusAsync(string thingId)
+        {
+            await _statusManager.SaveOkThingStatus(thingId);
+        }
+
         public async Task<string> GetThingStatusAsync()
         {
-            return (await _statusManager.GetThingStatus(_thingId)).Status ?? throw new KeyNotFoundException();
+            var status = await _statusManager.GetThingStatus(_thingId);
+            return  status.Status ?? throw new KeyNotFoundException();
         }
 
-        public string GetCurrentState()
+        public async Task<Dictionary<string, PropertyState>> GetCurrentState()
         {
-            return JsonSerializer.Serialize(_currentState);
+            await CheckThingStatus();
+            return _currentState!;
         }
 
-        public void UpdateCurrentState(Dictionary<string, PropertyState> newState)
+        public async Task UpdateCurrentState(Dictionary<string, PropertyState> newState)
         {
+            await CheckThingStatus();
             _currentState = newState;
         }
 
-        public void UpdateCurrentThingDescription(ThingDescription? td)
+        public async Task UpdateCurrentThingDescription(ThingDescription? td)
         {
+            await CheckThingStatus();
             _thingDescription = td;
         }
 
-        private async Task ApplyLogicToDerivedProperties()
+        private async Task<bool> ApplyLogicToDerivedProperties()
         {
             if (_thingDescription?.Properties is null)
             {
                 ActorLogger.Info(_thingId, "ThingDescription has no derived properties, skipping derived logic.");
-                return;
+                return false;
             }
+
+            var currentState = _currentState ?? [];
 
             var updated = new Dictionary<string, PropertyState>();
 
@@ -101,7 +112,7 @@ namespace OpenTwinsV2.Things.Actors.Services
                     //ActorLogger.Info(_thingId, $"Applying JsonLogic to property '{propName}' with logic: {JsonSerializer.Serialize(logic)}");
 
                     var context = new JsonObject();
-                    foreach (var (key, state) in _currentState)
+                    foreach (var (key, state) in currentState)
                     {
                         if (state?.Value is JsonElement je)
                             context[key] = je.AsNode();
@@ -126,22 +137,54 @@ namespace OpenTwinsV2.Things.Actors.Services
 
             if (updated.Count > 0)
             {
-                await _stateManager.UpdateStateAsync(_thingId, _currentState, updated, _thingDescription?.Properties);
+                await _stateManager.UpdateStateAsync(_thingId, currentState, updated, _thingDescription?.Properties);
+                return true;
             }
+            return false;
         }
 
-        public async Task ApplyEventAsync(MyCloudEvent<string> evt)
+        private async Task CheckThingStatus()
         {
+            try
+            {
+                var status = (await _statusManager.GetThingStatus(_thingId)).Status;
+                if(status == Status.DeleteStatus)
+                {
+                    //it was deleted
+                    _currentState = null;
+                    _thingDescription = null;
+                    throw new KeyNotFoundException();
+                }else if(status is null)
+                {
+                    //two options: it was deleted and the expire period passed, or it's legacy
+                    //check in db the description
+                    var description = await _descManager.LoadDescriptionAsync(_thingId);
+                    if(description is null) throw new KeyNotFoundException(); //deleted thing
+                    await _statusManager.SaveOkThingStatus(_thingId); //legacy thing -> ok status
+                }
+            }
+            catch (KeyNotFoundException)
+            {
+                ActorLogger.Warn(_thingId, $"This Thing no longer exists.");
+                throw;
+            }
+            
+        }
+
+        public async Task<bool> ApplyEventAsync(MyCloudEvent<string> evt)
+        {
+            await CheckThingStatus();
             var eventType = evt.Type ?? "UNKNOWN";
             ActorLogger.Info(_thingId, $"Applying event with type '{eventType}'");
+            bool updated = false;
 
             if (_thingDescription?.Rules is null)
             {
                 ActorLogger.Warn(_thingId, $"No rules defined. Event ignored. Type: {eventType}");
-                return;
+                return updated;
             }
 
-            if (_thingDescription?.Rules is null) return;
+            if (_thingDescription?.Rules is null) return updated;
 
             JsonObject info = [];
             info["eventName"] = evt.Type ?? "";
@@ -165,19 +208,22 @@ namespace OpenTwinsV2.Things.Actors.Services
                     {
                         ActorLogger.Info(_thingId, $"Rule '{name}' matched. Applying 'then' logic. EventType: {eventType}");
                         await ApplyThenAsync(logic.Then, context);
+                        updated = true;
                     }
                 }
             }
 
             ActorLogger.Info(_thingId, $"Event processing completed. EventType: {eventType}");
+            return updated;
         }
 
         private JsonNode ComposeState(JsonObject info, JsonNode? payload)
         {
+            var currentState = _currentState ?? [];
             var json = info.DeepClone().AsObject();
             if (payload != null) json["payload"] = payload;
 
-            foreach (var (key, val) in _currentState)
+            foreach (var (key, val) in currentState)
                 if (val?.Value is JsonElement je)
                     json[key] = je.AsNode();
                 else
@@ -188,27 +234,28 @@ namespace OpenTwinsV2.Things.Actors.Services
 
         private async Task ApplyThenAsync(Then then, JsonNode context)
         {
+            var currentState = _currentState ?? [];
             Dictionary<string, PropertyState> previousState = await _stateManager.LoadStateAsync(_thingId);
             ActorLogger.Info(_thingId, $"PREVIOUS FIRST");
-            foreach(var (k,v) in _currentState)
+            foreach(var (k,v) in currentState)
             {
                 ActorLogger.Info(_thingId, $"{k} --> {v}");
                 previousState[k] = new PropertyState(v.Value ?? new JsonElement(), v.LastUpdate);
             }
                 
-            Dictionary<string,PropertyState>? currentState = null;
+            Dictionary<string,PropertyState>? newCurrentState = null;
             if (then.UpdateState != null)
             {
                 ActorLogger.Info(_thingId, $"Executing UpdateState action.");
                 await HandleUpdateState(then.UpdateState, context);
-                currentState = [];
-                foreach(var (k,v) in _currentState)
+                newCurrentState = [];
+                foreach(var (k,v) in currentState)
                 {
-                    currentState[k] = new PropertyState(v.Value ?? new JsonElement(), v.LastUpdate);
+                    newCurrentState[k] = new PropertyState(v.Value ?? new JsonElement(), v.LastUpdate);
                 }
             }
             ActorLogger.Info(_thingId, $"PREVIOUS SECOND");
-            foreach(var (k,v) in _currentState)
+            foreach(var (k,v) in currentState)
             {
                 ActorLogger.Info(_thingId, $"{k} --> {v}");
                 // previousState[k] = new PropertyState(v.Value ?? new JsonElement(), v.LastUpdate);
@@ -227,7 +274,7 @@ namespace OpenTwinsV2.Things.Actors.Services
                 foreach (ThenEmitEvent evnt in then.EmitEvent)
                 {
                     ActorLogger.Info(_thingId, $"Emitting event: {evnt.Event ?? "(no type)"}");
-                    await HandleEmitEventAsync(evnt, context, previousState, currentState ?? previousState);
+                    await HandleEmitEventAsync(evnt, context, previousState, newCurrentState ?? previousState);
                 }
             }
         }
@@ -282,8 +329,8 @@ namespace OpenTwinsV2.Things.Actors.Services
                     //ActorLogger.Info(_thingId, $"Property state updated: {key} - Value: {newVal}, Timestamp: {ts}");
                 }
             }
-
-            await _stateManager.UpdateStateAsync(_thingId, _currentState, updated, _thingDescription?.Properties);
+            var currentState = _currentState ?? [];
+            await _stateManager.UpdateStateAsync(_thingId, currentState, updated, _thingDescription?.Properties);
             await ApplyLogicToDerivedProperties();
             ActorLogger.Info(_thingId, $"Ha terminado de actualizarse");
         }
@@ -317,6 +364,7 @@ namespace OpenTwinsV2.Things.Actors.Services
 
         public async Task ApplyInvokeAction(string action, string parameters)
         {
+            await CheckThingStatus();
             Console.WriteLine("ACCION INVOCADA: " + action);
             await Task.CompletedTask;
             // Falta comprobacion de si la accion es mia jeje

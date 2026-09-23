@@ -12,7 +12,6 @@ using Lucene.Net.QueryParsers.Flexible.Standard.Processors;
 using Lucene.Net.Util;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.VisualBasic;
-using Newtonsoft.Json;
 using OpenTwinsV2.Shared.Constants;
 using Twins.Builders;
 using Twins.Services;
@@ -226,28 +225,40 @@ namespace OpenTwinsV2.Twins.Services
                                 {
                                     JsonObject newAttr = attr!.DeepClone().AsObject();
                                     CheckPrefixes(newAttr, nsDic, defaultPrefix, defaultUri, twin:twin);
-                                    if (state is not null && state is JsonObject stateObj && stateObj.Count > 0 && attr!.AsObject().TryGetPropertyValue("Attribute.key", out var attrKey) && stateObj.TryGetPropertyValue(attrKey!.GetValue<string>(), out var stateInfo))
+                                    bool hasValue = newAttr.TryGetPropertyValue("Attribute.value", out var attrValue); //no null comprobation here because value can be null
+                                    bool hasType = newAttr.TryGetPropertyValue("Attribute.type", out var attrType) && attrType is not null;
+                                    object? parsedValue = null;
+                                    if(hasType && hasValue)
                                     {
-                                        //it only enters here if state is not null, it has something and has something on the attribute we are in
-                                        if (stateInfo!.AsObject().TryGetPropertyValue("value", out var stateValue))
-                                            newAttr.Add("value", stateValue is null ? null : stateValue.ToString());
-                                        if (stateInfo!.AsObject().TryGetPropertyValue("lastUpdate", out var stateUpdate))
-                                            newAttr.Add("lastUpdate", stateUpdate);
+                                        var stringValue = attrValue?.ToString();
+                                        parsedValue = stringValue is null ? null : FormatService.ParseAttributeValue(attrType!.ToString(), stringValue);
+                                    }else if(hasValue)
+                                        parsedValue = attrValue?.ToString();
 
-                                        //change Attribute.value into Attribute.default
-                                        if (attr.AsObject().TryGetPropertyValue("Attribute.value", out var attrValue))
+                                    //append parsed value to value property in final new attribute node
+
+                                    JsonNode? stateInfo = null;
+                                    bool overlapWithState = state is not null && state is JsonObject stateObj && stateObj.Count > 0 && attr!.AsObject().TryGetPropertyValue("Attribute.key", out var attrKey) && stateObj.TryGetPropertyValue(attrKey!.GetValue<string>(), out stateInfo);
+                                    
+                                    if (hasValue)
+                                    {
+                                        JsonNode? stateValue = null;
+                                        bool hasStateValue = stateInfo is not null && stateInfo!.AsObject().TryGetPropertyValue("value", out stateValue);
+                                        newAttr.Add(overlapWithState && hasStateValue ? "default" : "value", System.Text.Json.JsonSerializer.SerializeToNode(parsedValue));
+                                        newAttr.Remove("Attribute.value");
+                                        if (overlapWithState)
                                         {
-                                            newAttr.Remove("Attribute.value");
-                                            newAttr.Add("Attribute.default", attrValue!.AsValue().DeepClone());
+                                            if(hasStateValue)
+                                                newAttr.Add("value", stateValue?.DeepClone());
+                                            if(stateInfo is not null && stateInfo!.AsObject().TryGetPropertyValue("lastUpdate", out var stateUpdate))
+                                                newAttr.Add("lastUpdate", stateUpdate?.ToString());
+                                            state!.AsObject().Remove(attr["Attribute.key"]!.GetValue<string>());
                                         }
-
-                                        //delete the state of this attribute, so when i finish iterating through the dgraph attributes i am left with the ones that are not
-                                        stateObj.Remove(attrKey!.GetValue<string>());
+                                        
                                     }
                                     attrs.Add(newAttr);
                                 }
                             }
-
                             if(state is not null && state is JsonObject stateObj2 && stateObj2.Count > 0)
                             {
                                 //there are states remaining -> Add attributes
@@ -262,9 +273,9 @@ namespace OpenTwinsV2.Twins.Services
                                     }
                                 }
                             
-                            thing["hasAttribute"] = attrs;
                             }
                             thing = thing.AsObject();
+                            thing["hasAttribute"] = attrs;
                         }
 
                         //Merge Unidirectional and Bidirectional relations, each in ~relatedTo and ~relatedFrom
@@ -937,6 +948,25 @@ namespace OpenTwinsV2.Twins.Services
             return context;
         }
 
+        public static List<(string Prefix, string NamespaceUri)> GetGraphNamespaceMap(IGraph graph)
+        {
+            return [.. graph.NamespaceMap.Prefixes
+            .Select(p => (
+                Prefix:  p,
+                NamespaceUri: graph.NamespaceMap.GetNamespaceUri(p).ToString()
+                )
+            )];
+        } 
+
+        public static JsonObject GetJsonLDContext(IGraph graph)
+        {
+            var nsDict = GetGraphNamespaceMap(graph).ToDictionary(dp => dp.Prefix, dp => dp.NamespaceUri);
+            return new JsonObject
+            {
+                ["@context"] = JsonSerializer.SerializeToNode(nsDict)
+            };
+        }
+
         /// <summary>
         /// Formats the Thing Json Node in regular Json format into a JsonLD format.
         /// </summary>
@@ -1048,7 +1078,8 @@ namespace OpenTwinsV2.Twins.Services
         private static void GetJsonLDAttribute(JsonNode attributeInfo, JsonNode thing, string idSanitized, bool twin=false)
         {
             var key = attributeInfo?["Attribute.key"]?.GetValue<string>();
-            var value = attributeInfo?["Attribute.value"]?.GetValue<string>();
+            var value = attributeInfo?["value"]?.GetValue<object>();
+            var defaultValue = attributeInfo?["default"]?.GetValue<object>();
             var attPrefix = attributeInfo?["Attribute.prefix"]?["prefix"]?.GetValue<string>();
             attPrefix ??=  twin ? "" : $"blankNodePrefix_{idSanitized}";
 
@@ -1059,29 +1090,22 @@ namespace OpenTwinsV2.Twins.Services
                 //value ---------------> Value of actual state (can be null)
                 //lastUpdate ----------> Date of the last time the state changed (can be null)
                 
-                if(value == null)
+                if(defaultValue is not null)
                 {
                     //it has a state
                     // atr.lastUpdate: "...",
                     // atr.value =  value,
-                    value = attributeInfo?["value"]?.AsValue().ToString();
-                    var defaultValue = attributeInfo?["Attribute.default"]?.GetValue<string>();
                     var lastUpdate = attributeInfo?["lastUpdate"]?.GetValue<string>();
-
-                    
-                        
                     thing[$"{(twin && string.IsNullOrWhiteSpace(attPrefix) ? "" : $"{attPrefix}:")}{key}"] = new JsonObject
                     {
-                        ["value"] = value,
+                        ["value"] = JsonValue.Create(value),
+                        ["default"] = JsonValue.Create(defaultValue),
                         ["lastUpdate"] = lastUpdate
                     };
-
-                    if (defaultValue is not null)
-                        thing[$"{(twin && string.IsNullOrWhiteSpace(attPrefix) ? "" : $"{attPrefix}:")}{key}"]!.AsObject()["default"] = defaultValue;
                 }
                 else
                 {
-                    thing[$"{(twin && string.IsNullOrWhiteSpace(attPrefix) ? "" : $"{attPrefix}:")}{key}"] = value;
+                    thing[$"{(twin && string.IsNullOrWhiteSpace(attPrefix) ? "" : $"{attPrefix}:")}{key}"] = JsonValue.Create(value);
                 }
             }
         }

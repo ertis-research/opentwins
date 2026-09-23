@@ -348,7 +348,7 @@ public class ThingsController : ControllerBase
     {
         try
         {
-            IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+            IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(Uri.EscapeDataString(Uri.EscapeDataString(thingId))), ActorType);
             string? td = await actor.GetThingDescriptionAsync();
             if (string.IsNullOrWhiteSpace(td))
             {
@@ -379,7 +379,7 @@ public class ThingsController : ControllerBase
     {
         try
         {
-            IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+            IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(Uri.EscapeDataString(Uri.EscapeDataString(thingId))), ActorType);
             return Ok(await actor.GetThingStatusAsync());
         }catch (ActorMethodInvocationException ex)
         {
@@ -411,8 +411,6 @@ public class ThingsController : ControllerBase
 
         try
         {
-            IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
-
             // bool isDeleted = await actor.DeleteThingAsync(null);
             bool isDeleted = await _thingsManager.DeleteThingAsync(thingId);
 
@@ -490,32 +488,41 @@ public class ThingsController : ControllerBase
     /// <response code="200">The Thing's current state.</response>
     /// <response code="404">The Thing was not found.</response>
     [HttpGet("{thingId}/state")]
-    [ProducesResponseType(typeof(Dictionary<string, PropertyState>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(StateWrapper<Dictionary<string, PropertyState>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(string), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetCurrentState(string thingId)
     {
-        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
-        string state = await actor.GetCurrentStateAsync();
-        if (state is null) return NotFound();
-        return Content(state, "application/td+json");
+        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(Uri.EscapeDataString(Uri.EscapeDataString(thingId))), ActorType);
+        try
+        {
+            string state = await actor.GetCurrentStateAsync();
+            if (state is null) return NotFound();
+            return Content(state, "application/td+json");
+        }catch(Exception ex)
+        {
+            if(ex.Message.Contains("KeyNotFoundException")) return NotFound();
+            return StatusCode(500, $"Somwthing went wrong while getting {thingId} state: {ex.Message}");
+        }
     }
 
 
     /// <summary>
-    /// Send a "api.update" event to update the current state of the specified Thing.
+    /// Send a "api.update" event to the specified Thing.
     /// </summary>
     /// <param name="thingId">The identifier of the Thing.</param>
-    /// <param name="newState">A JSON object containing the new state.</param>
-    /// <response code="204">The update was successful.</response>
-    /// <response code="400">The state was null or undefined.</response>
-    /// <response code="500">Error while updating the state.</response>
-    [HttpPut("{thingId}/state")]
+    /// <param name="newState">A JSON object containing the data of the event.</param>
+    /// <response code="204">The event was proccessed successfully.</response>
+    /// <response code="400">The event data provided was null or undefined.</response>
+    /// <response code="500">Error while processing the event.</response>
+    [HttpPost("{thingId}/event")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> PutCurrentState(string thingId, [FromBody] JsonElement newState)
+    public async Task<IActionResult> PostEventToThing(string thingId, [FromBody] JsonElement newState)
     {
         if (newState.ValueKind == JsonValueKind.Undefined || newState.ValueKind == JsonValueKind.Null)
             return BadRequest("State cannot be null or undefined.");
 
-        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(Uri.EscapeDataString(Uri.EscapeDataString(thingId))), ActorType);
 
         var cloudEvent = new MyCloudEvent<string>(
             id: Guid.NewGuid().ToString(),
@@ -551,7 +558,7 @@ public class ThingsController : ControllerBase
     [HttpPost("{thingId}/action/{actionName}/execute")]
     public async Task<IActionResult> ExecuteAction(string thingId, string actionName, [FromBody] string body)
     {
-        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(thingId), ActorType);
+        IThingActor actor = _actorProxyFactory.CreateActorProxy<IThingActor>(new ActorId(Uri.EscapeDataString(Uri.EscapeDataString(thingId))), ActorType);
         await actor.InvokeAction(actionName, body);
         return Ok();
     }

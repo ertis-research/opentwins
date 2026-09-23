@@ -346,13 +346,7 @@ namespace OpenTwinsV2.Twins.Services
         public static void AddPrefixNQuadsTriples(string ontologyId, IGraph graph, ICollection<string> ignoredPrefixes, ICollection<string> nquads)
         {
             
-            var prefixes = graph.NamespaceMap.Prefixes
-                .Where(p => !ignoredPrefixes.Contains(p))
-                .Select(p => new
-                {
-                    Prefix = p,
-                    NamespaceUri = graph.NamespaceMap.GetNamespaceUri(p).ToString()
-                });
+            var prefixes = ExportService.GetGraphNamespaceMap(graph);
 
             foreach(var prefix in prefixes)
                 AddNQuadsNamespaceTriples(ontologyId, prefix.Prefix, prefix.NamespaceUri, nquads);

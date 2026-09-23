@@ -8,7 +8,6 @@ using Dapr.Client;
 using OpenTwinsV2.Shared.Constants;
 using OpenTwinsV2.Shared.Models;
 using OpenTwinsV2.Shared.Utilities;
-
 namespace OpenTwinsV2.Twins.Services
 {
     /// <summary>
@@ -119,7 +118,7 @@ namespace OpenTwinsV2.Twins.Services
         /// <exception cref="InvalidDataException">Is thrown if the ThingDescription obtaind is not valid.</exception>
         public async Task<ThingDescription> GetThingAsync(string thingId)
         {
-            var proxy = ActorProxy.Create<IThingActor>(new ActorId(thingId), ActorType);
+            var proxy = ActorProxy.Create<IThingActor>(new ActorId(Uri.EscapeDataString(Uri.EscapeDataString(thingId))), ActorType);
             var thingDescriptionJson = await proxy.GetThingDescriptionAsync() ?? throw new KeyNotFoundException($"Thing with ID '{thingId}' was not found.");
 
             ThingDescription? td = JsonSerializer.Deserialize<ThingDescription>(thingDescriptionJson, new JsonSerializerOptions
@@ -140,11 +139,10 @@ namespace OpenTwinsV2.Twins.Services
         /// <exception cref="KeyNotFoundException">Is thrown if the Thing could not be found by its identifier.</exception>
         public async Task<JsonElement> GetThingState(string thingId)
         {
-            var proxy = ActorProxy.Create<IThingActor>(new ActorId(thingId), ActorType);
+            var proxy = ActorProxy.Create<IThingActor>(new ActorId(Uri.EscapeDataString(Uri.EscapeDataString(thingId))), ActorType);
             var stateJson = await proxy.GetCurrentStateAsync() ?? throw new KeyNotFoundException($"Thing with ID '{thingId}' was not found.");
-
-            using var doc = JsonDocument.Parse(stateJson);
-            return doc.RootElement.Clone();
+            var stateWrapper = JsonSerializer.Deserialize<StateWrapper<Dictionary<string, object>>>(stateJson) ?? throw new Exception("Failed while obtaining the wrapper");
+            return JsonSerializer.SerializeToElement(stateWrapper.Data);
         }
 
         /// <summary>
@@ -166,6 +164,10 @@ namespace OpenTwinsV2.Twins.Services
                 catch (KeyNotFoundException)
                 {
                     Console.WriteLine($"ThingId '{id}' state not found.");
+                }catch(ActorMethodInvocationException ex)
+                {
+                    if(ex.Message.Contains("KeyNotFoundException"))
+                        Console.WriteLine($"ThingId '{id}' state not found.");
                 }
             }
 

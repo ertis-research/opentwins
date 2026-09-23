@@ -6,7 +6,9 @@ using OpenTwinsV2.Things.Logging;
 using OpenTwinsV2.Things.Actors.Services;
 using OpenTwinsV2.Things.Services;
 using OpenTwinsV2.Shared.Utilities;
+using OpenTwinsV2.Shared.Constants;
 using OpenTwinsV2.Things.Models;
+using System.Text.Json;
 
 namespace OpenTwinsV2.Things.Actors
 {
@@ -17,36 +19,40 @@ namespace OpenTwinsV2.Things.Actors
         private readonly ThingLogicManager _logic;
         // private readonly IServiceScopeFactory _scopeFactory;
         private readonly string _thingId;
+        private readonly string _actorId;
         public ThingDescription? ThingDescription { get; private set; }
         public Dictionary<string, PropertyState> CurrentState { get; private set; } = [];
+        private string lastAccessStateStore = null!;
 
         public ThingActor(ActorHost host, StateService stateService, StatusManager statusManager, DescriptionManagerService descriptionManager, StateManagerService stateManager)
         : base(host)
         {
-            _thingId = Id.GetId();
+            _actorId = Uri.UnescapeDataString(Id.GetId());
+            _thingId =  Uri.UnescapeDataString(Uri.UnescapeDataString(_actorId));
             _stateManager = stateManager;
             _descriptionManager = descriptionManager;
             _logic = new ThingLogicManager(_thingId, ThingDescription, CurrentState, stateService, statusManager, _descriptionManager, _stateManager);
         }
         protected override async Task OnActivateAsync()
         {
-            ActorLogger.Info(Id.GetId(), "Activating actor");
+            ActorLogger.Info(_thingId, "Activating actor");
             try
             {
                 ThingDescription = await _descriptionManager.LoadDescriptionAsync(_thingId);
-                _logic.UpdateCurrentThingDescription(ThingDescription);
+                await _logic.UpdateCurrentThingDescription(ThingDescription);
                 CurrentState = await _stateManager.LoadStateAsync(_thingId);
-                _logic.UpdateCurrentState(CurrentState);
+                await _logic.UpdateCurrentState(CurrentState);
+                lastAccessStateStore = DateTime.UtcNow.ToString("o");
             }
             catch (Exception exc)
             {
-                ActorLogger.Info(Id.GetId(), "There is no data about the thing: its new. " + exc.Message);
+                ActorLogger.Info(_thingId, "There is no data about the thing: its new. " + exc.Message);
             }
         }
 
         protected override async Task OnDeactivateAsync()
         {
-            ActorLogger.Info(Id.GetId(), "Deactivating actor");
+            ActorLogger.Info(_thingId, "Deactivating actor");
             await Task.CompletedTask;
         }
 
@@ -66,14 +72,24 @@ namespace OpenTwinsV2.Things.Actors
             return await _logic.GetThingStatusAsync();
         }
 
-        public Task<string> GetCurrentStateAsync()
+        public async Task<string> GetCurrentStateAsync()
         {
-            return Task.FromResult(_logic.GetCurrentState());
+            CurrentState = await _logic.GetCurrentState();
+            string status = await _logic.GetThingStatusAsync();
+
+            if(status == Status.DeleteStatus) throw new KeyNotFoundException();
+            
+            return JsonSerializer.Serialize(new StateWrapper<Dictionary<string, PropertyState>>(CurrentState, lastAccessStateStore, isUpdating: status == Status.UpdateStatus));
         }
 
         public async Task OnEventReceived(MyCloudEvent<string> eventRecv)
         {
-            await _logic.ApplyEventAsync(eventRecv);
+            var updated = await _logic.ApplyEventAsync(eventRecv);
+            if (updated)
+            {
+                lastAccessStateStore = DateTime.UtcNow.ToString("o");
+                CurrentState =  await _logic.GetCurrentState();
+            }
         }
 
         public async Task InvokeAction(string action, string parameters)

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -187,6 +188,34 @@ namespace Twins.Services
             if (bool.TryParse(value, out _)) return ("xsd:boolean", @"^(true|false|1|0)$");
             if (DateTime.TryParse(value, out var dt)) return dt.TimeOfDay == TimeSpan.Zero ? ("xsd:date", @"^\d{4}-\d{2}-\d{2}$") : ("xsd:dateTime", @"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*$");
             return info;
+        }
+
+        /// <summary>
+        /// Obtains the type of a string value depending of its actual datatype.
+        /// </summary>
+        /// <param name="value">The value's string.</param>
+        /// <returns>The string name of the value's actual datatype.</returns>
+        public static string GetAttributeType(string value)
+        {
+            var info = "string" ;
+            if (string.IsNullOrWhiteSpace(value)) return info;
+            if (int.TryParse(value, out _)) return "int";
+            if (double.TryParse(value, out _)) return "float";
+            if (bool.TryParse(value, out _)) return "boolean";
+            if (DateTime.TryParse(value, out var dt)) return "dateTime";
+            return info;
+        }
+
+        public static object ParseAttributeValue(string type, string value)
+        {
+            return type.ToLower() switch
+            {
+                "int" or "integer" => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue) ? intValue : value,
+                "float" or "double" => double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var floatValue) ? floatValue : value,
+                "bool" => bool.TryParse(value, out var boolValue) ? boolValue : value,
+                "dateTime" or "date" => DateTime.TryParse(value, out var dateValue) ? dateValue : value,
+                _ => value
+            };
         }
 
         public static string ReplacePrefix(string value, string newPrefix)

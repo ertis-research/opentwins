@@ -23,7 +23,7 @@ public class StateMetadata
 
 public class StateWrapper<T>
 {
-    [JsonPropertyName("metadata")]
+    [JsonPropertyName("meta")]
     public StateMetadata Metadata { get; set; }
 
     [JsonPropertyName("data")]

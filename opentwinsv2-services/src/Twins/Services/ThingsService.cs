@@ -164,6 +164,10 @@ namespace OpenTwinsV2.Twins.Services
                 catch (KeyNotFoundException)
                 {
                     Console.WriteLine($"ThingId '{id}' state not found.");
+                }catch(ActorMethodInvocationException ex)
+                {
+                    if(ex.Message.Contains("KeyNotFoundException"))
+                        Console.WriteLine($"ThingId '{id}' state not found.");
                 }
             }
 

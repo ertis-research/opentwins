@@ -5,6 +5,7 @@ using System.Text.Json;
 using Dapr;
 using Dapr.Messaging.PublishSubscribe;
 using Dgraph4Net.ActiveRecords;
+using OpenTwinsV2.Shared.Configuration;
 using OpenTwinsV2.Shared.Models;
 using OpenTwinsV2.Shared.Utilities;
 using OpenTwinsV2.Twins.Handlers;
@@ -13,7 +14,9 @@ using Twins.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 //builder.Services.AddDaprPubSubClient();
-builder.Services.AddDaprClient();                    // Recomendado para llamadas Dapr
+builder.Services.AddDaprClient();     
+
+builder.Services.Configure<PubSubOptions>(builder.Configuration.GetSection(PubSubOptions.SectionName));
 
 builder.Services.AddScoped<IJsonNquadsConverter, JsonNquadsConverter>();
 builder.Services.AddScoped<LinkEventsHandler>();

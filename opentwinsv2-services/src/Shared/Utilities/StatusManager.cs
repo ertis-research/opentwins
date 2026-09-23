@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Dapr.Client;
-using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
+using OpenTwinsV2.Shared.Configuration;
 using OpenTwinsV2.Shared.Constants;
 
 namespace OpenTwinsV2.Shared.Utilities
@@ -8,21 +9,21 @@ namespace OpenTwinsV2.Shared.Utilities
     public class StatusManager
     {
         private readonly DaprClient _daprClient;
-        private readonly string _ttlPeriod;
-        public StatusManager(DaprClient daprClient, IConfiguration config)
+        private readonly StateStoreOptions _stateStoreConfig;
+        public StatusManager(DaprClient daprClient, IOptions<StateStoreOptions> stateStoreOptions)
         {
             _daprClient = daprClient;
-            _ttlPeriod = config.GetValue<string>("DaprStateTtlSeconds") ?? "60";
+            _stateStoreConfig = stateStoreOptions.Value;
         }
         private async Task SaveThingStatus(string id, string state, string operationId, bool ttlEnabled = false)
         {
             if (ttlEnabled)
             {
                 //Load from appsettings the no of seconds to wait till it's deleted.
-                var metadata = new Dictionary<string,string>{ { "ttlInSeconds", _ttlPeriod } };
-                await _daprClient.SaveStateAsync(StateStore.Name, Status.ThingStatusKey + id, new JsonObject{["status"]=state, ["operationId"]=operationId}, metadata: metadata);
+                var metadata = new Dictionary<string,string>{ { "ttlInSeconds", _stateStoreConfig.TtlSeconds } };
+                await _daprClient.SaveStateAsync(_stateStoreConfig.Name, Status.ThingStatusKey + id, new JsonObject{["status"]=state, ["operationId"]=operationId}, metadata: metadata);
             }else
-                await _daprClient.SaveStateAsync(StateStore.Name, Status.ThingStatusKey + id, new JsonObject{["status"]=state, ["operationId"]=operationId});
+                await _daprClient.SaveStateAsync(_stateStoreConfig.Name, Status.ThingStatusKey + id, new JsonObject{["status"]=state, ["operationId"]=operationId});
         }
 
         public async Task SaveOkThingStatus(string id)
@@ -48,7 +49,7 @@ namespace OpenTwinsV2.Shared.Utilities
 
         public async Task<(string? Status, string OperationId)> GetThingStatus(string id)
         {
-            var state = await _daprClient.GetStateAsync<JsonObject>(StateStore.Name, Status.ThingStatusKey + id);
+            var state = await _daprClient.GetStateAsync<JsonObject>(_stateStoreConfig.Name, Status.ThingStatusKey + id);
             return (state?["status"]?.GetValue<string>(), state?["operationId"]?.GetValue<string>() ?? "");
         }
 
@@ -56,7 +57,7 @@ namespace OpenTwinsV2.Shared.Utilities
 
         public async Task  DeleteThingStatus(string id)
         {
-            await _daprClient.DeleteStateAsync(StateStore.Name,  Status.ThingStatusKey + id);
+            await _daprClient.DeleteStateAsync(_stateStoreConfig.Name,  Status.ThingStatusKey + id);
         }
     }
 }

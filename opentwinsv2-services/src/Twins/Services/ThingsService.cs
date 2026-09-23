@@ -3,8 +3,9 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Dapr.Actors;
 using Dapr.Actors.Client;
-using Dapr.Actors.Runtime;
 using Dapr.Client;
+using Microsoft.Extensions.Options;
+using OpenTwinsV2.Shared.Configuration;
 using OpenTwinsV2.Shared.Constants;
 using OpenTwinsV2.Shared.Models;
 using OpenTwinsV2.Shared.Utilities;
@@ -18,11 +19,13 @@ namespace OpenTwinsV2.Twins.Services
         private readonly DaprClient _daprClient;
         private readonly StatusManager _statusManager;
         private const string ActorType = Actors.ThingActor;
+        private readonly PubSubOptions _pubSub;
 
-        public ThingsService(StatusManager statusManager)
+        public ThingsService(StatusManager statusManager, IOptions<PubSubOptions> pubSubOptions)
         {
             _daprClient = new DaprClientBuilder().Build();
             _statusManager = statusManager;
+            _pubSub = pubSubOptions.Value;
         }
 
         // /// <summary>
@@ -57,7 +60,7 @@ namespace OpenTwinsV2.Twins.Services
                 await _statusManager.SaveCreatingThingStatus(thingId, operationid);
             else
                 await _statusManager.SaveUpdatingThingStatus(thingId, operationid);
-            await _daprClient.PublishEventAsync(PubSub.Name, "update-things", data:new JsonObject{["operationId"]=operationid, ["data"] = new JsonArray{newThing}});
+            await _daprClient.PublishEventAsync(_pubSub.Name, _pubSub.ThingUpdateTopic, data:new JsonObject{["operationId"]=operationid, ["data"] = new JsonArray{newThing}});
             return true;
         }
 
@@ -82,7 +85,7 @@ namespace OpenTwinsV2.Twins.Services
                     await _statusManager.SaveUpdatingThingStatus(thingId, operationid);
             }
             
-            await _daprClient.PublishEventAsync(PubSub.Name, PubSub.ThingUpdateTopic, data:new JsonObject{["operationId"]=operationid, ["data"] = things});
+            await _daprClient.PublishEventAsync(_pubSub.Name, _pubSub.ThingUpdateTopic, data:new JsonObject{["operationId"]=operationid, ["data"] = things});
             return true;
         }
 
@@ -105,7 +108,7 @@ namespace OpenTwinsV2.Twins.Services
             var operationid=Guid.NewGuid().ToString();
             if(status is not null)
                 await _statusManager.SaveDeletingThingStatus(thingId, operationid);
-            await _daprClient.PublishEventAsync(PubSub.Name, PubSub.ThingDeleteTopic, data:new JsonObject{["operationId"]=operationid, ["data"] = new JsonArray{new JsonObject{["id"]= thingId}}});
+            await _daprClient.PublishEventAsync(_pubSub.Name, _pubSub.ThingDeleteTopic, data:new JsonObject{["operationId"]=operationid, ["data"] = new JsonArray{new JsonObject{["id"]= thingId}}});
             return true;
         }
 

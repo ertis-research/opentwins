@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using Events.Handlers;
+using Microsoft.Extensions.Options;
+using OpenTwinsV2.Shared.Configuration;
 using OpenTwinsV2.Shared.Constants;
 using OpenTwinsV2.Shared.Models;
 
@@ -22,7 +24,7 @@ namespace Events.Services
                 }
             }
         */
-        private static readonly string defaultTopic = PubSub.EventsTopic;
+        private readonly string _defaultTopic;
         private readonly ILogger<RoutingService> _logger;
         //
         private readonly ConcurrentDictionary<string, List<ActorIdentity>> _events = [];
@@ -31,11 +33,12 @@ namespace Events.Services
         private readonly FastEventConfig _fastEventConfig;
         private readonly RoutingRepository _repository;
 
-        public RoutingService(FastEventConfig fastEventConfig, RoutingRepository repository, ILogger<RoutingService> logger)
+        public RoutingService(FastEventConfig fastEventConfig, RoutingRepository repository, ILogger<RoutingService> logger, IOptions<PubSubOptions> pubSubOptions)
         {
             _fastEventConfig = fastEventConfig;
             _repository = repository;
             _logger = logger;
+            _defaultTopic = pubSubOptions.Value.EventsTopic;
         }
 
         public async Task InitializeAsync()
@@ -136,7 +139,7 @@ namespace Events.Services
                     (_) => // Si no existe la clave, crea lista con el actor
                     {
                         _logger.LogInformation("Adding new EventId={EventId} with default topic for ActorId={ActorId}", evt.EventId, actor.ActorId);
-                        AddEvent(defaultTopic, evt.EventId); /// Por ahora solo defaultTopic
+                        AddEvent(_defaultTopic, evt.EventId); /// Por ahora solo defaultTopic
                         return [actor];
                     },
                     (_, actors) => // Si existe la clave, actualiza la lista (añadir si no está)
@@ -152,8 +155,8 @@ namespace Events.Services
                 await _repository.LinkEventThingAsync(evt.EventId, actor.ActorId);
                 _logger.LogDebug("Linked ActorId={ActorId} to EventId={EventId} in repository", actor.ActorId, evt.EventId);
 
-                await _repository.LinkTopicEventAsync(defaultTopic, evt.EventId);
-                _logger.LogDebug("Linked EventId={EventId} to default Topic={Topic} in repository", evt.EventId, defaultTopic);
+                await _repository.LinkTopicEventAsync(_defaultTopic, evt.EventId);
+                _logger.LogDebug("Linked EventId={EventId} to default Topic={Topic} in repository", evt.EventId, _defaultTopic);
 
             }
         }

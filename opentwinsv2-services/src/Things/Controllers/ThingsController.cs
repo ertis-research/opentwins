@@ -218,7 +218,6 @@ public class ThingsController : ControllerBase
     }
 
     [HttpPost("internal/create")]
-    [Topic(PubSub.Name, PubSub.ThingUpdateTopic)]
     [ApiExplorerSettings(IgnoreApi =true)]
     public async Task<IActionResult> CreateThingsFromTopic([FromBody] JsonElement payload)
     {
@@ -230,7 +229,6 @@ public class ThingsController : ControllerBase
     }
 
     [HttpPost("internal/delete")]
-    [Topic(PubSub.Name, PubSub.ThingDeleteTopic)]
     [ApiExplorerSettings(IgnoreApi =true)]
     public async Task<IActionResult> DeleteThingsFromTopic([FromBody] JsonElement payload)
     {

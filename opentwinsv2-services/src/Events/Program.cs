@@ -5,11 +5,14 @@ using Events.Handlers;
 using Events.Persistence;
 using Events.Services;
 using Npgsql;
+using OpenTwinsV2.Shared.Configuration;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.Configure<PubSubOptions>(builder.Configuration.GetSection(PubSubOptions.SectionName));
 var connectionString = builder.Configuration.GetSection("PostgreSQL")["connectionString"];
+
 var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
 var dataSource = dataSourceBuilder.Build();
 builder.Services.AddSingleton(dataSource);

@@ -8,50 +8,52 @@ namespace OpenTwinsV2.Things.Services
     public class TwinsService
     {
         private readonly DaprClient _daprClient;
+        private readonly string _twinsServiceAppId;
 
-        public TwinsService(DaprClient daprClient)
+        public TwinsService(DaprClient daprClient, IConfiguration configuration)
         {
             _daprClient = daprClient;
+            _twinsServiceAppId = configuration["Dapr:Twins"] ?? "twins-service";
         }
         
         public async Task<bool> ExistsThingInTwins(string id)
         {
-            return await _daprClient.InvokeMethodAsync<bool>(HttpMethod.Get, "twins-service", $"internal/things/{Uri.EscapeDataString(id)}");
+            return await _daprClient.InvokeMethodAsync<bool>(HttpMethod.Get, _twinsServiceAppId, $"internal/things/{Uri.EscapeDataString(id)}");
         }
 
         public async Task RemoveLinkInTwins(string id, Link link)
         {
-            await _daprClient.InvokeMethodAsync(HttpMethod.Delete, "twins-service", $"internal/things/{Uri.EscapeDataString(id)}/links/{link.Rel}/{link.Href}");
+            await _daprClient.InvokeMethodAsync(HttpMethod.Delete, _twinsServiceAppId, $"internal/things/{Uri.EscapeDataString(id)}/links/{link.Rel}/{link.Href}");
         }
 
         public async Task RemoveLinksInTwins(string id, IEnumerable<Link> links)
         {
-            await _daprClient.InvokeMethodAsync(HttpMethod.Delete, "twins-service", $"internal/things/{Uri.EscapeDataString(id)}/links", JsonSerializer.Serialize(links));
+            await _daprClient.InvokeMethodAsync(HttpMethod.Delete, _twinsServiceAppId, $"internal/things/{Uri.EscapeDataString(id)}/links", JsonSerializer.Serialize(links));
         }
 
         public async Task AddLinksInTwins(string id, IEnumerable<Link> links)
         {
-            await _daprClient.InvokeMethodAsync(HttpMethod.Post, "twins-service", $"internal/things/{Uri.EscapeDataString(id)}/links", JsonSerializer.Serialize(links));
+            await _daprClient.InvokeMethodAsync(HttpMethod.Post, _twinsServiceAppId, $"internal/things/{Uri.EscapeDataString(id)}/links", JsonSerializer.Serialize(links));
         }
 
         public async Task UpdateLinkInTwins(string id, string targetId, string relName, Link newLink)
         {
-            await _daprClient.InvokeMethodAsync(HttpMethod.Put, "twins-service", $"internal/things/{Uri.EscapeDataString(id)}/links/{relName}/{targetId}", JsonSerializer.Serialize(newLink));
+            await _daprClient.InvokeMethodAsync(HttpMethod.Put, _twinsServiceAppId, $"internal/things/{Uri.EscapeDataString(id)}/links/{relName}/{targetId}", JsonSerializer.Serialize(newLink));
         }
 
         public async Task RemoveTypeInTwins(string id, string type)
         {
-            await _daprClient.InvokeMethodAsync(HttpMethod.Delete, "twins-service", $"internal/things/{Uri.EscapeDataString(id)}/type/{Uri.EscapeDataString(type)}");
+            await _daprClient.InvokeMethodAsync(HttpMethod.Delete, _twinsServiceAppId, $"internal/things/{Uri.EscapeDataString(id)}/type/{Uri.EscapeDataString(type)}");
         }
 
         public async Task AddTypeInTwins(string id, string type)
         {
-            await _daprClient.InvokeMethodAsync(HttpMethod.Post, "twins-service", $"internal/things/{Uri.EscapeDataString(id)}/type/{Uri.EscapeDataString(type)}");
+            await _daprClient.InvokeMethodAsync(HttpMethod.Post, _twinsServiceAppId, $"internal/things/{Uri.EscapeDataString(id)}/type/{Uri.EscapeDataString(type)}");
         }
 
         public async Task DeleteThingInTwins(string id)
         {
-            await _daprClient.InvokeMethodAsync(HttpMethod.Delete, "twins-service", $"internal/things/{id}");
+            await _daprClient.InvokeMethodAsync(HttpMethod.Delete, _twinsServiceAppId, $"internal/things/{id}");
         }
 
         public async Task UpdateThingInTwins(ThingDescription newTd, ThingDescription? prevTd)

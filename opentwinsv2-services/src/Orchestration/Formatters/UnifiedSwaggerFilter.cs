@@ -4,31 +4,31 @@ using Swashbuckle.AspNetCore.SwaggerGen;
 
 public class UnifiedSwaggerFilter : IDocumentFilter
 {
+    private readonly IConfiguration _configuration;
+
+    public UnifiedSwaggerFilter(IConfiguration configuration)
+    {
+        _configuration = configuration;
+    }
+
     public void Apply(OpenApiDocument swaggerDoc, DocumentFilterContext context)
     {
-        var daprHttpPort = Environment.GetEnvironmentVariable("DAPR_HTTP_PORT") ?? "3500";
-        var services = new[]
-        {
-            new
-            {
-                Prefix = "/things",
-                Url = $"http://localhost:{daprHttpPort}/v1.0/invoke/things-service/method/swagger/v1/swagger.json"
-            },
-            new
-            {
-                Prefix = "/twins",
-                Url = $"http://localhost:{daprHttpPort}/v1.0/invoke/twins-service/method/swagger/v1/swagger.json"
-            }
-        };
+        var daprHttpPort = Environment.GetEnvironmentVariable("DAPR_HTTP_PORT") ?? "3501";
+        var daprServices = _configuration.GetSection("Dapr").Get<Dictionary<string, string>>() ?? [];
 
         using var client = new HttpClient();
 
-        foreach (var service in services)
+        foreach (var service in daprServices)
         {
+            var prefix = $"/{service.Key}"; // ej: "/twins" o "/things"
+            var appId = service.Value;      // ej: "twins-service"
+
+            var url = $"http://localhost:{daprHttpPort}/v1.0/invoke/{appId}/method/swagger/v1/swagger.json";
+            
             try
             {
                 // 1. Get the Raw Stream (More robust than String)
-                var stream = client.GetStreamAsync(service.Url).Result;
+                var stream = client.GetStreamAsync(url).GetAwaiter().GetResult();
 
                 // 2. Use Stream Reader
                 var reader = new OpenApiStreamReader();
@@ -37,7 +37,7 @@ public class UnifiedSwaggerFilter : IDocumentFilter
                 // 3. Merge Paths
                 foreach (var path in remoteDoc.Paths)
                 {
-                    var newPath = $"{service.Prefix}{path.Key}";
+                    var newPath = $"{prefix}{path.Key}";
                     if (!swaggerDoc.Paths.ContainsKey(newPath))
                     {
                         swaggerDoc.Paths.Add(newPath, path.Value);
@@ -55,7 +55,7 @@ public class UnifiedSwaggerFilter : IDocumentFilter
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Skipping {service.Prefix}: {ex.Message}");
+                Console.WriteLine($"Skipping {prefix} (AppId: {appId}): {ex.Message}");
             }
         }
     }

@@ -8,7 +8,6 @@ namespace Events.Handlers
 {
     public class EventProcessor
     {
-        //private static readonly HttpClient httpClient = DaprClient.CreateInvokeHttpClient(appId: "things-service");
         private readonly Channel<IncomingEvent> _channel;
         private readonly RoutingService _routingService;
         private readonly ActorEventRouter _actorRouter;

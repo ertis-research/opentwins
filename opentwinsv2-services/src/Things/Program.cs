@@ -2,6 +2,7 @@
 
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using OpenTwinsV2.Shared.Constants;
 using OpenTwinsV2.Shared.Utilities;
 using OpenTwinsV2.Things.Actors;
 using OpenTwinsV2.Things.Infrastructure.Database;
@@ -11,6 +12,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 
 builder.Services.AddDaprClient();
+
+builder.Services.Configure<PubSubOptions>(
+    builder.Configuration.GetSection(PubSubOptions.SectionName));
 
 builder.Services.AddScoped<ThingsQueryService>();
 builder.Services.AddScoped<TwinsService>();

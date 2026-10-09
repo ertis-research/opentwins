@@ -927,6 +927,7 @@ namespace OpenTwinsV2.Twins.Services
         {
             var namespaces = json["namespace"]?.AsArray() ?? new JsonArray();
             var context = new JsonObject();
+            string vocabUri = "http://example.org/properties/";
 
             foreach (var ns in namespaces)
             {
@@ -934,9 +935,11 @@ namespace OpenTwinsV2.Twins.Services
                     continue;
                 
                 var prefix = ns["prefix"]?.GetValue<string>() is null ? $"blankNodePrefix_{idSanitized}" : ns["prefix"]?.ToString();
-                if(string.IsNullOrWhiteSpace(prefix))
-                    prefix = "@vocab";
                 var uri = ns["uri"]?.GetValue<string>();
+                if (string.IsNullOrWhiteSpace(prefix) && uri is not null)
+                {
+                    vocabUri = uri;
+                }
 
                 if (prefix is not null && uri is not null)
                 {
@@ -944,7 +947,8 @@ namespace OpenTwinsV2.Twins.Services
                 }
             }
 
-            context["@vocab"] ??=  "http://example.org/properties/";
+            context["@vocab"] ??= vocabUri;
+            context["@base"] ??= vocabUri;
             return context;
         }
 

@@ -326,6 +326,13 @@ namespace Twins.Services
             var store = new TripleStore();
             var jsonLd = ld ? json : ExportService.GetJsonLDFromRegularJson(json, id, twin:true);
             ReplaceNulls(jsonLd, "");
+            if(jsonLd["@context"] is JsonObject context && context[""] is not null)
+            {
+                context.Remove("");
+                RemoveEmptyPrefixes(jsonLd);
+                var options = new JsonSerializerOptions{ WriteIndented = true};
+                Console.WriteLine($"JSONLD: {JsonSerializer.Serialize(jsonLd, options: options)}");
+            }
             var jsonString = JsonSerializer.Serialize(jsonLd);
 
             //extract the namespaces from the Json
@@ -351,6 +358,43 @@ namespace Twins.Services
             
             return mergedGraph;
 
+        }
+
+        public static void RemoveEmptyPrefixes(JsonNode ?node)
+        {
+            if (node is null) return;
+
+            if (node is JsonObject obj)
+            {
+                var keysToRename = obj.Select(kvp => kvp.Key).Where(k => k.StartsWith(':')).ToList();
+
+                foreach (var oldKey in keysToRename)
+                {
+                    var valueNode = obj[oldKey];
+                    obj.Remove(oldKey);
+                    
+                    string newKey = oldKey[1..];
+                    obj[newKey] = valueNode;
+                }
+
+                foreach (var kvp in obj.ToList())
+                {
+                    if (kvp.Key == "@id" || kvp.Key == "@type")
+                    {
+                        if (kvp.Value is JsonValue val && val.TryGetValue<string>(out string? strValue) && (strValue ?? "").StartsWith(':'))
+                        {
+                            obj[kvp.Key] = strValue![1..];
+                            continue; 
+                        }
+                    }
+                    RemoveEmptyPrefixes(kvp.Value);
+                }
+            }
+            else if (node is JsonArray arr)
+            {
+                foreach (var item in arr)
+                    RemoveEmptyPrefixes(item);
+            }
         }
 
         /// <summary>

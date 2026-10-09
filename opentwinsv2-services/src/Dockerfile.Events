@@ -23,5 +23,10 @@ EXPOSE 8080
 
 ENTRYPOINT ["dotnet", "Events.dll"]
 
+# Development
 # docker build -t docker.ertis.uma.es/opentwinsv2/opentwinsv2-events:0.0.2 . -f Dockerfile.Events
 # docker push docker.ertis.uma.es/opentwinsv2/opentwinsv2-events:0.0.2
+
+# Production
+# docker build -t docker.ertis.uma.es/opentwinsv2-release/opentwinsv2-events:0.0.1 . -f Dockerfile.Events
+# docker push docker.ertis.uma.es/opentwinsv2-release/opentwinsv2-events:0.0.1

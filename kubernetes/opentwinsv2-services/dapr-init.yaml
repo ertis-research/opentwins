@@ -54,3 +54,9 @@ metadata:
 spec:
   tracing:
     samplingRate: "0"
+  mtls:
+    enabled: true
+    workloadCertTTL: "24h"
+    allowedClockSkew: "15m"
+    controlPlaneTrustDomain: "cluster.local"
+    sentryAddress: "dapr-sentry.dapr-system.svc.cluster.local:443"

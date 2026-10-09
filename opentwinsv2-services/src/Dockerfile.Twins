@@ -22,5 +22,11 @@ COPY --from=build /App/out .
 EXPOSE 8080
 
 ENTRYPOINT ["dotnet", "Twins.dll"]
+
+# Development
 # docker build -t docker.ertis.uma.es/opentwinsv2/opentwinsv2-twins:0.0.1 -f Dockerfile.Twins .
-#docker push docker.ertis.uma.es/opentwinsv2/opentwinsv2-twins:0.0.1
+# docker push docker.ertis.uma.es/opentwinsv2/opentwinsv2-twins:0.0.1
+
+# Production
+# docker build -t docker.ertis.uma.es/opentwinsv2-release/opentwinsv2-twins:0.0.1 . -f Dockerfile.Twins
+# docker push docker.ertis.uma.es/opentwinsv2-release/opentwinsv2-twins:0.0.1

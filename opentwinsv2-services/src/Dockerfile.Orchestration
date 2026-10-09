@@ -22,5 +22,11 @@ COPY --from=build /App/out .
 EXPOSE 8080
 
 ENTRYPOINT ["dotnet", "Orchestration.dll"]
+
+# Development
 # docker build -t docker.ertis.uma.es/opentwinsv2/opentwinsv2-orchestration:0.0.2 -f Dockerfile.Orchestration .
-#docker push docker.ertis.uma.es/opentwinsv2/opentwinsv2-orchestration:0.0.2
+# docker push docker.ertis.uma.es/opentwinsv2/opentwinsv2-orchestration:0.0.2
+
+# Production
+# docker build -t docker.ertis.uma.es/opentwinsv2-release/opentwinsv2-orchestration:0.0.1 -f Dockerfile.Orchestration .
+# docker push docker.ertis.uma.es/opentwinsv2-release/opentwinsv2-orchestration:0.0.1

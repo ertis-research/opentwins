@@ -738,6 +738,96 @@ namespace OpenTwinsV2.Twins.Services
             return JsonSerializer.Deserialize<JsonElement>(newJson);
         }
 
+        private async Task<List<JsonNode>> FetchBatchUidsAsync(string[] uidBatch, int limit, SemaphoreSlim semaphore)
+        {
+            await semaphore.WaitAsync();
+            var txn = _client.NewTransaction();
+            try
+            {
+                string uidList = string.Join(", ", uidBatch.Select(u => $"\"{u}\""));
+                
+                string query = $@"
+                {{
+                    node(func: uid({uidList})){{
+                        uid
+                        expand(_all_)(first: {limit}) {{
+                            uid
+                        }}
+                        ~*(first: {limit}) {{
+                            uid
+                        }}
+                    }}
+                }}";
+
+                var res = await txn.Query(query);
+                var json = res.Json.ToStringUtf8();
+
+                JsonNode root = JsonNode.Parse(json)!;
+                var node = root["node"];
+
+                if (node is null)
+                    return [];
+
+                return node.AsArray()!.ToList<JsonNode>();
+            }
+            finally
+            {
+                await txn.DisposeAsync();
+                semaphore.Release();
+            }
+        }
+
+        private async Task<List<string>> GetRelatedNodesUidBatchedAsync(List<string> startingUids)
+        {
+            var visited = new HashSet<string>(startingUids);
+            var currentLevelUids = new HashSet<string>(startingUids);
+
+            var semaphore = new SemaphoreSlim(4);
+            int batchSize = 1000;
+            int edgeLimit = 10000;
+
+            while (currentLevelUids.Count > 0)
+            {
+                var batches = currentLevelUids.Chunk(batchSize).ToList();
+                var fetchTasks = new List<Task<List<JsonNode>>>();
+
+                currentLevelUids.Clear();
+
+                foreach (var batch in batches)
+                {
+                    fetchTasks.Add(FetchBatchUidsAsync(batch, edgeLimit, semaphore));
+                }
+
+                var batchResults = await Task.WhenAll(fetchTasks);
+
+                foreach (JsonObject node in batchResults.SelectMany(n => n.Select(node => node.AsObject())))
+                {
+                    var uid = node["uid"]?.GetValue<string>() ?? throw new ArgumentNullException("uid is null");
+
+                    var subUids = node
+                        .Select(prop => prop.Value)
+                        .Where(v => v != null)
+                        .SelectMany(v => v is JsonArray arr ? arr.ToList()! : new List<JsonNode> { v! })
+                        .OfType<JsonObject>()
+                        .Where(obj => obj.ContainsKey("uid") && obj["uid"] is not null)
+                        .Select(obj => obj["uid"]!.GetValue<string>())
+                        .ToList();
+
+                    // if (subUids.Count >= edgeLimit)
+                    // {
+                    //     var remainingUids = await DrainSuperNodeEdgeUidsAsync(uid, edgeLimit);
+                    //     subUids.AddRange(remainingUids);
+                    // }
+
+                    foreach (var subUid in subUids)
+                        if (subUid != null && visited.Add(subUid))
+                            currentLevelUids.Add(subUid);
+                }
+            }
+
+            return visited.ToList();
+        }
+
         #endregion
 
         #region Things
@@ -1727,15 +1817,19 @@ namespace OpenTwinsV2.Twins.Services
 
         public async Task<Response> DeleteByOntologyId(string ontologyId)
         {
-            var txn = _client.NewTransaction();
-            try
+            // Await the call properly instead of using .Result
+            var uids = await GetAllOntologyRelatedNodesUidAsync(ontologyId);
+            Console.WriteLine($"Total UIDs to delete: {uids.Count}");
+
+            // Define a safe batch size to stay under the edge limit
+            int batchSize = 5000; 
+            Response? lastResponse = null;
+
+            // Split the UIDs into manageable chunks
+            foreach (var batch in uids.Chunk(batchSize))
             {
-                var uids = GetAllOntologyRelatedNodesUidAsync(ontologyId).Result;
-                Console.WriteLine(uids.Count);
-
                 var deleteObjects = new List<Dictionary<string, string>>();
-
-                foreach (var uid in uids)
+                foreach (var uid in batch)
                 {
                     // Each object = one node to delete
                     deleteObjects.Add(new Dictionary<string, string> { { "uid", uid } });
@@ -1748,24 +1842,25 @@ namespace OpenTwinsV2.Twins.Services
                     DeleteJson = ByteString.CopyFromUtf8(deleteJson)
                 };
 
+                // Create a new transaction FOR EACH BATCH
+                var txn = _client.NewTransaction();
                 try
                 {
-                    var response = await txn.Mutate(mutation);
+                    lastResponse = await txn.Mutate(mutation);
                     await txn.Commit();
-                    return response;
                 }
                 catch (Exception ex)
                 {
-                    await txn.DisposeAsync();
-                    throw new Exception("Error removing ontology: " + ex.Message);
+                    throw new Exception($"Error removing ontology batch: {ex.Message}");
                 }
+                finally
+                {
+                    // Ensure the transaction is disposed after each chunk
+                    await txn.DisposeAsync();
+                }
+            }
 
-            }
-            catch
-            {
-                await txn.DisposeAsync();
-                throw;
-            }
+            return lastResponse ?? new Response();
         }
         
         public async Task<Response> DeleteByOntologyIdAndThingId(string ontologyId, string thingId)
@@ -3152,70 +3247,80 @@ namespace OpenTwinsV2.Twins.Services
 
         private async Task<List<string>> GetAllShapeGraphRelatedNodesUidAsync(string shapeId)
         {
-            var uids = new List<string>();
+            var startingUids = new List<string>();
 
-            using var txn = _client.NewTransaction();
+            using (var txn = _client.NewTransaction())
+            {
+                var query = $@"
+                {{
+                    root(func: eq(shapeId, ""{shapeId}"")) {{
+                        uid
+                    }}
+                }}";
 
-            var query = $@"
-            {{
-                shapeGraphs(func: eq(shapeId, ""{shapeId}"")) @recurse(depth: 100, loop: true) {{
-                    uid
-                    dgraph.type
-                    expand(_all_)
-                    ~*
-                }}
-            }}";
+                var res = await txn.Query(query);
+                var json = res.Json.ToStringUtf8();
 
-            var res = await txn.Query(query);
-            var json = res.Json.ToStringUtf8(); ;
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
 
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
+                if (root.TryGetProperty("root", out var rootArray))
+                    foreach (var item in rootArray.EnumerateArray())
+                        if (item.TryGetProperty("uid", out var uidProp))
+                            startingUids.Add(uidProp.GetString()!);
+            }
 
-            return [.. GetUidFromJsonElement(root)];
+            if (startingUids.Count == 0) return startingUids;
+
+            return await GetRelatedNodesUidBatchedAsync(startingUids);
         }
 
         public async Task<Response> DeleteShapeGraphByIdAsync(string shapeId)
         {
-            var txn = _client.NewTransaction();
-            try
+            // Await the call properly instead of using .Result to prevent thread deadlocks
+            var uids = await GetAllShapeGraphRelatedNodesUidAsync(shapeId);
+            Console.WriteLine($"Total UIDs to delete: {uids.Count}");
+
+            // Define a safe batch size. 5,000 to 10,000 UIDs per batch is typically safe 
+            // to stay well under the 1,000,000 edge limit.
+            int batchSize = 5000; 
+            Response? lastResponse = null;
+
+            // Split the UIDs into manageable chunks
+            foreach (var batch in uids.Chunk(batchSize))
             {
-                var uids = GetAllShapeGraphRelatedNodesUidAsync(shapeId).Result;
-                Console.WriteLine(uids.Count);
-
                 var deleteObjects = new List<Dictionary<string, string>>();
-
-                foreach (var uid in uids)
+                foreach (var uid in batch)
                 {
-                    // Each object = one node to delete
                     deleteObjects.Add(new Dictionary<string, string> { { "uid", uid } });
                 }
 
-                // Serialize to JSON
                 var deleteJson = JsonSerializer.Serialize(deleteObjects);
                 var mutation = new Mutation
                 {
                     DeleteJson = ByteString.CopyFromUtf8(deleteJson)
                 };
 
+                // Create a new transaction FOR EACH BATCH. 
+                // Keeping one large transaction open defeats the purpose of batching.
+                var txn = _client.NewTransaction();
                 try
                 {
-                    var response = await txn.Mutate(mutation);
+                    lastResponse = await txn.Mutate(mutation);
                     await txn.Commit();
-                    return response;
                 }
                 catch (Exception ex)
                 {
-                    await txn.DisposeAsync();
-                    throw new Exception("Error removing shape graph: " + ex.Message);
+                    throw new Exception($"Error removing shape graph batch: {ex.Message}");
                 }
+                finally
+                {
+                    // Always dispose the transaction after committing or throwing
+                    await txn.DisposeAsync();
+                }
+            }
 
-            }
-            catch
-            {
-                await txn.DisposeAsync();
-                throw;
-            }
+            return lastResponse ?? new Response();
         }
         
         #endregion

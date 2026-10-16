@@ -89,7 +89,7 @@ namespace OpenTwinsV2.Twins.Controllers
         /// <param name="ontologyFile">The TTL File that defines the Ontology's structure.</param>
         /// <param name="ontologyId">The identifier of the Ontology.</param>
         /// <response code="200">The list of NQuads triples that were sent to the DataBase.</response>
-        /// <response code="400">The file provided is void or not of TTL Extension.</response>
+        /// <response code="400">The file provided is void or not of TTL Extension, or the identifier is malformed.</response>
         /// <response code="409">An ontology with the same identifier already exists on the DataBase.</response>
         /// <response code="500">There was an issue while parsing the Ontology or while uploading it into the DataBase.</response>
         [HttpPost("{ontologyId}")]
@@ -113,7 +113,11 @@ namespace OpenTwinsV2.Twins.Controllers
                 return BadRequest($"File can only be of .ttl extension, instead recieved a {(extension is null ? "no extension" : extension.ToLower())} file");
             }
 
-            ontologyId = ontologyId.ToLowerInvariant();
+            if(!ontologyId.Equals(ontologyId, StringComparison.InvariantCultureIgnoreCase))
+                return BadRequest("The provided identifier contains at least one upper case character");
+
+            if(ontologyId.Contains(':') || ontologyId.Contains('/') || ontologyId.Contains('&') || ontologyId.Contains('#'))
+                return BadRequest("The provided identifier contains at least one forbidden character: : / & #");
 
             if (!await _dgraphService.ExistsOntologyByIdAsync(ontologyId))
             {
@@ -132,7 +136,7 @@ namespace OpenTwinsV2.Twins.Controllers
                 
                 //---------------------------------------------------------------------------------
                 //Upload the triples as a mutation to DGraph
-
+                
                 var response = await _dgraphService.AddNQuadTripleAsync(nquads.ToList());
                 // foreach(var nq in nquads)
                 //     Console.WriteLine(nq);

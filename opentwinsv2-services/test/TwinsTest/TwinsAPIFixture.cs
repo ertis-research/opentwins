@@ -317,7 +317,7 @@ namespace TwinsTest
             return jsonDoc.RootElement.Clone();
         }
 
-         private List<(string Subject, string Predicate, string Object)> FormatNQuadsList(List<string> nquads)
+         private List<(string Subject, string Predicate, string Object)> FormatNQuadsList(ICollection<string> nquads)
         {
             var pattern = @"^(?<subject>\S+)\s+<(?<predicate>[^>]+)>\s+(?<object>.+?)\s*\.";
 
@@ -332,7 +332,7 @@ namespace TwinsTest
                 )).ToList();
         }
 
-        private (string ThingId, string? ParentId, string? ChildId, string? Orphan, string? Childless, string RelationName, string AttributeKey) GetFirstIdsInOntologyNQuads(List<string> nquads)
+        private (string ThingId, string? ParentId, string? ChildId, string? Orphan, string? Childless, string RelationName, string AttributeKey) GetFirstIdsInOntologyNQuads(ICollection<string> nquads)
         {
             var result = FormatNQuadsList(nquads);
 
@@ -355,7 +355,7 @@ namespace TwinsTest
             return (thing, parentId, childId, orphan, childless, relationNameStr, attributeKeyStr);
         }
 
-        private string GetFirstIdsInShapeGraphNQuads(List<string> nquads)
+        private string GetFirstIdsInShapeGraphNQuads(ICollection<string> nquads)
         {
             var result = FormatNQuadsList(nquads);
 

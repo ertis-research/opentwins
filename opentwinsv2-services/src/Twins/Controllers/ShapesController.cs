@@ -65,7 +65,7 @@ namespace OpenTwinsV2.Twins.Controllers
         /// <param name="shapeId">The identifier of the Shape Graph</param>
         /// <param name="shapeFile">The TTL File with the Shape Graph.</param>
         /// <response code="200"> Ok with the response obtained from the DataBase and how NQuads triples were added.</response>
-        /// <response code="400"> Bad Request if the file is void or not of TTL extension.</response>
+        /// <response code="400"> Bad Request if the file is void or not of TTL extension, or the identifier is malformed.</response>
         /// <response code="409"> Conflict if there is already a Shape Graph with the same identifier.</response>
         /// <response code="500"> Internal Server Error if there was any issue while either processing the TTL File or uploading the NQuads into the DataBase.</response>
         [HttpPost("{shapeId}")]
@@ -89,13 +89,19 @@ namespace OpenTwinsV2.Twins.Controllers
                 return BadRequest("File can only be of .ttl extension, instead recieved a " + (extension is null ? "void" : extension.ToLower()) + " file");
             }
 
+            if(!shapeId.Equals(shapeId, StringComparison.InvariantCultureIgnoreCase))
+                return BadRequest("The provided identifier contains at least one upper case character");
+
+            if(shapeId.Contains(':') || shapeId.Contains('/') || shapeId.Contains('&') || shapeId.Contains('#'))
+                return BadRequest("The provided identifier contains at least one forbidden character: : / & #");
+
             bool check = await _dgraphService.ExistsShapeGraphByIdAsync(shapeId);
             if (!check)
             {
                 //it doesn't exist
 
                 //load TTL File into RDF Graph
-                List<string>? nquads = null;
+                HashSet<string>? nquads = null;
                 try
                 {
                     nquads = _importService.GetFullShapeGraphNquads(shapeId.ToLowerInvariant(), shapeFile) ?? throw new Exception("The obtained list of NQuads of the Shape Graph was null");

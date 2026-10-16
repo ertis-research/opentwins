@@ -28,27 +28,35 @@ namespace Twins.Services
         /// </returns>
         public static string SanitizeTypeAndUIDValues(string uri)
         {
-            //Check which character is last
-            char[] separators = ['#', '/', '&', ':'];
-
-            // Remove trailing separator if present at the end
-            while (uri.Length > 0 && separators.Contains(uri.Last()))
+            // 1. Guard against null or purely whitespace strings
+            if (string.IsNullOrWhiteSpace(uri))
             {
-                //Delete illegal characters at the end
-                uri = uri.Substring(0, uri.Length - 1);
+                return "default_twin"; // Or throw an ArgumentException depending on your flow
             }
 
-            // //in case the whole uri were illegal characters (unlikely but possible)
-            // if (uri.Length == 0)
-            // {
-            //     return "twin"; //for example
-            // }
+            char[] separators = { '#', '/', '&', ':' };
 
-            // Find last separator after removing trailing char
+            // 2. Efficiently remove trailing spaces and separators 
+            // This replaces your while-loop and prevents multiple string allocations in memory
+            uri = uri.Trim().TrimEnd(separators);
+
+            // Guard against a string that was entirely comprised of separators
+            if (uri.Length == 0)
+            {
+                return "default_twin"; 
+            }
+
+            // 3. Find last separator and extract the substring
             int indx = uri.LastIndexOfAny(separators);
+            string extracted = (indx >= 0) ? uri.Substring(indx + 1) : uri;
 
-            //return the substring or the whole uri in case none of the characters are present
-            return (indx >= 0 && indx < uri.Length - 1) ? uri.Substring(indx + 1) : uri;
+            // 4. Dgraph-specific sanitization
+            // Dgraph temporary UIDs (blank nodes like _:uid_name) only safely support alphanumeric characters and underscores.
+            // This Regex replaces any remaining illegal characters (like spaces, dashes, or periods) with an underscore.
+            extracted = Regex.Replace(extracted, @"[^a-zA-Z0-9_]", "_");
+
+            // Guard against the regex stripping everything (e.g., if the string was just dashes)
+            return string.IsNullOrEmpty(extracted) ? "default_twin" : extracted;
         }
 
         /// <summary>

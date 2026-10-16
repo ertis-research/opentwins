@@ -379,7 +379,7 @@ namespace OpenTwinsV2.Twins.Services
             return response.Json.ToStringUtf8();
         }
 
-        private string ListNQuadsToMutationFormat(List<string> nquads)
+        private string ListNQuadsToMutationFormat(IEnumerable<string> nquads)
         {
             StringBuilder res = new StringBuilder();
             foreach (var triple in nquads)
@@ -390,7 +390,7 @@ namespace OpenTwinsV2.Twins.Services
             return res.ToString();
         }
 
-        public async Task<Response> AddNQuadTripleAsync(List<string> nquads)
+        public async Task<Response> AddNQuadTripleAsync(IEnumerable<string> nquads)
         {
             //check if payload will surpass the client's maximum allowed payload size per transaction 
             int payloadBytes = 0;
@@ -421,13 +421,13 @@ namespace OpenTwinsV2.Twins.Services
                     throw;
                 }
             }
-            else
+            else{
                 //the payload is too big to send in one go -> uid allocation and substitution from nquads for batch transactions
                 return await AddBatchNQuadTripleAsync(nquads);
-            
+            }
         }
 
-        private async Task<Response> AddBatchNQuadTripleAsync(List<string> nquads)
+        private async Task<Response> AddBatchNQuadTripleAsync(IEnumerable<string> nquads)
         {
             var txn = _client.NewTransaction();
             try

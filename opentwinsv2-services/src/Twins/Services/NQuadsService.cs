@@ -291,7 +291,7 @@ namespace OpenTwinsV2.Twins.Services
             nquads.Add($"{relation_uid} <Relation.name> \"{predicate}\" .");
             nquads.Add($"{relation_uid} <Relation.createdAt> \"{DateTime.UtcNow:O}\" .");
             nquads.Add($"{relation_uid} <Relation.prefix> {namespace_uid} .");
-            nquads.Add($"{relation_uid} <relatedTo> {obj} ."); //always
+            nquads.Add($"{relation_uid} <relatedTo> _:{FormatService.SanitizeTypeAndUIDValues(obj)} ."); //always
             nquads.Add($"{relation_uid} <{(bidirectional ? "relatedTo" : "relatedFrom")}> {subject} .");
         }
 
@@ -389,9 +389,9 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="shapeId">The identifier of the Shape Graph node.</param>
         /// <param name="createdAt">The timestamp of the creation of the node.</param>
         /// <returns>Returns the list of NQuads of the Shape Graph.</returns>
-        public static List<string> GetNQuadsShapeGraphTriples(string shapeId, string createdAt)
+        /// <param name="nquads">The list of NQuads.</param>
+        public static void GetNQuadsShapeGraphTriples(string shapeId, string createdAt, ICollection<string> nquads)
         {
-            List<string> nquads = new List<string>();
             /*
                 shapeId -----------> shapeId
                 Shape.name: -------> shapeId
@@ -405,7 +405,6 @@ namespace OpenTwinsV2.Twins.Services
             nquads.Add($"{shapeUid} <shapeId> \"{shapeId}\" ."); //???
             nquads.Add($"{shapeUid} <Shape.name> \"{shapeId}\" .");
 
-            return nquads;
         }
 
         /// <summary>
@@ -417,10 +416,10 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="prefix">The prefix of the Node Shape.</param>
         /// <param name="createdAt">The timestamp of the creation of the node.</param>
         /// <param name="isSubShape">Whether the Node Shape is part of another Node SHape or not.</param>
+        /// <param name="nquads">The list of NQuads.</param>
         /// <returns>Returns the list of NQuads of the NodeShape, its default Property and the link between the Node Shape and the Shape graph if necessary.</returns>
-        public static List<string> GetNQuadsNodeShapeTriples(string shapeId, string shapeNodeId, string nodeUid, string prefix, string createdAt, bool isSubShape)
+        public static void GetNQuadsNodeShapeTriples(string shapeId, string shapeNodeId, string nodeUid, string prefix, string createdAt, bool isSubShape, ICollection<string> nquads)
         {
-            var nquads = new List<string>();
 
             /*
                 nodeShapeId ------------> shapeId:shapeNodeId
@@ -452,8 +451,6 @@ namespace OpenTwinsV2.Twins.Services
             //Link it to the ShapeGraph node if it's not a subshape
             if (!isSubShape)
                 nquads.Add($"{graphUid} <shapes> {nodeUid} .");
-
-            return nquads;
         }
 
         /// <summary>
@@ -462,21 +459,18 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="shapeId">The identifier of the Shape Graph.</param>
         /// <param name="prefix">The prefix of the Reference node.</param>
         /// <param name="referenceId">The identifier of the Reference node.</param>
+        /// <param name="nquads">The list of NQuads.</param>
         /// <returns>Returns the list of NQuads of the Reference node.</returns>
-        public static List<string> GetNQuadsReferenceTriples(string shapeId, string prefix, string referenceId)
+        public static void GetNQuadsReferenceTriples(string shapeId, string prefix, string referenceId, ICollection<string> nquads)
         {
 
             string nodeUid = GetReferenceUid(shapeId, referenceId, prefix);
 
-            var nquads = new List<string>
-            {
-                $"{nodeUid} <dgraph.type> \"Reference\" .",
-                $"{nodeUid} <targetId> \"{prefix}_{referenceId}\" .",
-                $"{nodeUid} <Target.prefix> {GetNamespaceUid(shapeId, prefix)} .",
-                $"{nodeUid} <Target.name> \"{referenceId}\" .",
-            };
+            nquads.Add($"{nodeUid} <dgraph.type> \"Reference\" .");
+            nquads.Add($"{nodeUid} <targetId> \"{prefix}_{referenceId}\" .");
+            nquads.Add($"{nodeUid} <Target.prefix> {GetNamespaceUid(shapeId, prefix)} .");
+            nquads.Add($"{nodeUid} <Target.name> \"{referenceId}\" .");
 
-            return nquads;
         }
 
         /// <summary>
@@ -485,8 +479,9 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="uid">The uid of the parent node</param>
         /// <param name="index">The index of child nodes of the parent node.</param>
         /// <param name="node">The source node of the Value node.</param>
+        /// <param name="nquads">The list of NQuads.</param>
         /// <returns>Returns the list NQuads of the Value Node.</returns>
-        public static List<string> GetNQuadsValueTriples(string uid, int index, INode node)
+        public static void GetNQuadsValueTriples(string uid, int index, INode node, ICollection<string> nquads)
         {
             string dataType = "string";
             string value="";
@@ -497,15 +492,13 @@ namespace OpenTwinsV2.Twins.Services
                 (dataType, value) = FormatService.GetLiteralCleanData(node.AsValuedNode().ToSafeString());
 
             var valueUid = GetValueUid(uid, index);
-            var nquads = new List<string>
-            {
-                $"{valueUid} <dgraph.type> \"Value\" .",
-                $"{valueUid} <valueId> \"{dataType}valueFor{uid.Replace("_:", "")}\" .",
-                $"{valueUid} <Value.type> \"{dataType}\" .",
-                $"{valueUid} <value> \"{value}\" .",
-            };
-
-            return nquads;
+            
+            
+            nquads.Add($"{valueUid} <dgraph.type> \"Value\" .");
+            nquads.Add($"{valueUid} <valueId> \"{dataType}valueFor{uid.Replace("_:", "")}\" .");
+            nquads.Add($"{valueUid} <Value.type> \"{dataType}\" .");
+            nquads.Add($"{valueUid} <value> \"{value}\" .");
+            
         }
 
         /// <summary>
@@ -518,15 +511,15 @@ namespace OpenTwinsV2.Twins.Services
         /// <param name="index">The index of child nodes of the parent node.</param>
         /// <param name="triple">The original parsed triple object.</param>
         /// <param name="graph">The original parsed graph object.</param>
+        /// <param name="nquads">The list of nquads.</param>
         /// <returns>Returns the list of NQuads of the following node depending of its kind.</returns>
-        public static List<string> GenerateShapeTriples(string shapeId, string subjectUid, string parentPrefix, string parentPredicate, int index, Triple triple, IGraph graph)
+        public static  void GenerateShapeTriples(string shapeId, string subjectUid, string parentPrefix, string parentPredicate, int index, Triple triple, IGraph graph, ICollection<string> nquads)
         {
             /*
             subjectUid <parentPredicate> objUid
             objUid <predicate> nodeUid
             */
 
-            var nquads = new List<string>();
             string prefixPredicate, predicate;
             if (!triple.Predicate.NodeType.Equals(NodeType.Literal))
             {
@@ -555,10 +548,10 @@ namespace OpenTwinsV2.Twins.Services
                 else
                 {
                     nquads.Add($"{uid} <description> \"No Description\" .");
-                    foreach(Triple t in graph.Triples.Where(tr => tr.Subject.Equals(triple.Object)).Distinct().ToList())
-                    {
-                        nquads.AddRange(GenerateShapeTriples(shapeId, uid, prefixPredicate, "constraints", index, t, graph));
-                    }
+                    
+                    foreach(Triple t in graph.GetTriplesWithSubject(triple.Object))
+                        GenerateShapeTriples(shapeId, uid, prefixPredicate, "constraints", index, t, graph, nquads);
+                    
                 }
                 index++;
             }
@@ -573,7 +566,7 @@ namespace OpenTwinsV2.Twins.Services
                         if (predicate.Equals("path") && IsPropertyUid(subjectUid))
                             {
                             var (refPrefix, refId) = FormatService.GetLocalName(triple.Object, graph, shapeId);
-                            nquads.AddRange(GetNQuadsReferenceTriples(shapeId, refPrefix, refId));
+                            GetNQuadsReferenceTriples(shapeId, refPrefix, refId, nquads);
                             nquads.Add($"{subjectUid} <path> {GetReferenceUid(shapeId, refId, refPrefix)} .");
                             break;
                         }
@@ -584,7 +577,7 @@ namespace OpenTwinsV2.Twins.Services
                         nquads.Add($"{uid} <ShapeConstraint.prefix> {GetNamespaceUid(shapeId, prefixPredicate)} .");
                         string type = ImportService.CategorizeConstraint(predicate);
                         nquads.Add($"{uid} <dgraph.type> \"{type}Constraint\" .");
-                        nquads.AddRange(ImportService.SortNodes(shapeId, uid, prefixPredicate, predicate, type, index+1, triple, graph));
+                        ImportService.SortNodes(shapeId, uid, prefixPredicate, predicate, type, index+1, triple, graph, nquads);
                         break;
                 }
             }
@@ -600,7 +593,6 @@ namespace OpenTwinsV2.Twins.Services
                     nquads.Add($"{subjectUid} <{parentPredicate}> {uid} .");
                 }
             }
-            return nquads;
         }
 
     }

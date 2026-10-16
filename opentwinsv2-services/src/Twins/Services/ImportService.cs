@@ -276,20 +276,20 @@ namespace Twins.Services
         /// <param name="index">The index of child nodes of the parent node.</param>
         /// <param name="triple">The original parsed triple object.</param>
         /// <param name="graph">The original parsed graph object.</param>
+        /// <param name="nquads">The set of nquads of the process</param>
         /// <returns>Returns the list of NQuads result of deciding what step of the algorithm to go back to.</returns>
-        public static List<string> SortNodes(string shapeId, string subjectUid, string prefixPredicate, string predicate, string type, int index, Triple triple, IGraph graph)
+        public static void SortNodes(string shapeId, string subjectUid, string prefixPredicate, string predicate, string type, int index, Triple triple, IGraph graph, ICollection<string> nquads)
         {
-            var nquads = new List<string>();
 
             if (triple.Object.NodeType.Equals(NodeType.Literal) || triple.Object.NodeType.Equals(NodeType.GraphLiteral) || predicate.Equals("datatype") || predicate.Equals("nodeKind"))
             {
-                nquads.AddRange(NQuadsService.GetNQuadsValueTriples(subjectUid, index, triple.Object));
+                NQuadsService.GetNQuadsValueTriples(subjectUid, index, triple.Object, nquads);
                 nquads.Add($"{subjectUid} <{(type.Equals("Generic") ? "GenericConstraint.value" : predicate)}> {NQuadsService.GetValueUid(subjectUid, index)} .");
             }
             else if(triple.Object.NodeType.Equals(NodeType.Uri))
             {
                 var (refPrefix, refId) = FormatService.GetLocalName(triple.Object, graph, shapeId);
-                nquads.AddRange(NQuadsService.GetNQuadsReferenceTriples(shapeId, refPrefix, refId));
+                NQuadsService.GetNQuadsReferenceTriples(shapeId, refPrefix, refId, nquads);
                 nquads.Add($"{subjectUid} <{(type.Equals("Generic") ? "GenericConstraint.value" : predicate)}> {NQuadsService.GetReferenceUid(shapeId, refId, refPrefix)} .");
             }
             else
@@ -301,7 +301,7 @@ namespace Twins.Services
                     source = new List<Triple>();
                     foreach(INode node in ReadStrictList(graph, triple.Object))
                     {
-                        nquads.AddRange(MainLoop(shapeId, $"{subjectUid}Blank{index}", node, graph, true));
+                        MainLoop(shapeId, $"{subjectUid}Blank{index}", node, graph, true, nquads);
                         nquads.Add($"{subjectUid} <{(type.Equals("Generic") ? "GenericConstraint.value" : predicate)}> {subjectUid}Blank{index} .");
                         index++;
                     }
@@ -309,34 +309,32 @@ namespace Twins.Services
                 }
                 else
                 {
-                    source = graph.Triples.Where(tr => tr.Subject.Equals(triple.Object)).Distinct().ToList();
+                    source = graph.GetTriplesWithSubject(triple.Object).ToList();
                     foreach(Triple t in source)
                     {
                         if (t.Object.NodeType.Equals(NodeType.Blank))
                         {
                             //Check how many elements it has inside
-                            if(!predicate.Equals("property") && (graph.Triples.Count(tr => tr.Subject.Equals(t.Object) && tr.Object.NodeType.Equals(NodeType.Blank)) > 1))
+                            if(!predicate.Equals("property") && (graph.GetTriplesWithSubject(t.Object).Count(tr => tr.Object.NodeType.Equals(NodeType.Blank)) > 1))
                             {
                                 //pass the defaultproperty uid instead
-                                nquads.AddRange(MainLoop(shapeId, $"{subjectUid}Blank{index}", t.Object, graph, true));
+                                MainLoop(shapeId, $"{subjectUid}Blank{index}", t.Object, graph, true, nquads);
                                 nquads.Add($"{subjectUid} <{(type.Equals("Generic") ? "GenericConstraint.value" : predicate)}> {subjectUid}Blank{index} .");
                             }
                             else
                             {
                                 var (childPrefix, childPredicate) = FormatService.GetLocalName(triple.Predicate, graph, shapeId);
-                                nquads.AddRange(NQuadsService.GenerateShapeTriples(shapeId, subjectUid, childPrefix, type.Equals("Generic") ? "GenericConstraint.value" : childPredicate, index, t, graph));
+                                NQuadsService.GenerateShapeTriples(shapeId, subjectUid, childPrefix, type.Equals("Generic") ? "GenericConstraint.value" : childPredicate, index, t, graph, nquads);
                             }
                         }
                         else
                         {
-                            nquads.AddRange(SortNodes(shapeId, NQuadsService.isConstraintUid(subjectUid) ? subjectUid : NQuadsService.GetConstraintUid(subjectUid, prefixPredicate, predicate), prefixPredicate, predicate, type, index, t, graph));
+                            SortNodes(shapeId, NQuadsService.isConstraintUid(subjectUid) ? subjectUid : NQuadsService.GetConstraintUid(subjectUid, prefixPredicate, predicate), prefixPredicate, predicate, type, index, t, graph, nquads);
                         }
                         index++;
                     }   
                 }
             }
-
-            return nquads;
         }
 
         /// <summary>
@@ -347,12 +345,10 @@ namespace Twins.Services
         /// <param name="node">The parent node object.</param>
         /// <param name="graph">The original parsed graph object.</param>
         /// <param name="isSubShape">Whether the parent node is part of another Shape Node or not.</param>
+        /// <param name="nquads">The set of nquads of the process.</param>
         /// <returns>Returns the final list of NQuads of the node.</returns>
-        public static List<string> MainLoop(string shapeId, string nodeUid, INode node, IGraph graph, bool isSubShape)
+        public static void MainLoop(string shapeId, string nodeUid, INode node, IGraph graph, bool isSubShape, ICollection<string> nquads)
         {   
-            var nquads = new List<string>();
-
-
             List<INode> nodes = new List<INode>();
             if (node.NodeType.Equals(NodeType.Blank) && IsListHead(graph, node))
             {
@@ -369,12 +365,9 @@ namespace Twins.Services
                 var (nodePrefix, nodeId) = FormatService.GetLocalName(nodeSubj, graph, shapeId);
                 var nodeUidSubj = $"{nodeUid}_{nodeId}";
 
-                nquads.AddRange(NQuadsService.GetNQuadsNodeShapeTriples(shapeId, nodeId, nodes.Count==1 ? nodeUid: nodeUidSubj, nodePrefix, DateTime.UtcNow.ToString("O"), isSubShape));
+                NQuadsService.GetNQuadsNodeShapeTriples(shapeId, nodeId, nodes.Count==1 ? nodeUid: nodeUidSubj, nodePrefix, DateTime.UtcNow.ToString("O"), isSubShape, nquads);
 
-                var relatedTriples = graph.Triples
-                    .Where(t => t.Subject.Equals(node))
-                    .Distinct()
-                    .ToList();
+                var relatedTriples = graph.GetTriplesWithSubject(node).ToList();
 
                 foreach (Triple triple in relatedTriples)
                 {
@@ -383,13 +376,11 @@ namespace Twins.Services
 
                     bool isProperty = predicate.Equals("property");
 
-                    nquads.AddRange(NQuadsService.GenerateShapeTriples(shapeId, nodes.Count==1 ? nodeUid: nodeUidSubj, prefixPredicate, isProperty ? "properties" : "constraints", nProperty, triple, graph));
+                    NQuadsService.GenerateShapeTriples(shapeId, nodes.Count==1 ? nodeUid: nodeUidSubj, prefixPredicate, isProperty ? "properties" : "constraints", nProperty, triple, graph, nquads);
 
                     nProperty++;
                 }
             }
-
-            return nquads;
         }
 
         /// <summary>
@@ -398,14 +389,14 @@ namespace Twins.Services
         /// <param name="shapeId">The identifier of the Shape Graph.</param>
         /// <param name="graph">The RDF Graph of the Shape Graph.</param>
         /// <returns>Returns the list of all NQuads of the Shape Graph and its nodes.</returns>
-        public List<string> GetFullShapeGraphNquads(string shapeId, Graph graph)
+        public HashSet<string> GetFullShapeGraphNquads(string shapeId, Graph graph)
         {
-            var nquads = new List<string>();
+            var nquads = new HashSet<string>();
             string createdAt = DateTime.UtcNow.ToString("O");
             var lowerShapeId = shapeId.ToLowerInvariant();
             try
             {
-                nquads.AddRange(NQuadsService.GetNQuadsShapeGraphTriples(lowerShapeId, createdAt));
+                NQuadsService.GetNQuadsShapeGraphTriples(lowerShapeId, createdAt, nquads);
 
                 //Get prefixes, uri pairs
                 // var ignoredPrefixes = new[] { "swrl:", "swrla:" }; //PROVISIONAL: Ignore 
@@ -432,7 +423,8 @@ namespace Twins.Services
                     shapeNodeId ??= "shape" + Guid.NewGuid();
 
                     //Iterate through triples
-                    nquads.AddRange(MainLoop(lowerShapeId, uid, node, graph, false));
+                    MainLoop(lowerShapeId, uid, node, graph, false, nquads);
+                    
                 }
                 nquads = [.. nquads.Distinct()];
             }
@@ -450,7 +442,7 @@ namespace Twins.Services
         /// <param name="shapeId">The identifier of the Shape Graph.</param>
         /// <param name="shapeFile">The TTL file of the Shape Graph.</param>
         /// <returns>Returns the list of all NQuads of the Shape Graph and its nodes.</returns>
-        public List<string> GetFullShapeGraphNquads(string shapeId, IFormFile shapeFile)
+        public HashSet<string> GetFullShapeGraphNquads(string shapeId, IFormFile shapeFile)
         {
             Graph graph = new();
             var parser = new TurtleParser();
@@ -464,7 +456,7 @@ namespace Twins.Services
             return GetFullShapeGraphNquads(shapeId.ToLowerInvariant(), graph);
         }
 
-        public List<string> GetFullShapeGraphNquads(string shapeId, JsonObject jsonLd)
+        public HashSet<string> GetFullShapeGraphNquads(string shapeId, JsonObject jsonLd)
         {
             var graph = FormatService.GetRDFGraphFromJson(jsonLd, shapeId, ld: true);
             return GetFullShapeGraphNquads(shapeId, graph);
@@ -702,7 +694,7 @@ namespace Twins.Services
             return valueConstraints;
         }
 
-        private IEnumerable<Constraint> BuildCardinalityConstraintObject(INode node, IGraph graph)
+        private HashSet<Constraint> BuildCardinalityConstraintObject(INode node, IGraph graph)
         {
             var cardinalities = GetCardinalitiesFromRestriction(node, graph);
 
@@ -847,7 +839,7 @@ namespace Twins.Services
             return info.Range.Any(r => (r.Prefix == obj.Name.Prefix && r.Name == obj.Name.Name) || (r.Prefix == obj.Datatype?.Prefix && r.Name == obj.Datatype?.Name));
         }
 
-        private void SortThingType((string Prefix, string Name) type, string name, string uid, string ontologyId, JsonArray shapeGraph, Dictionary<string, JsonObject> shapeGraphIndex, HashSet<string> nquads)
+        private void SortThingType((string Prefix, string Name) type, string name, string uid, string ontologyId, JsonArray shapeGraph, Dictionary<string, JsonObject> shapeGraphIndex, ICollection<string> nquads)
         {
             var shapeId = $"{ontologyId.ToLowerInvariant()}:{name}SubjectsOfShape";
             var shape = shapeGraphIndex.GetValueOrDefault(shapeId);
@@ -902,7 +894,7 @@ namespace Twins.Services
                 ShapeBuilder.MergeIntoShapeProperty(shape, (ontologyId, name), value.Predicate, value.Value);
         }
 
-        private void SortConstraintsIntoShapesAndNQuads(CustomType info, (string Prefix, string Name) constraint, IEnumerable<Connection> objs, string ontologyId, Dictionary<INode, CustomType> urisDict, IGraph graph, JsonArray shapeGraph, Dictionary<string, JsonObject> shapeGraphIndex, HashSet<string> nquads, JsonArray? currentProperty = null, bool isNot = false)
+        private void SortConstraintsIntoShapesAndNQuads(CustomType info, (string Prefix, string Name) constraint, HashSet<Connection> objs, string ontologyId, Dictionary<INode, CustomType> urisDict, IGraph graph, JsonArray shapeGraph, Dictionary<string, JsonObject> shapeGraphIndex, ICollection<string> nquads, JsonArray? currentProperty = null, bool isNot = false)
         {
             if(!objs.Any())
                 return;
@@ -1038,7 +1030,7 @@ namespace Twins.Services
             }
         }
 
-        public void ConvertInformationIntoShapesAndNQuads(string ontologyId, INode node, Dictionary<INode, CustomType> urisDict, IGraph graph, JsonArray shapeGraph, Dictionary<string, JsonObject> shapeGraphIndex, HashSet<string> nquads)
+        public void ConvertInformationIntoShapesAndNQuads(string ontologyId, INode node, Dictionary<INode, CustomType> urisDict, IGraph graph, JsonArray shapeGraph, Dictionary<string, JsonObject> shapeGraphIndex, ICollection<string> nquads)
         {
             (var subjPrefix, var subj) = FormatService.GetLocalName(node, graph, "");
             var info = urisDict[node];
@@ -1203,9 +1195,8 @@ namespace Twins.Services
                 }
             }
 
-            foreach(var pair in urisDict)
-                Console.WriteLine($"{pair.Key} --> {pair.Value}");
-
+            // foreach(var pair in urisDict)
+            //     Console.WriteLine($"{pair.Key} --> {pair.Value}");
             
             //Iterate through dictionary extracting at the same time NQUADS and Shapes
             NQuadsService.AddNQuadsOntologyTriples(ontologyId, nquads);

@@ -941,7 +941,7 @@ namespace OpenTwinsV2.Twins.Services
                     vocabUri = uri;
                 }
 
-                if (prefix is not null && uri is not null)
+                if (prefix is not null && !string.IsNullOrWhiteSpace(prefix) && uri is not null)
                 {
                     context[prefix] = uri;
                 }

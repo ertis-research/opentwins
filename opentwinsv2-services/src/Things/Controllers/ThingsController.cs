@@ -596,6 +596,18 @@ public class ThingsController : ControllerBase
 
             return StatusCode(500, $"Internal error: {ex.Message}");
         }
+        catch(InvalidOperationException ex)
+        {
+            return Conflict(ex.Message);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
     }
 
     /// <summary>
@@ -634,6 +646,18 @@ public class ThingsController : ControllerBase
 
             return StatusCode(500, $"Internal error: {ex.Message}");
         }
+        catch(InvalidOperationException ex)
+        {
+            return Conflict(ex.Message);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
     }
 
 
@@ -667,6 +691,18 @@ public class ThingsController : ControllerBase
                 return BadRequest(ex.Message);
 
             return StatusCode(500, $"Internal error: {ex.Message}");
+        }
+        catch(InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
         }
     }
 
@@ -704,6 +740,18 @@ public class ThingsController : ControllerBase
 
             return StatusCode(500, $"Internal error: {ex.Message}");
         }
+        catch(InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
     }
 
     /// <summary>
@@ -735,6 +783,18 @@ public class ThingsController : ControllerBase
                 return BadRequest(ex.Message);
 
             return StatusCode(500, $"Internal error: {ex.Message}");
+        }
+        catch(InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
         }
     }
 }

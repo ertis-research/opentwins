@@ -56,7 +56,7 @@ namespace OpenTwinsV2.Twins.Services
             // var jobId = Guid.NewGuid().ToString();
             var status = (await _statusManager.GetThingStatus(thingId)).Status;
             var operationid=Guid.NewGuid().ToString();
-            if(status is not null)
+            if(status is null)
                 await _statusManager.SaveCreatingThingStatus(thingId, operationid);
             else
                 await _statusManager.SaveUpdatingThingStatus(thingId, operationid);

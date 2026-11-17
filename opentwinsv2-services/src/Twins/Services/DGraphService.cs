@@ -828,6 +828,11 @@ namespace OpenTwinsV2.Twins.Services
             return visited.ToList();
         }
 
+        public async Task<Response> AddDgraphTypeIntoExistingNodeAsync(string uid, string type)
+        {
+            return await AddNQuadTripleAsync([$"<{uid}> <dgraph.type> \"{type}\" ."]);
+        }
+
         #endregion
 
         #region Things
@@ -1000,7 +1005,7 @@ namespace OpenTwinsV2.Twins.Services
         public async Task TurnThingIntoNonFunctional(string thingId)
         {
             var uid = (await GetUidsByThingIdsAsync([thingId])).TryGetValue(thingId, out var thingUid) ? thingUid : throw new KeyNotFoundException($"Thing {thingId} not found in DGraph"); 
-            await AddNQuadTripleAsync([$"<{uid}> <dgraph.type> \"NonFunctional\"."]);
+            await AddDgraphTypeIntoExistingNodeAsync(uid, "NonFunctional");
         }
 
         public async Task<List<string>> GetThingTypes(string thingId)

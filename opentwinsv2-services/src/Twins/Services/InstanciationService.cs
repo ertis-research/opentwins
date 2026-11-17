@@ -496,23 +496,25 @@ namespace OpenTwinsV2.Twins.Services
             {
                 ["@context"] = new JsonArray("https://www.w3.org/2019/wot/td/v1"),
                 ["id"] = twinId,
-                ["title"] = "",
+                ["title"] = twinId,
                 ["properties"] = new JsonObject { },
                 ["actions"] = new JsonObject { },
                 ["events"] = new JsonObject { }
             };
         }
     
-        public async Task<string> CreateInstanciationTwin(string twinId)
+        public async Task CreateInstanciationTwin(string twinId, bool dgraph = true)
         {
             var payload = GetTwinInstanciationPayLoad(twinId);
             var thingsResponse = await _thingsService.CreateThingAsync(twinId, payload);
             if(!thingsResponse)
                 throw new Exception("Response from Things Service while creating Twin Thing was unsuccessful.");
-            var dgraphResponse = await _dgraphService.AddThingAsync(ThingBuilder.BuildTwin(twinId));
-            if(dgraphResponse is null || dgraphResponse.Uids is null || dgraphResponse.Uids.Count()==0)
-                throw new Exception("Response from DGraph Service while creating Twin was unsuccessful.");
-            return dgraphResponse.Uids.FirstOrDefault().Value;
+            if (dgraph)
+            {
+                var dgraphResponse = await _dgraphService.AddThingAsync(ThingBuilder.BuildTwin(twinId));
+                if(dgraphResponse is null || dgraphResponse.Uids is null || dgraphResponse.Uids.Count()==0)
+                    throw new Exception("Response from DGraph Service while creating Twin was unsuccessful.");
+            }
         }
 
         /// <summary>
@@ -815,10 +817,11 @@ namespace OpenTwinsV2.Twins.Services
 
         public async Task CreateTwin(string twinId)
         {
+            string? twinUid = (await _dgraphService.GetUidsByThingIdsAsync([twinId])).TryGetValue(twinId, out var uid) ? uid : null;
             try
             {
                 await _thingsService.GetThingAsync(twinId);
-                if(await _dgraphService.ExistsThingByIdAsync(twinId))
+                if(twinUid is not null) //The Twin exists on DGraph
                 {
                     if(await _dgraphService.IsThingAPlaceholderAsync(twinId))
                     
@@ -826,30 +829,29 @@ namespace OpenTwinsV2.Twins.Services
                         await _dgraphService.InstanciateAPlaceHolderThingAsync(twinId);
                     
                     //Add Twin Type. It's not already a Twin because it would've failed by now
-                    await _dgraphService.AddNQuadTripleAsync([$"<{(await _dgraphService.GetUidsByThingIdsAsync([twinId]))[twinId]}> <dgraph.type> \"Twin\" ."]);
+                    await _dgraphService.AddDgraphTypeIntoExistingNodeAsync(twinUid, "Twin");
                 }
                 else
                 {
                     //Just create in DGraph with the same id
-                    await _dgraphService.AddThingAsync(ThingBuilder.BuildTwin(twinId));
+                    await _dgraphService.AddThingAsync(ThingBuilder.BuildTwin(twinId, twinUid));
                 }
             }
             catch (KeyNotFoundException)
             {
-                if(await _dgraphService.ExistsThingByIdAsync(twinId))
+                if(twinUid is not null) //The Twin exists on DGraph
                     if(await _dgraphService.IsThingAPlaceholderAsync(twinId))
                     {
                         //Manage Placeholder completion
                         await _dgraphService.InstanciateAPlaceHolderThingAsync(twinId);
-                        await _dgraphService.AddThingTypeIntoThing(twinId, "Twin");          
+                        await _dgraphService.AddDgraphTypeIntoExistingNodeAsync(twinUid, "Twin");
                     }
                     else
                         throw new ArgumentException("The Thing cannot be instanciated");
-                else
-                {
-                    //basic case: it doesn't exist in either: create in both
-                    await CreateInstanciationTwin(twinId);
-                }
+                
+                //if twinUid is null: basic case: it doesn't exist in either: create in both
+                // if it is not null but is a placeholder, not create the dgraph thing (it already exists and has been instanciated already)
+                await CreateInstanciationTwin(twinId, dgraph: twinUid is null);
             }
         }
 

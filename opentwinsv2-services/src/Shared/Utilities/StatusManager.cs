@@ -43,7 +43,6 @@ namespace OpenTwinsV2.Shared.Utilities
 
         public async Task SaveDeletingThingStatus(string id, string operationId)
         {
-            //TODO: EXPIRE PERDIOD
             await SaveThingStatus(id, Status.DeleteStatus, operationId, ttlEnabled: true);
         } 
 

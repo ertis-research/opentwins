@@ -165,7 +165,7 @@ namespace OpenTwinsV2.Things.Actors.Services
             }
             catch (KeyNotFoundException)
             {
-                ActorLogger.Warn(_thingId, $"This Thing no longer exists.");
+                ActorLogger.Warn(_thingId, $"This Thing doesn't exist.");
                 throw;
             }
             

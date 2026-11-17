@@ -27,6 +27,8 @@ Log.Logger = new LoggerConfiguration()
 
 builder.Host.UseSerilog();
 
+// builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: false);
+
 // === Servicios Dapr y de aplicación ===
 builder.Services.AddDaprClient();                    // Recomendado para llamadas Dapr
 builder.Services.AddDaprPubSubClient();              // Cliente Pub/Sub

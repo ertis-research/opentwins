@@ -315,14 +315,14 @@ public class ThingsController : ControllerBase
             if(list.Count==1)
                 return StatusCode(500, responses.FirstOrDefault() ?? ex.Message);
             else
-                return StatusCode(207, responses.Select(resp => resp.Status == HttpStatusCode.Accepted ? new {resp.Id, Status = HttpStatusCode.InternalServerError, resp.Message} : resp));
+                return StatusCode(207, responses.Select(resp => resp.Status == HttpStatusCode.OK ? new {resp.Id, Status = HttpStatusCode.InternalServerError, resp.Message} : resp));
         }
-       
+
 
         if(responses.Count == 1)
         {
             var resp = responses.First();
-            if(resp.Status == HttpStatusCode.Accepted)
+            if(resp.Status == HttpStatusCode.OK)
                 return Ok(resp);
             else if(resp.Status == HttpStatusCode.BadRequest)
                 return BadRequest(resp);

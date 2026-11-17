@@ -10,6 +10,8 @@ using OpenTwinsV2.Things.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: false);
+
 
 builder.Services.AddDaprClient();
 

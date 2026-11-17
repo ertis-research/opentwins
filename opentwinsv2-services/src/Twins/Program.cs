@@ -13,6 +13,8 @@ using OpenTwinsV2.Twins.Services;
 using Twins.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: false);
 //builder.Services.AddDaprPubSubClient();
 builder.Services.AddDaprClient();     
 

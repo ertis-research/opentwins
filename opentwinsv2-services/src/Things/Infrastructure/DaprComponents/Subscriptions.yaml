@@ -6,7 +6,7 @@ spec:
   pubsubname: kafka-pubsub
   topic: update-things
   routes:
-    default: /internal/create
+    default: /things/internal/create
 ---
 apiVersion: dapr.io/v2alpha1
 kind: Subscription
@@ -16,4 +16,4 @@ spec:
   pubsubname: kafka-pubsub
   topic: delete-things
   routes:
-    default: /internal/delete
+    default: /things/internal/delete
